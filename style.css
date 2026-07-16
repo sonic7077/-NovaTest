@@ -132,6 +132,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
 .strategy-row b { font-size: 11px; }
 .strategy-row small { margin-top: 3px; color: var(--muted); font-size: 9px; }
 .online { padding: 3px 5px; margin-left: auto; color: #27835d; background: #ecf8f1; border-radius: 3px; font: 600 9px "DM Mono", monospace; }
+.online.offline { color: #a4433c; background: #fff0ee; }
 .toggle { position: relative; width: 28px; height: 17px; margin-left: auto; }
 .toggle input { width: 0; height: 0; opacity: 0; }
 .toggle span { position: absolute; inset: 0; background: #cbd5d0; border-radius: 10px; }
@@ -154,11 +155,23 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
 .toast { position: fixed; bottom: 24px; left: 50%; display: flex; align-items: center; gap: 7px; padding: 10px 14px; color: #fff; pointer-events: none; opacity: 0; background: #1c3f34; border-radius: 6px; box-shadow: 0 8px 22px #183e3238; font-size: 12px; transform: translate(-50%, 20px); transition: .25s; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast svg { width: 15px; color: #d1f36b; }
+.assets { margin: 0 42px 38px; padding: 21px; }
+.case-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px; }
+.case-item { display: flex; align-items: center; gap: 10px; padding: 13px; color: #31423b; text-align: left; background: #fbfdfc; border: 1px solid #e1e9e5; border-radius: 6px; }
+.case-item:hover { background: #f2f9f5; border-color: #b7dbc8; }
+.case-item-icon { display: grid; width: 29px; height: 29px; place-items: center; color: var(--green); background: #e8f4ec; border-radius: 6px; }
+.case-item-icon svg, .case-item > svg { width: 15px; }
+.case-item > svg { margin-left: auto; color: #9aa7a2; }
+.case-item b, .case-item small { display: block; }
+.case-item b { font-size: 11px; }
+.case-item small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.empty-state { grid-column: 1 / -1; padding: 14px 0; margin: 0; color: var(--muted); font-size: 12px; }
 
 @media (max-width: 1050px) {
   .workspace-grid { grid-template-columns: 1fr; }
   .right-rail { grid-template-columns: 1fr 1fr; }
   .report-preview { grid-column: span 2; }
+  .case-list { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 760px) {
@@ -175,6 +188,8 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
   .target-tab { font-size: 10px; }
   .right-rail { grid-template-columns: 1fr; }
   .report-preview { grid-column: auto; }
+  .assets { margin-right: 20px; margin-left: 20px; }
+  .case-list { grid-template-columns: 1fr; }
   .heading-actions { width: 100%; }
   .heading-actions button { flex: 1; }
 }

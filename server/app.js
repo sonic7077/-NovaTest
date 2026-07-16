@@ -10,6 +10,7 @@ export function createMemoryStore() {
   return {
     saveCase(testCase) { const saved = { ...testCase, id: testCase.id || crypto.randomUUID() }; cases.set(saved.id, saved); return saved; },
     getCase(id) { return cases.get(id); },
+    listCases() { return [...cases.values()]; },
     saveRun(run) { runs.set(run.id, run); return run; },
     getRun(id) { return runs.get(id); }
   };
@@ -17,15 +18,19 @@ export function createMemoryStore() {
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
-export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot }) {
+export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, runnerStatus = { ready: true, message: 'ready' } }) {
   const app = express();
   const runService = new RunService(runner);
   app.use(express.json());
+
+  app.get('/api/health', (_req, res) => res.json({ webRunner: runnerStatus }));
 
   app.post('/api/cases', (req, res) => {
     try { res.status(201).json(store.saveCase(validateWebCase(req.body))); }
     catch (error) { res.status(400).json({ error: error.message }); }
   });
+
+  app.get('/api/cases', (_req, res) => res.json(store.listCases()));
 
   app.post('/api/cases/:id/runs', async (req, res) => {
     const testCase = store.getCase(req.params.id);

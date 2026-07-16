@@ -37,6 +37,32 @@ describe('execution API', () => {
     await request(app).post('/api/cases').send({ target: 'web' }).expect(400);
   });
 
+  it('lists saved test cases for the console', async () => {
+    const app = createApp({ runner: {}, store: createMemoryStore() });
+    await request(app).post('/api/cases').send(webCase).expect(201);
+
+    await request(app)
+      .get('/api/cases')
+      .expect(200)
+      .expect((response) => {
+        expect(response.body).toHaveLength(1);
+        expect(response.body[0]).toMatchObject({ name: '首页验证', target: 'web' });
+      });
+  });
+
+  it('reports whether the Web UI runner is configured', async () => {
+    const app = createApp({
+      runner: {},
+      store: createMemoryStore(),
+      runnerStatus: { ready: false, message: 'missing MIDSCENE_MODEL_API_KEY' }
+    });
+
+    await request(app)
+      .get('/api/health')
+      .expect(200)
+      .expect({ webRunner: { ready: false, message: 'missing MIDSCENE_MODEL_API_KEY' } });
+  });
+
   it('serves the test console from the same origin as the API', async () => {
     const app = createApp({ runner: {}, store: createMemoryStore() });
 

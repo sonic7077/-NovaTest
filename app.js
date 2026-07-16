@@ -71,6 +71,64 @@ function readCaseFromForm() {
   };
 }
 
+function renumberSteps() {
+  [...steps.children].forEach((step, index) => { step.querySelector('.step-number').textContent = String(index + 1).padStart(2, '0'); });
+}
+
+function createStepNode(step, index) {
+  const kindCopy = { action: ['mouse-pointer-click', '执行操作', ''], assert: ['shield-check', '智能断言', 'assert'], query: ['scan-search', '数据提取', 'query'] };
+  const [icon, label, modifier] = kindCopy[step.kind] || kindCopy.action;
+  const node = document.createElement('div');
+  node.className = 'step';
+  node.dataset.kind = step.kind;
+  node.innerHTML = `<span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">${String(index + 1).padStart(2, '0')}</span><div class="step-content"><div class="step-type ${modifier}"><i data-lucide="${icon}"></i>${label}</div><textarea></textarea></div><button class="step-menu" title="步骤菜单"><i data-lucide="more-horizontal"></i></button>`;
+  node.querySelector('textarea').value = step.instruction;
+  return node;
+}
+
+function applyCase(testCase) {
+  target = testCase.target;
+  viewport = testCase.viewport;
+  document.querySelector('.case-meta input').value = testCase.name;
+  $('#baseUrl').value = testCase.baseUrl;
+  steps.innerHTML = '';
+  testCase.steps.forEach((step, index) => steps.appendChild(createStepNode(step, index)));
+  selectViewport(viewport);
+  lucide.createIcons();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function loadSavedCases() {
+  const response = await fetch('/api/cases');
+  if (!response.ok) throw new Error('无法读取已保存用例');
+  const cases = await response.json();
+  $('#caseCount').textContent = cases.length;
+  const container = $('#caseList');
+  if (!cases.length) {
+    container.innerHTML = '<p class="empty-state">还没有保存的用例。完成步骤编辑后点击“保存草稿”。</p>';
+    return;
+  }
+  container.innerHTML = '';
+  cases.forEach((testCase) => {
+    const item = document.createElement('button');
+    item.className = 'case-item';
+    item.innerHTML = `<span class="case-item-icon"><i data-lucide="monitor"></i></span><span><b>${testCase.name}</b><small>${testCase.viewport === 'mobile' ? 'Mobile H5 · 390 × 844' : 'Desktop · 1440 × 900'} · ${testCase.steps.length} 个步骤</small></span><i data-lucide="chevron-right"></i>`;
+    item.addEventListener('click', () => applyCase(testCase));
+    container.appendChild(item);
+  });
+  lucide.createIcons();
+}
+
+async function loadRunnerStatus() {
+  const response = await fetch('/api/health');
+  if (!response.ok) throw new Error('无法读取执行器状态');
+  const { webRunner } = await response.json();
+  const badge = $('#modelStatusBadge');
+  $('#modelStatusText').textContent = webRunner.ready ? 'Midscene Web runner 已就绪' : webRunner.message;
+  badge.textContent = webRunner.ready ? '在线' : '未配置';
+  badge.classList.toggle('offline', !webRunner.ready);
+}
+
 export async function saveCase() {
   const response = await fetch('/api/cases', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(readCaseFromForm()) });
   if (!response.ok) throw new Error((await response.json()).error || '保存失败');
@@ -104,9 +162,13 @@ function renderRun(run) {
 }
 
 $('#saveBtn').addEventListener('click', async () => {
-  try { await saveCase(); showToast('Web UI 用例已保存'); }
+  try { await saveCase(); await loadSavedCases(); showToast('Web UI 用例已保存'); }
   catch (error) { showToast(error.message, true); }
 });
+
+$('#refreshCases').addEventListener('click', () => loadSavedCases().catch((error) => showToast(error.message, true)));
+loadSavedCases().catch((error) => showToast(error.message, true));
+loadRunnerStatus().catch((error) => showToast(error.message, true));
 
 runButton.addEventListener('click', async () => {
   if (runButton.disabled) return;
