@@ -1,0 +1,49 @@
+import { interpolate } from '../domain/case.js';
+
+export class RunService {
+  constructor(runner) {
+    this.runner = runner;
+  }
+
+  async start(testCase) {
+    const run = {
+      id: crypto.randomUUID(),
+      caseId: testCase.id,
+      status: 'running',
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      variables: {},
+      steps: []
+    };
+
+    for (const step of testCase.steps) {
+      const stepRun = { id: step.id, status: 'running', attempts: 0, logs: [] };
+      run.steps.push(stepRun);
+
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        stepRun.attempts = attempt;
+        try {
+          const resolvedStep = { ...step, instruction: interpolate(step.instruction, run.variables) };
+          const evidence = await this.runner.execute(resolvedStep, { ...run, testCase });
+          Object.assign(run.variables, evidence.variables);
+          Object.assign(stepRun, evidence, { status: 'passed' });
+          break;
+        } catch (error) {
+          stepRun.error = error.message;
+          if (attempt === 1) stepRun.logs.push({ level: 'warn', message: `${error.message}; retrying once` });
+        }
+      }
+
+      if (stepRun.status !== 'passed') {
+        stepRun.status = 'failed';
+        run.status = 'failed';
+        run.finishedAt = new Date().toISOString();
+        return run;
+      }
+    }
+
+    run.status = 'passed';
+    run.finishedAt = new Date().toISOString();
+    return run;
+  }
+}
