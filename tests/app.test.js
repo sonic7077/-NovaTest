@@ -36,4 +36,12 @@ describe('execution API', () => {
 
     await request(app).post('/api/cases').send({ target: 'web' }).expect(400);
   });
+
+  it('serves the test console from the same origin as the API', async () => {
+    const app = createApp({ runner: {}, store: createMemoryStore() });
+
+    await request(app).get('/').expect(200).expect('content-type', /html/).expect((response) => {
+      expect(response.text).toContain('NovaTest');
+    });
+  });
 });

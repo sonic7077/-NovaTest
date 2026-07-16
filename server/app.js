@@ -1,4 +1,5 @@
 import express from 'express';
+import { fileURLToPath } from 'node:url';
 import { validateWebCase } from './domain/case.js';
 import { renderReport } from './services/report-service.js';
 import { RunService } from './services/run-service.js';
@@ -14,7 +15,9 @@ export function createMemoryStore() {
   };
 }
 
-export function createApp({ runner, store = createMemoryStore() }) {
+const projectRoot = fileURLToPath(new URL('../', import.meta.url));
+
+export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot }) {
   const app = express();
   const runService = new RunService(runner);
   app.use(express.json());
@@ -44,6 +47,8 @@ export function createApp({ runner, store = createMemoryStore() }) {
     if (!run || !testCase) return res.status(404).send('report not found');
     return res.type('html').send(renderReport(run, testCase));
   });
+
+  app.use(express.static(staticDir));
 
   return app;
 }

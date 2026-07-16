@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NovaTest | 智能自动化测试平台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">N</span><span>NovaTest</span></div>
+    <nav>
+      <a class="nav-item active" href="#"><i data-lucide="layout-dashboard"></i>工作台</a>
+      <a class="nav-item" href="#"><i data-lucide="folder-kanban"></i>测试资产 <b>24</b></a>
+      <a class="nav-item" href="#"><i data-lucide="monitor-play"></i>执行中心</a>
+      <a class="nav-item" href="#"><i data-lucide="chart-no-axes-combined"></i>质量报告</a>
+      <a class="nav-item" href="#"><i data-lucide="bot"></i>AI 模型配置</a>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="workspace-label">当前空间</div>
+      <button class="workspace"><span class="workspace-logo">A</span><span>Atlas Commerce</span><i data-lucide="chevrons-up-down"></i></button>
+      <div class="user"><span class="avatar">ZW</span><span><strong>张伟</strong><small>QA Engineer</small></span><i data-lucide="more-horizontal"></i></div>
+    </div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div class="crumb">测试资产 <i data-lucide="chevron-right"></i> <span>新建智能用例</span></div>
+      <div class="top-actions"><button class="icon-button" title="帮助"><i data-lucide="circle-help"></i></button><button class="icon-button notification" title="通知"><i data-lucide="bell"></i></button></div>
+    </header>
+
+    <section class="page-heading">
+      <div><p class="eyebrow">AI-POWERED WEB TEST CASE</p><h1>订单提交 · Web UI 验证</h1><p class="subtitle">自然语言描述网页步骤，由 Playwright 与 Midscene 自动执行。</p></div>
+      <div class="heading-actions"><button class="secondary-button" id="saveBtn"><i data-lucide="save"></i>保存草稿</button><button class="run-button" id="runBtn"><i data-lucide="play"></i>运行用例</button></div>
+    </section>
+
+    <section class="metrics">
+      <div class="metric"><div><span>最近通过率</span><strong>96.4%</strong></div><div class="trend up"><i data-lucide="trending-up"></i>2.1%</div></div>
+      <div class="metric"><div><span>平均执行耗时</span><strong>02:38</strong></div><div class="trend neutral"><i data-lucide="minus"></i>稳定</div></div>
+      <div class="metric"><div><span>今日执行</span><strong>186</strong></div><div class="trend up"><i data-lucide="trending-up"></i>18</div></div>
+      <div class="metric coverage"><div><span>覆盖目标</span><strong>3 <em>/ 3</em></strong></div><div class="coverage-dots"><b></b><b></b><b></b></div></div>
+    </section>
+
+    <section class="workspace-grid">
+      <article class="case-editor panel">
+        <div class="panel-head"><div><h2>用例编排</h2><p>将步骤拖动排序，执行器会根据平台自动选择适配器。</p></div><button class="icon-button" title="更多设置"><i data-lucide="settings-2"></i></button></div>
+        <div class="case-meta">
+          <label>用例名称<input value="订单提交 · 全链路验证" /></label>
+          <label>优先级<select><option>P0 · 核心链路</option><option>P1 · 重要功能</option><option>P2 · 常规验证</option></select></label>
+          <label>测试地址<input id="baseUrl" value="https://example.test" /></label>
+          <label>环境<select><option>Staging</option><option>Production</option><option>Development</option></select></label>
+        </div>
+        <div class="target-tabs" role="tablist">
+          <button class="target-tab selected" data-target="web"><span class="target-icon h5"><i data-lucide="monitor"></i></span>Web UI <small>Playwright + AI</small></button>
+          <button class="target-tab" data-target="api"><span class="target-icon api"><i data-lucide="braces"></i></span>API 服务</button>
+        </div>
+        <div class="device-strip" id="deviceStrip"><span class="status-dot"></span><span><b>Chromium · Desktop</b><small>1440 × 900 · Playwright browser context</small></span><div class="viewport-switch"><button class="viewport-button selected" data-viewport="desktop">Desktop</button><button class="viewport-button" data-viewport="mobile">Mobile H5</button></div></div>
+        <div class="steps" id="steps">
+          <div class="step" data-kind="action"><span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">01</span><div class="step-content"><div class="step-type"><i data-lucide="mouse-pointer-click"></i>执行操作</div><textarea>打开应用，在首页点击「好物精选」并进入第一件商品详情</textarea></div><button class="step-menu" title="步骤菜单"><i data-lucide="more-horizontal"></i></button></div>
+          <div class="step" data-kind="assert"><span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">02</span><div class="step-content"><div class="step-type assert"><i data-lucide="shield-check"></i>智能断言</div><textarea>确认商品标题、价格和「加入购物车」按钮均正常展示</textarea></div><button class="step-menu" title="步骤菜单"><i data-lucide="more-horizontal"></i></button></div>
+          <div class="step" data-kind="action"><span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">03</span><div class="step-content"><div class="step-type"><i data-lucide="mouse-pointer-click"></i>执行操作</div><textarea>点击加入购物车，进入购物车后提交订单</textarea></div><button class="step-menu" title="步骤菜单"><i data-lucide="more-horizontal"></i></button></div>
+          <div class="step" data-kind="query"><span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">04</span><div class="step-content"><div class="step-type query"><i data-lucide="scan-search"></i>数据提取</div><textarea>提取订单号和应付金额，保存为变量 orderId、totalAmount</textarea></div><button class="step-menu" title="步骤菜单"><i data-lucide="more-horizontal"></i></button></div>
+        </div>
+        <button class="add-step" id="addStep"><i data-lucide="plus"></i>添加自然语言步骤</button>
+      </article>
+
+      <aside class="right-rail">
+        <article class="panel execution-panel">
+          <div class="panel-head"><div><h2>执行状态</h2><p id="runState">等待运行</p></div><span class="waiting-pill" id="statePill">READY</span></div>
+          <div class="progress-wrap"><div class="progress-label"><span id="progressCopy">尚未开始</span><span id="progressPct">0%</span></div><div class="progress"><span id="progressBar"></span></div></div>
+          <div class="run-log" id="runLog">
+            <div class="log-line dim"><time>--:--:--</time><span>执行日志将在这里实时展示</span></div>
+          </div>
+        </article>
+        <article class="panel runtime-panel">
+          <div class="panel-head"><div><h2>执行策略</h2><p>由 AI 理解页面并完成定位</p></div><i data-lucide="sparkles" class="spark"></i></div>
+          <div class="strategy-row"><span class="strategy-icon"><i data-lucide="brain-circuit"></i></span><div><b>视觉模型</b><small>qwen-vl-max · 已连接</small></div><span class="online">在线</span></div>
+          <div class="strategy-row"><span class="strategy-icon"><i data-lucide="route"></i></span><div><b>失败重试</b><small>元素定位失败时重新规划</small></div><label class="toggle"><input type="checkbox" checked><span></span></label></div>
+          <div class="strategy-row"><span class="strategy-icon"><i data-lucide="camera"></i></span><div><b>过程留痕</b><small>截图、模型推理与接口响应</small></div><label class="toggle"><input type="checkbox" checked><span></span></label></div>
+        </article>
+        <article class="report-preview" id="reportPreview">
+          <div class="report-top"><span class="report-icon"><i data-lucide="file-check-2"></i></span><div><b>上次测试报告</b><small>今天 10:32 · Staging</small></div><button class="icon-button" title="查看报告"><i data-lucide="arrow-up-right"></i></button></div>
+          <div class="report-score"><strong>4/4</strong><span>步骤通过</span><b>PASS</b></div>
+        </article>
+      </aside>
+    </section>
+  </main>
+  <div class="toast" id="toast"><i data-lucide="check"></i><span>草稿已保存</span></div>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
