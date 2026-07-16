@@ -32,4 +32,17 @@ describe('web runner', () => {
 
     await expect(runner.execute({ id: 's1', kind: 'apiRequest', instruction: 'request' }, {})).rejects.toThrow('unsupported web step kind');
   });
+
+  it('opens the test case base URL before the first step', async () => {
+    const navigations = [];
+    const page = { goto: async (url) => navigations.push(url), screenshot: async () => 'evidence/s1.png' };
+    const runner = createWebRunner({
+      browser: { newPage: async () => page },
+      agentFactory: () => ({ aiAct: async () => {} })
+    });
+
+    await runner.execute({ id: 's1', kind: 'action', instruction: '开始' }, { testCase: { baseUrl: 'https://example.test' } });
+
+    expect(navigations).toEqual(['https://example.test']);
+  });
 });

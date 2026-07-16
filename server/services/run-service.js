@@ -1,5 +1,10 @@
 import { interpolate } from '../domain/case.js';
 
+const viewports = {
+  desktop: { width: 1440, height: 900 },
+  mobile: { width: 390, height: 844 }
+};
+
 export class RunService {
   constructor(runner) {
     this.runner = runner;
@@ -15,6 +20,7 @@ export class RunService {
       variables: {},
       steps: []
     };
+    const executionContext = { ...run, testCase, viewport: viewports[testCase.viewport] };
 
     for (const step of testCase.steps) {
       const stepRun = { id: step.id, status: 'running', attempts: 0, logs: [] };
@@ -24,7 +30,7 @@ export class RunService {
         stepRun.attempts = attempt;
         try {
           const resolvedStep = { ...step, instruction: interpolate(step.instruction, run.variables) };
-          const evidence = await this.runner.execute(resolvedStep, { ...run, testCase });
+          const evidence = await this.runner.execute(resolvedStep, executionContext);
           Object.assign(run.variables, evidence.variables);
           Object.assign(stepRun, evidence, { status: 'passed' });
           break;

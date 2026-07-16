@@ -36,4 +36,25 @@ describe('RunService', () => {
     expect(run.status).toBe('failed');
     expect(run.steps[0]).toMatchObject({ status: 'failed', attempts: 2, error: 'element missing' });
   });
+
+  it('passes the configured mobile viewport to the runner', async () => {
+    let receivedContext;
+    const mobileCase = { ...testCase, viewport: 'mobile' };
+    const runner = { execute: async (_step, context) => { receivedContext = context; return {}; } };
+
+    await new RunService(runner).start(mobileCase);
+
+    expect(receivedContext.viewport).toEqual({ width: 390, height: 844 });
+  });
+
+  it('keeps one execution context across sequential Web UI steps', async () => {
+    const contexts = [];
+    const runner = { execute: async (_step, context) => { contexts.push(context); return {}; } };
+    const multiStepCase = { ...testCase, steps: [testCase.steps[0], { id: 's2', kind: 'assert', instruction: '显示首页' }] };
+
+    await new RunService(runner).start(multiStepCase);
+
+    expect(contexts).toHaveLength(2);
+    expect(contexts[0]).toBe(contexts[1]);
+  });
 });
