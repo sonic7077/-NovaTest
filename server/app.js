@@ -2,6 +2,7 @@ import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { validateWebCase } from './domain/case.js';
 import { renderReport } from './services/report-service.js';
+import { BatchService } from './services/batch-service.js';
 import { RunService } from './services/run-service.js';
 
 export function createMemoryStore() {
@@ -25,6 +26,7 @@ const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, runnerStatus = { ready: true, message: 'ready' } }) {
   const app = express();
   const runService = new RunService(runner);
+  const batchService = new BatchService({ runner, store });
   app.use(express.json());
 
   app.get('/api/health', (_req, res) => res.json({ webRunner: runnerStatus }));
@@ -35,6 +37,28 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
   });
 
   app.get('/api/cases', (_req, res) => res.json(store.listCases()));
+
+  app.post('/api/batches', async (req, res) => {
+    const { caseIds } = req.body;
+    if (!Array.isArray(caseIds) || caseIds.length === 0) return res.status(400).json({ error: 'select at least one test case' });
+    if (new Set(caseIds).size !== caseIds.length) return res.status(400).json({ error: 'select unique test cases' });
+
+    const cases = caseIds.map((id) => store.getCase(id));
+    if (cases.some((testCase) => !testCase)) return res.status(400).json({ error: 'test case not found' });
+
+    const name = typeof req.body.name === 'string' && req.body.name.trim()
+      ? req.body.name.trim()
+      : `批量执行 ${new Date().toLocaleString('zh-CN')}`;
+    return res.status(202).json(await batchService.start({ name, caseIds, cases }));
+  });
+
+  app.get('/api/batches', (_req, res) => res.json(store.listBatches().reverse()));
+
+  app.get('/api/batches/:id', (req, res) => {
+    const batch = store.getBatch(req.params.id);
+    if (!batch) return res.status(404).json({ error: 'batch not found' });
+    return res.json({ ...batch, runs: batch.runIds.map((id) => store.getRun(id)).filter(Boolean) });
+  });
 
   app.post('/api/cases/:id/runs', async (req, res) => {
     const testCase = store.getCase(req.params.id);

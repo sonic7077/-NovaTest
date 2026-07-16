@@ -50,6 +50,45 @@ describe('execution API', () => {
       });
   });
 
+  it('creates, lists, and retrieves a serial batch with linked runs', async () => {
+    const app = createApp({
+      runner: { execute: async () => ({ screenshot: 'evidence/step.png' }) },
+      store: createMemoryStore()
+    });
+    const first = (await request(app).post('/api/cases').send(webCase).expect(201)).body;
+    const second = (await request(app).post('/api/cases').send({ ...webCase, name: '详情验证' }).expect(201)).body;
+
+    const batch = await request(app)
+      .post('/api/batches')
+      .send({ name: '冒烟回归', caseIds: [first.id, second.id] })
+      .expect(202);
+
+    expect(batch.body).toMatchObject({ name: '冒烟回归', caseIds: [first.id, second.id], status: 'passed' });
+    expect(batch.body.runIds).toHaveLength(2);
+
+    await request(app)
+      .get('/api/batches')
+      .expect(200)
+      .expect((response) => expect(response.body[0].id).toBe(batch.body.id));
+
+    await request(app)
+      .get(`/api/batches/${batch.body.id}`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.id).toBe(batch.body.id);
+        expect(response.body.runs).toHaveLength(2);
+      });
+  });
+
+  it('rejects empty, duplicate, and unknown batch selections', async () => {
+    const app = createApp({ runner: {}, store: createMemoryStore() });
+    const created = await request(app).post('/api/cases').send(webCase).expect(201);
+
+    await request(app).post('/api/batches').send({ caseIds: [] }).expect(400);
+    await request(app).post('/api/batches').send({ caseIds: [created.body.id, created.body.id] }).expect(400);
+    await request(app).post('/api/batches').send({ caseIds: ['unknown-case'] }).expect(400);
+  });
+
   it('reports whether the Web UI runner is configured', async () => {
     const app = createApp({
       runner: {},
