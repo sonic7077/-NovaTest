@@ -35,6 +35,29 @@ describe('file store', () => {
     }
   });
 
+  it('persists batches across store instances', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-store-'));
+    const filePath = join(directory, 'store.json');
+    const batch = {
+      id: 'batch-1',
+      name: '冒烟回归',
+      caseIds: ['case-1'],
+      status: 'queued',
+      runIds: [],
+      startedAt: null,
+      finishedAt: null
+    };
+
+    try {
+      createFileStore(filePath).saveBatch(batch);
+      const reloaded = createFileStore(filePath);
+      expect(reloaded.getBatch(batch.id)).toEqual(batch);
+      expect(reloaded.listBatches()).toEqual([batch]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('repairs legacy saved cases that have no id', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-store-'));
     const filePath = join(directory, 'store.json');

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 function emptyData() {
-  return { cases: {}, runs: {} };
+  return { cases: {}, runs: {}, batches: {} };
 }
 
 export function createFileStore(filePath) {
@@ -37,6 +37,9 @@ export function createFileStore(filePath) {
     getCase(id) { return load().cases[id]; },
     listCases() { return Object.values(load().cases); },
     saveRun(run) { const data = load(); data.runs[run.id] = run; save(data); return run; },
-    getRun(id) { return load().runs[id]; }
+    getRun(id) { return load().runs[id]; },
+    saveBatch(batch) { const data = load(); data.batches[batch.id] = batch; save(data); return batch; },
+    getBatch(id) { return load().batches[id]; },
+    listBatches() { return Object.values(load().batches); }
   };
 }

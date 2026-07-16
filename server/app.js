@@ -7,12 +7,16 @@ import { RunService } from './services/run-service.js';
 export function createMemoryStore() {
   const cases = new Map();
   const runs = new Map();
+  const batches = new Map();
   return {
     saveCase(testCase) { const saved = { ...testCase, id: testCase.id || crypto.randomUUID() }; cases.set(saved.id, saved); return saved; },
     getCase(id) { return cases.get(id); },
     listCases() { return [...cases.values()]; },
     saveRun(run) { runs.set(run.id, run); return run; },
-    getRun(id) { return runs.get(id); }
+    getRun(id) { return runs.get(id); },
+    saveBatch(batch) { batches.set(batch.id, batch); return batch; },
+    getBatch(id) { return batches.get(id); },
+    listBatches() { return [...batches.values()]; }
   };
 }
 
