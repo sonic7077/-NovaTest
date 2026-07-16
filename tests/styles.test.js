@@ -12,6 +12,8 @@ describe('test console stylesheet', () => {
     expect(stylesheet).toContain('.sidebar');
     expect(stylesheet).toContain('.workspace-grid');
     expect(stylesheet).toContain('.case-editor');
+    expect(stylesheet).toContain('.asset-selection');
+    expect(stylesheet).toContain('.batch-history');
     expect(stylesheet).toContain('@media (max-width: 760px)');
     expect(stylesheet.length).toBeGreaterThan(5000);
   });

@@ -6,6 +6,8 @@ const deviceStrip = $('#deviceStrip');
 const toast = $('#toast');
 let target = 'web';
 let viewport = 'desktop';
+let savedCases = [];
+const selectedCaseIds = new Set();
 
 lucide.createIcons();
 
@@ -101,22 +103,139 @@ function applyCase(testCase) {
 async function loadSavedCases() {
   const response = await fetch('/api/cases');
   if (!response.ok) throw new Error('无法读取已保存用例');
-  const cases = await response.json();
-  $('#caseCount').textContent = cases.length;
+  savedCases = await response.json();
+  $('#caseCount').textContent = savedCases.length;
   const container = $('#caseList');
-  if (!cases.length) {
+  if (!savedCases.length) {
     container.innerHTML = '<p class="empty-state">还没有保存的用例。完成步骤编辑后点击“保存草稿”。</p>';
+    updateBatchSelection();
     return;
   }
   container.innerHTML = '';
-  cases.forEach((testCase) => {
-    const item = document.createElement('button');
+  savedCases.forEach((testCase) => {
+    const item = document.createElement('article');
     item.className = 'case-item';
-    item.innerHTML = `<span class="case-item-icon"><i data-lucide="monitor"></i></span><span><b>${testCase.name}</b><small>${testCase.viewport === 'mobile' ? 'Mobile H5 · 390 × 844' : 'Desktop · 1440 × 900'} · ${testCase.steps.length} 个步骤</small></span><i data-lucide="chevron-right"></i>`;
-    item.addEventListener('click', () => applyCase(testCase));
+    const select = document.createElement('input');
+    select.type = 'checkbox';
+    select.className = 'case-select';
+    select.checked = selectedCaseIds.has(testCase.id);
+    select.setAttribute('aria-label', `选择用例 ${testCase.name}`);
+    select.addEventListener('change', () => {
+      if (select.checked) selectedCaseIds.add(testCase.id);
+      else selectedCaseIds.delete(testCase.id);
+      updateBatchSelection();
+    });
+    const icon = document.createElement('span');
+    icon.className = 'case-item-icon';
+    icon.innerHTML = '<i data-lucide="monitor"></i>';
+    const copy = document.createElement('span');
+    const name = document.createElement('b');
+    name.textContent = testCase.name;
+    const details = document.createElement('small');
+    details.textContent = `${testCase.viewport === 'mobile' ? 'Mobile H5 · 390 × 844' : 'Desktop · 1440 × 900'} · ${testCase.steps.length} 个步骤`;
+    copy.append(name, details);
+    const edit = document.createElement('button');
+    edit.className = 'case-open';
+    edit.type = 'button';
+    edit.title = '打开用例';
+    edit.innerHTML = '<i data-lucide="chevron-right"></i>';
+    edit.addEventListener('click', () => applyCase(testCase));
+    item.append(select, icon, copy, edit);
     container.appendChild(item);
   });
+  updateBatchSelection();
   lucide.createIcons();
+}
+
+function selectedCasesInOrder() {
+  return savedCases.filter((testCase) => selectedCaseIds.has(testCase.id)).map((testCase) => testCase.id);
+}
+
+function updateBatchSelection() {
+  const count = selectedCasesInOrder().length;
+  $('#selectedCaseCount').textContent = `已选择 ${count} 个用例`;
+  $('#runBatch').disabled = count === 0;
+}
+
+function formatBatchTime(value) {
+  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '未开始';
+}
+
+function renderBatchHistory(batches) {
+  const container = $('#batchHistoryList');
+  container.innerHTML = '';
+  if (!batches.length) {
+    container.innerHTML = '<p class="empty-state">还没有批量执行记录。</p>';
+    return;
+  }
+  batches.forEach((batch) => {
+    const item = document.createElement('article');
+    item.className = 'batch-item';
+    const passed = batch.runs.filter((run) => run.status === 'passed').length;
+    const failed = batch.runs.length - passed;
+    const title = document.createElement('div');
+    const name = document.createElement('b');
+    name.textContent = batch.name;
+    const meta = document.createElement('small');
+    meta.textContent = `${batch.caseIds.length} 个用例 · ${formatBatchTime(batch.startedAt)}`;
+    title.append(name, meta);
+    const state = document.createElement('span');
+    state.className = `batch-status ${batch.status}`;
+    state.textContent = batch.status.toUpperCase();
+    const summary = document.createElement('p');
+    summary.textContent = `${passed} 通过 · ${failed} 失败`;
+    const reports = document.createElement('div');
+    reports.className = 'batch-reports';
+    batch.runs.forEach((run) => {
+      const report = document.createElement('a');
+      report.href = `/api/runs/${run.id}/report`;
+      report.target = '_blank';
+      report.rel = 'noopener';
+      report.textContent = `${run.caseId.slice(0, 8)} ${run.status === 'passed' ? '通过' : '失败'}报告`;
+      reports.appendChild(report);
+    });
+    item.append(title, state, summary, reports);
+    container.appendChild(item);
+  });
+}
+
+async function loadBatches() {
+  const response = await fetch('/api/batches');
+  if (!response.ok) throw new Error('无法读取批次历史');
+  const batches = await response.json();
+  const details = await Promise.all(batches.map(async (batch) => {
+    const detailResponse = await fetch(`/api/batches/${batch.id}`);
+    if (!detailResponse.ok) throw new Error('无法读取批次详情');
+    return detailResponse.json();
+  }));
+  renderBatchHistory(details);
+}
+
+async function createBatch() {
+  const button = $('#runBatch');
+  const caseIds = selectedCasesInOrder();
+  if (!caseIds.length || button.disabled) return;
+  try {
+    button.disabled = true;
+    button.innerHTML = '<i data-lucide="loader-circle"></i>正在执行';
+    lucide.createIcons();
+    const response = await fetch('/api/batches', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ caseIds })
+    });
+    if (!response.ok) throw new Error((await response.json()).error || '批量执行失败');
+    selectedCaseIds.clear();
+    await loadSavedCases();
+    await loadBatches();
+    showToast('批量执行已完成');
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    button.innerHTML = '<i data-lucide="list-play"></i>批量执行';
+    updateBatchSelection();
+    lucide.createIcons();
+  }
 }
 
 async function loadRunnerStatus() {
@@ -167,7 +286,9 @@ $('#saveBtn').addEventListener('click', async () => {
 });
 
 $('#refreshCases').addEventListener('click', () => loadSavedCases().catch((error) => showToast(error.message, true)));
+$('#runBatch').addEventListener('click', createBatch);
 loadSavedCases().catch((error) => showToast(error.message, true));
+loadBatches().catch((error) => showToast(error.message, true));
 loadRunnerStatus().catch((error) => showToast(error.message, true));
 
 runButton.addEventListener('click', async () => {
