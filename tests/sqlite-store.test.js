@@ -180,4 +180,38 @@ describe('SQLite store', () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it('retains run and batch history after deleting a case definition', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
+    const databasePath = join(directory, 'novatest.db');
+
+    try {
+      const store = createSqliteStore({ databasePath });
+      store.saveCase(webCase);
+      store.saveRun({ id: 'run-1', caseId: webCase.id, status: 'passed', startedAt: '2026-07-17T00:00:00.000Z', finishedAt: '2026-07-17T00:01:00.000Z', variables: {}, steps: [] });
+      store.saveBatch({ id: 'batch-1', name: '删除历史', caseIds: [webCase.id], status: 'passed', runIds: ['run-1'], startedAt: '2026-07-17T00:00:00.000Z', finishedAt: '2026-07-17T00:01:00.000Z' });
+
+      expect(store.deleteCase(webCase.id)).toBe(true);
+      expect(store.getCase(webCase.id)).toBeUndefined();
+      expect(store.getRun('run-1')).toMatchObject({ caseId: webCase.id, caseName: '结算验证' });
+      expect(store.getBatch('batch-1').caseIds).toEqual([webCase.id]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('filters active cases by name', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
+    const databasePath = join(directory, 'novatest.db');
+
+    try {
+      const store = createSqliteStore({ databasePath });
+      store.saveCase(webCase);
+      store.saveCase({ ...webCase, id: 'case-2', name: '登录验证' });
+
+      expect(store.listCases('结算').map((testCase) => testCase.id)).toEqual([webCase.id]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

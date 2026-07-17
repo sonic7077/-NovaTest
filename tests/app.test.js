@@ -50,6 +50,30 @@ describe('execution API', () => {
       });
   });
 
+  it('updates, searches, and deletes a test case', async () => {
+    const app = createApp({ runner: {}, store: createMemoryStore() });
+    const created = (await request(app).post('/api/cases').send(webCase).expect(201)).body;
+
+    await request(app).put(`/api/cases/${created.id}`).send({ ...webCase, name: '首页验证 v2' }).expect(200);
+    await request(app).get('/api/cases?q=v2').expect(200).expect((response) => {
+      expect(response.body).toMatchObject([{ id: created.id, name: '首页验证 v2' }]);
+    });
+    await request(app).delete(`/api/cases/${created.id}`).expect(204);
+    await request(app).get(`/api/cases/${created.id}`).expect(404);
+    await request(app).post(`/api/cases/${created.id}/runs`).expect(404);
+  });
+
+  it('keeps a report accessible after its case definition is deleted', async () => {
+    const app = createApp({ runner: { execute: async () => ({}) }, store: createMemoryStore() });
+    const created = (await request(app).post('/api/cases').send(webCase).expect(201)).body;
+    const run = await request(app).post(`/api/cases/${created.id}/runs`).expect(202);
+
+    await request(app).delete(`/api/cases/${created.id}`).expect(204);
+    await request(app).get(`/api/runs/${run.body.id}/report`).expect(200).expect((response) => {
+      expect(response.text).toContain('首页验证');
+    });
+  });
+
   it('creates, lists, and retrieves a serial batch with linked runs', async () => {
     const app = createApp({
       runner: { execute: async () => ({ screenshot: 'evidence/step.png' }) },

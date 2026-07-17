@@ -19,7 +19,7 @@ export class BatchService {
     this.store.saveBatch(batch);
 
     for (const testCase of cases) {
-      const run = await this.runService.start(testCase);
+      const run = { ...await this.runService.start(testCase), caseName: testCase.name };
       this.store.saveRun(run);
       batch.runIds.push(run.id);
       this.store.saveBatch(batch);

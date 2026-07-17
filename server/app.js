@@ -12,9 +12,10 @@ export function createMemoryStore() {
   return {
     saveCase(testCase) { const saved = { ...testCase, id: testCase.id || crypto.randomUUID() }; cases.set(saved.id, saved); return saved; },
     getCase(id) { return cases.get(id); },
-    listCases() { return [...cases.values()]; },
+    listCases(query = '') { return [...cases.values()].filter((testCase) => testCase.name.toLowerCase().includes(query.toLowerCase())); },
     saveRun(run) { runs.set(run.id, run); return run; },
     getRun(id) { return runs.get(id); },
+    deleteCase(id) { return cases.delete(id); },
     saveBatch(batch) { batches.set(batch.id, batch); return batch; },
     getBatch(id) { return batches.get(id); },
     listBatches() { return [...batches.values()]; }
@@ -36,7 +37,22 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     catch (error) { res.status(400).json({ error: error.message }); }
   });
 
-  app.get('/api/cases', (_req, res) => res.json(store.listCases()));
+  app.get('/api/cases', (req, res) => res.json(store.listCases(req.query.q || '')));
+
+  app.get('/api/cases/:id', (req, res) => {
+    const testCase = store.getCase(req.params.id);
+    return testCase ? res.json(testCase) : res.status(404).json({ error: 'test case not found' });
+  });
+
+  app.put('/api/cases/:id', (req, res) => {
+    if (!store.getCase(req.params.id)) return res.status(404).json({ error: 'test case not found' });
+    try { return res.json(store.saveCase({ ...validateWebCase(req.body), id: req.params.id })); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
+  });
+
+  app.delete('/api/cases/:id', (req, res) => {
+    return store.deleteCase(req.params.id) ? res.status(204).end() : res.status(404).json({ error: 'test case not found' });
+  });
 
   app.post('/api/batches', async (req, res) => {
     const { caseIds } = req.body;
@@ -63,7 +79,7 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
   app.post('/api/cases/:id/runs', async (req, res) => {
     const testCase = store.getCase(req.params.id);
     if (!testCase) return res.status(404).json({ error: 'test case not found' });
-    const run = await runService.start(testCase);
+    const run = { ...await runService.start(testCase), caseName: testCase.name };
     store.saveRun(run);
     return res.status(202).json(run);
   });
@@ -76,9 +92,8 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
 
   app.get('/api/runs/:id/report', (req, res) => {
     const run = store.getRun(req.params.id);
-    const testCase = run && store.getCase(run.caseId);
-    if (!run || !testCase) return res.status(404).send('report not found');
-    return res.type('html').send(renderReport(run, testCase));
+    if (!run) return res.status(404).send('report not found');
+    return res.type('html').send(renderReport(run, run.caseName || store.getCase(run.caseId)?.name || '已删除用例'));
   });
 
   app.use(express.static(staticDir));

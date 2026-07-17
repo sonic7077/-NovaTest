@@ -78,6 +78,49 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     }
   }
 
+  function migrateHistorySchema() {
+    if (db.prepare('PRAGMA user_version').get().user_version >= 2) return;
+    db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      inTransaction(() => {
+        db.exec(`
+          CREATE TABLE test_runs_next (
+            id TEXT PRIMARY KEY, case_id TEXT NOT NULL, case_name TEXT NOT NULL,
+            batch_id TEXT REFERENCES test_batches(id), batch_position INTEGER,
+            status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT,
+            variables_json TEXT NOT NULL
+          );
+          INSERT INTO test_runs_next (id, case_id, case_name, batch_id, batch_position, status, started_at, finished_at, variables_json)
+          SELECT runs.id, runs.case_id, COALESCE(cases.name, '已删除用例'), runs.batch_id, runs.batch_position, runs.status, runs.started_at, runs.finished_at, runs.variables_json
+          FROM test_runs AS runs LEFT JOIN test_cases AS cases ON cases.id = runs.case_id;
+          CREATE TABLE batch_cases_next (
+            batch_id TEXT NOT NULL REFERENCES test_batches(id) ON DELETE CASCADE,
+            case_id TEXT NOT NULL, position INTEGER NOT NULL,
+            PRIMARY KEY (batch_id, case_id), UNIQUE (batch_id, position)
+          );
+          INSERT INTO batch_cases_next (batch_id, case_id, position) SELECT batch_id, case_id, position FROM batch_cases;
+          CREATE TABLE run_steps_next (
+            run_id TEXT NOT NULL REFERENCES test_runs_next(id) ON DELETE CASCADE,
+            step_id TEXT NOT NULL, position INTEGER NOT NULL, status TEXT NOT NULL,
+            attempts INTEGER NOT NULL, error TEXT, screenshot TEXT, logs_json TEXT NOT NULL,
+            PRIMARY KEY (run_id, step_id), UNIQUE (run_id, position)
+          );
+          INSERT INTO run_steps_next (run_id, step_id, position, status, attempts, error, screenshot, logs_json)
+          SELECT run_id, step_id, position, status, attempts, error, screenshot, logs_json FROM run_steps;
+          DROP TABLE run_steps; DROP TABLE test_runs; DROP TABLE batch_cases;
+          ALTER TABLE test_runs_next RENAME TO test_runs;
+          ALTER TABLE batch_cases_next RENAME TO batch_cases;
+          ALTER TABLE run_steps_next RENAME TO run_steps;
+          PRAGMA user_version = 2;
+        `);
+      });
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+
+  migrateHistorySchema();
+
   const selectCase = db.prepare(`
     SELECT id, name, target, base_url AS baseUrl, viewport
     FROM test_cases
@@ -130,6 +173,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     return {
       id: row.id,
       caseId: row.caseId,
+      caseName: row.caseName,
       status: row.status,
       startedAt: row.startedAt,
       finishedAt: row.finishedAt,
@@ -140,17 +184,18 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   function writeRun(run) {
     db.prepare(`
-      INSERT INTO test_runs (id, case_id, batch_id, batch_position, status, started_at, finished_at, variables_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_runs (id, case_id, case_name, batch_id, batch_position, status, started_at, finished_at, variables_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         case_id = excluded.case_id,
+        case_name = excluded.case_name,
         batch_id = COALESCE(excluded.batch_id, test_runs.batch_id),
         batch_position = COALESCE(excluded.batch_position, test_runs.batch_position),
         status = excluded.status,
         started_at = excluded.started_at,
         finished_at = excluded.finished_at,
         variables_json = excluded.variables_json
-    `).run(run.id, run.caseId, run.batchId || null, run.batchPosition ?? null, run.status, run.startedAt, run.finishedAt, JSON.stringify(run.variables || {}));
+    `).run(run.id, run.caseId, run.caseName || hydrateCase(selectCase.get(run.caseId))?.name || '已删除用例', run.batchId || null, run.batchPosition ?? null, run.status, run.startedAt, run.finishedAt, JSON.stringify(run.variables || {}));
     db.prepare('DELETE FROM run_steps WHERE run_id = ?').run(run.id);
     const insertStep = db.prepare(`
       INSERT INTO run_steps (run_id, step_id, position, status, attempts, error, screenshot, logs_json)
@@ -208,6 +253,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   const saveRun = (run) => inTransaction(() => writeRun(run));
   const saveBatch = (batch) => inTransaction(() => writeBatch(batch));
+  const deleteCase = (id) => inTransaction(() => db.prepare('DELETE FROM test_cases WHERE id = ?').run(id).changes > 0);
 
   function migrateLegacyStore() {
     if (!legacyJsonPath || !existsSync(legacyJsonPath)) return;
@@ -257,22 +303,26 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   return {
     saveCase,
     getCase(id) { return hydrateCase(selectCase.get(id)); },
-    listCases() {
-      return db.prepare(`
+    listCases(query = '') {
+      const normalized = query.trim();
+      const statement = db.prepare(`
         SELECT id, name, target, base_url AS baseUrl, viewport
         FROM test_cases
+        ${normalized ? 'WHERE LOWER(name) LIKE LOWER(?)' : ''}
         ORDER BY created_at, id
-      `).all().map(hydrateCase);
+      `);
+      return (normalized ? statement.all(`%${normalized}%`) : statement.all()).map(hydrateCase);
     },
     saveRun,
     getRun(id) {
       return hydrateRun(db.prepare(`
-        SELECT id, case_id AS caseId, status, started_at AS startedAt,
+        SELECT id, case_id AS caseId, case_name AS caseName, status, started_at AS startedAt,
           finished_at AS finishedAt, variables_json AS variablesJson
         FROM test_runs
         WHERE id = ?
       `).get(id));
     },
+    deleteCase,
     saveBatch,
     getBatch(id) {
       return hydrateBatch(db.prepare(`
