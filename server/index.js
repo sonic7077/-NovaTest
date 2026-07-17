@@ -6,7 +6,7 @@ import { cmsWhitebagCases } from './seed/cms-whitebag-cases.js';
 import { createSqliteStore } from './storage/sqlite-store.js';
 
 function requiredCmsConfig() {
-  const fields = ['CMS_BASE_URL', 'CMS_AES_KEY', 'CMS_AES_IV', 'CMS_APP_KEY', 'CMS_USERNAME', 'CMS_PASSWORD', 'CMS_OAUTH_ID', 'CMS_OAUTH_TYPE', 'CMS_VERSION'];
+  const fields = ['CMS_BASE_URL', 'CMS_AES_KEY', 'CMS_AES_IV', 'CMS_APP_KEY', 'CMS_USERNAME', 'CMS_PASSWORD', 'CMS_OAUTH_ID', 'CMS_OAUTH_TYPE', 'CMS_VERSION', 'CMS_BUNDLE_ID', 'CMS_LANGUAGE', 'CMS_VIA'];
   const missing = fields.filter((field) => !process.env[field]);
   if (missing.length) return { missing };
   return {
@@ -18,7 +18,10 @@ function requiredCmsConfig() {
       password: process.env.CMS_PASSWORD,
       oauthId: process.env.CMS_OAUTH_ID,
       oauthType: process.env.CMS_OAUTH_TYPE,
-      version: process.env.CMS_VERSION
+      version: process.env.CMS_VERSION,
+      bundleId: process.env.CMS_BUNDLE_ID,
+      language: process.env.CMS_LANGUAGE,
+      via: process.env.CMS_VIA
     },
     baseUrl: process.env.CMS_BASE_URL
   };

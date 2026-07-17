@@ -33,6 +33,9 @@ export class CmsApiRunner {
       oauth_id: this.config.oauthId,
       oauth_type: this.config.oauthType,
       version: this.config.version,
+      bundleId: this.config.bundleId,
+      language: this.config.language,
+      via: this.config.via,
       ...(request.action === 'loginByPassword' ? { username: this.config.username, password: this.config.password } : { token: context.variables.token }),
       ...interpolate(request.payload || {}, context.variables)
     };
@@ -41,7 +44,8 @@ export class CmsApiRunner {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: encrypted.body
     });
     const outer = await response.json();
-    if (!response.ok || outer.status !== request.expectedStatus) throw new Error(`API assertion failed: ${request.action}`);
+    const businessStatus = outer.status ?? (outer.errcode === 0 ? 1 : outer.errcode);
+    if (!response.ok || businessStatus !== request.expectedStatus) throw new Error(`API assertion failed: ${request.action}`);
     const data = outer.crypt ? JSON.parse(decryptPayload(outer.data, this.config)) : outer.data;
     assertJson(data, request.expectedJson);
     const variables = {
@@ -54,7 +58,7 @@ export class CmsApiRunner {
         action: request.action,
         method: 'POST',
         httpStatus: response.status,
-        businessStatus: outer.status,
+        businessStatus,
         durationMs: Math.round(performance.now() - startedAt),
         request: redactSecrets(payload),
         response: redactSecrets(data)

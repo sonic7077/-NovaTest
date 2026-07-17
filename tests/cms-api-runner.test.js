@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { encryptPayload } from '../server/services/cms-crypto.js';
+import { decryptPayload, encryptPayload } from '../server/services/cms-crypto.js';
 import { CmsApiRunner } from '../server/runners/cms-api-runner.js';
 
 const cryptoConfig = { key: '1234567890abcdef', iv: 'abcdef1234567890', appKey: 'app-key' };
@@ -66,5 +66,32 @@ describe('CMS API runner', () => {
       id: 'post-detail',
       request: { action: 'list_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly', expectedJson: [{ path: '$.page.id', equals: 'post-99' }] }
     }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} })).rejects.toThrow('JSON assertion failed: $.page.id');
+  });
+
+  it('sends configured CMS public client parameters with each request', async () => {
+    let submittedPayload;
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, oauthId: 'qa-pc', oauthType: 'web', version: '1.0.0', bundleId: 'com.example.cms', language: 'zh', via: 'web' },
+      fetchImpl: async (_url, options) => {
+        submittedPayload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
+        return { ok: true, status: 200, json: async () => encryptedResponse({}) };
+      }
+    });
+
+    await runner.execute({ id: 'config', request: { action: 'config', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} });
+
+    expect(submittedPayload).toMatchObject({ oauth_id: 'qa-pc', oauth_type: 'web', version: '1.0.0', bundleId: 'com.example.cms', language: 'zh', via: 'web' });
+  });
+
+  it('accepts the white-bag errcode success protocol and keeps its token', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ errcode: 0, data: 'token-1' }) })
+    });
+
+    const result = await runner.execute({ id: 'login', request: { action: 'loginByPassword', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} });
+
+    expect(result.variables).toEqual({ token: 'token-1' });
+    expect(result.api.businessStatus).toBe(1);
   });
 });
