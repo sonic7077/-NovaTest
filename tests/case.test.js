@@ -32,4 +32,14 @@ describe('web test case', () => {
     expect(testCase.steps[0].visualChecks).toHaveLength(1);
     expect(() => validateWebCase({ ...testCase, steps: [{ ...testCase.steps[0], visualChecks: [{ id: 'visual-2', assetPath: 'other/visual-2.png', source: 'upload', description: '' }] }] })).toThrow('invalid visual check');
   });
+
+  it('accepts explicit readonly API request steps and rejects unsafe request definitions', () => {
+    const testCase = validateWebCase({
+      id: 'api-case-1', name: '帖子列表', target: 'api', baseUrl: 'https://example.test/api.php', viewport: 'desktop',
+      steps: [{ id: 's1', kind: 'apiRequest', instruction: '查询帖子列表', request: { action: 'list_post', method: 'POST', payload: { status: 10 }, expectedStatus: 1, safety: 'readonly' } }]
+    });
+
+    expect(testCase.target).toBe('api');
+    expect(() => validateWebCase({ ...testCase, steps: [{ ...testCase.steps[0], request: { ...testCase.steps[0].request, method: 'GET' } }] })).toThrow('invalid API request');
+  });
 });

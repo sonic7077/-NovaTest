@@ -1,17 +1,22 @@
-const stepKinds = new Set(['action', 'assert', 'query']);
+const stepKinds = new Set(['action', 'assert', 'query', 'apiRequest']);
 const viewports = new Set(['desktop', 'mobile']);
 
 export function validateWebCase(input) {
   if (!input || typeof input !== 'object') throw new Error('invalid web case');
-  if (!input.name?.trim() || input.target !== 'web') throw new Error('invalid web case');
+  if (!input.name?.trim() || !['web', 'api'].includes(input.target)) throw new Error('invalid test case');
   if (!/^https?:\/\//.test(input.baseUrl || '')) throw new Error('invalid base URL');
-  if (!viewports.has(input.viewport)) throw new Error('invalid viewport');
+  if (input.target === 'web' && !viewports.has(input.viewport)) throw new Error('invalid viewport');
   if (!Array.isArray(input.steps) || input.steps.length === 0) throw new Error('steps required');
 
   input.steps.forEach((step) => {
     if (!step?.id || !stepKinds.has(step.kind) || !step.instruction?.trim()) {
       throw new Error('invalid step');
     }
+    if (input.target === 'api') {
+      const request = step.request;
+      if (step.kind !== 'apiRequest' || !request?.action?.trim() || request.method !== 'POST' || !['readonly', 'mutating'].includes(request.safety)) throw new Error('invalid API request');
+    }
+    if (input.target === 'web' && step.kind === 'apiRequest') throw new Error('invalid step');
     (step.visualChecks || []).forEach((visualCheck) => {
       if (!visualCheck?.id || !['upload', 'run'].includes(visualCheck.source) || !visualCheck.description?.trim() || !visualCheck.assetPath?.startsWith(`${input.id}/`)) {
         throw new Error('invalid visual check');
