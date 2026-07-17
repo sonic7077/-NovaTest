@@ -39,12 +39,12 @@
 
 当前 `test_runs.case_id` 对 `test_cases` 有非空外键。为了物理删除用例定义并保留历史，启动时执行一次 schema 迁移：
 
-1. 在 `test_runs` 新表中增加 `case_name TEXT NOT NULL`，移除 `case_id` 到 `test_cases` 的外键约束。
+1. 在 `test_runs` 新表中增加 `case_name TEXT NOT NULL`，移除 `case_id` 到 `test_cases` 的外键约束；同时重建 `batch_cases`，移除 `case_id` 到 `test_cases` 的外键约束。
 2. 从旧 `test_runs` 复制所有记录，`case_name` 取关联 `test_cases.name`；找不到定义的旧记录使用 `已删除用例`。
-3. 删除旧表、将新表改名为 `test_runs`，恢复 `run_steps` 对运行记录的外键约束和既有 `batch_id`、`batch_position` 数据。
+3. 删除旧表、将新表改名为 `test_runs` 与 `batch_cases`，恢复 `run_steps` 对运行记录的外键约束和既有 `batch_id`、`batch_position` 数据。
 4. 使用 `PRAGMA user_version` 标识该迁移已完成，避免重复执行。
 
-删除用例时删除 `test_cases` 与其 `test_steps`；`test_runs.case_id` 仅保留历史 ID，不再受外键约束。新建运行时将当前用例名称写入 `test_runs.case_name`。运行对象新增 `caseName`，但保留 `caseId` 保持现有调用兼容。
+删除用例时删除 `test_cases` 与其 `test_steps`；`test_runs.case_id` 与 `batch_cases.case_id` 仅保留历史 ID，不再受外键约束。新建运行时将当前用例名称写入 `test_runs.case_name`。运行对象新增 `caseName`，但保留 `caseId` 保持现有调用兼容。
 
 ## 报告和批次历史
 
