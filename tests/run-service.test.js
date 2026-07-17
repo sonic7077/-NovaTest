@@ -57,4 +57,32 @@ describe('RunService', () => {
     expect(contexts).toHaveLength(2);
     expect(contexts[0]).toBe(contexts[1]);
   });
+
+  it('keeps failed and passing evidence through one retry', async () => {
+    let calls = 0;
+    const runner = {
+      execute: async (_step, context) => {
+        calls += 1;
+        expect(context.runId).toBeTypeOf('string');
+        expect(context.attempt).toBe(calls);
+        if (calls === 1) {
+          const error = new Error('页面未就绪');
+          error.evidence = { path: `${context.runId}/s1-attempt-1.png`, attempt: 1, phase: 'failed' };
+          throw error;
+        }
+        return {
+          screenshot: `${context.runId}/s1-attempt-2.png`,
+          screenshots: [{ path: `${context.runId}/s1-attempt-2.png`, attempt: 2, phase: 'passed' }]
+        };
+      }
+    };
+
+    const run = await new RunService(runner).start(testCase);
+
+    expect(run.steps[0]).toMatchObject({ screenshot: `${run.id}/s1-attempt-2.png` });
+    expect(run.steps[0].screenshots).toEqual([
+      { path: `${run.id}/s1-attempt-1.png`, attempt: 1, phase: 'failed' },
+      { path: `${run.id}/s1-attempt-2.png`, attempt: 2, phase: 'passed' }
+    ]);
+  });
 });

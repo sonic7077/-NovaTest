@@ -20,22 +20,27 @@ export class RunService {
       variables: {},
       steps: []
     };
-    const executionContext = { ...run, testCase, viewport: viewports[testCase.viewport] };
+    const executionContext = { ...run, testCase, viewport: viewports[testCase.viewport], runId: run.id };
 
     for (const step of testCase.steps) {
-      const stepRun = { id: step.id, status: 'running', attempts: 0, logs: [] };
+      const stepRun = { id: step.id, status: 'running', attempts: 0, logs: [], screenshots: [] };
       run.steps.push(stepRun);
 
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         stepRun.attempts = attempt;
+        executionContext.attempt = attempt;
         try {
           const resolvedStep = { ...step, instruction: interpolate(step.instruction, run.variables) };
           const evidence = await this.runner.execute(resolvedStep, executionContext);
           Object.assign(run.variables, evidence.variables);
-          Object.assign(stepRun, evidence, { status: 'passed' });
+          const { screenshots = [], ...stepEvidence } = evidence;
+          Object.assign(stepRun, stepEvidence, { status: 'passed' });
+          stepRun.screenshots.push(...screenshots);
           break;
         } catch (error) {
           stepRun.error = error.message;
+          if (error.evidence) stepRun.screenshots.push(error.evidence);
+          if (error.evidenceWarning) stepRun.logs.push({ level: 'warn', message: error.evidenceWarning });
           if (attempt === 1) stepRun.logs.push({ level: 'warn', message: `${error.message}; retrying once` });
         }
       }
