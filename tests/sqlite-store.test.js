@@ -61,6 +61,19 @@ describe('SQLite store', () => {
     }
   });
 
+  it('persists API request definitions across store instances', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
+    const databasePath = join(directory, 'novatest.db');
+    const apiCase = { id: 'api-case-1', name: '帖子列表', target: 'api', baseUrl: 'https://example.test/api.php', viewport: 'desktop', steps: [{ id: 's1', kind: 'apiRequest', instruction: '查询帖子', request: { action: 'list_post', method: 'POST', payload: { status: 10 }, expectedStatus: 1, safety: 'readonly' } }] };
+
+    try {
+      createSqliteStore({ databasePath }).saveCase(apiCase);
+      expect(createSqliteStore({ databasePath }).getCase(apiCase.id).steps[0].request).toEqual(apiCase.steps[0].request);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('persists run evidence and ordered batch links across instances', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
     const databasePath = join(directory, 'novatest.db');

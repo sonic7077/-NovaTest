@@ -137,13 +137,21 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   migrateVisualCheckSchema();
 
+  function migrateApiRequestSchema() {
+    const columns = db.prepare('PRAGMA table_info(test_steps)').all().map((column) => column.name);
+    if (!columns.includes('request_json')) db.exec("ALTER TABLE test_steps ADD COLUMN request_json TEXT NOT NULL DEFAULT 'null'");
+    if (db.prepare('PRAGMA user_version').get().user_version < 5) db.exec('PRAGMA user_version = 5');
+  }
+
+  migrateApiRequestSchema();
+
   const selectCase = db.prepare(`
     SELECT id, name, target, base_url AS baseUrl, viewport
     FROM test_cases
     WHERE id = ?
   `);
   const selectSteps = db.prepare(`
-    SELECT id, kind, instruction, visual_checks_json
+    SELECT id, kind, instruction, visual_checks_json, request_json
     FROM test_steps
     WHERE case_id = ?
     ORDER BY position
@@ -151,7 +159,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   function hydrateCase(row) {
     if (!row) return undefined;
-    return { ...row, steps: selectSteps.all(row.id).map(({ visual_checks_json, ...step }) => ({ ...step, visualChecks: JSON.parse(visual_checks_json || '[]') })) };
+    return { ...row, steps: selectSteps.all(row.id).map(({ visual_checks_json, request_json, ...step }) => ({ ...step, visualChecks: JSON.parse(visual_checks_json || '[]'), request: JSON.parse(request_json || 'null') || undefined })) };
   }
 
   function writeCase(testCase) {
@@ -169,10 +177,10 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     `).run(saved.id, saved.name, saved.target, saved.baseUrl, saved.viewport, timestamp, timestamp);
     db.prepare('DELETE FROM test_steps WHERE case_id = ?').run(saved.id);
     const insertStep = db.prepare(`
-      INSERT INTO test_steps (id, case_id, position, kind, instruction, visual_checks_json)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO test_steps (id, case_id, position, kind, instruction, visual_checks_json, request_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    saved.steps.forEach((step, position) => insertStep.run(step.id, saved.id, position, step.kind, step.instruction, JSON.stringify(step.visualChecks || [])));
+    saved.steps.forEach((step, position) => insertStep.run(step.id, saved.id, position, step.kind, step.instruction, JSON.stringify(step.visualChecks || []), JSON.stringify(step.request || null)));
     return saved;
   }
 
