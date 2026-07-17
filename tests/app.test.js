@@ -1,6 +1,10 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp, createMemoryStore } from '../server/app.js';
+import { renderReport } from '../server/services/report-service.js';
 
 const webCase = {
   name: '首页验证',
@@ -132,5 +136,36 @@ describe('execution API', () => {
     await request(app).get('/').expect(200).expect('content-type', /html/).expect((response) => {
       expect(response.text).toContain('NovaTest');
     });
+  });
+
+  it('serves only evidence registered to a run', async () => {
+    const evidenceDir = await mkdtemp(join(tmpdir(), 'novatest-evidence-'));
+    try {
+      await mkdir(join(evidenceDir, 'run-1'));
+      await writeFile(join(evidenceDir, 'run-1', 's1-attempt-1.png'), 'png');
+      const store = createMemoryStore();
+      store.saveRun({
+        id: 'run-1', caseId: 'case-1', caseName: '首页验证', status: 'passed', startedAt: '2026-07-17T00:00:00.000Z', variables: {},
+        steps: [{ id: 's1', status: 'passed', attempts: 1, screenshot: 'run-1/s1-attempt-1.png', screenshots: [{ path: 'run-1/s1-attempt-1.png', attempt: 1, phase: 'passed' }], logs: [] }]
+      });
+      const app = createApp({ runner: {}, store, evidenceDir });
+
+      await request(app).get('/api/runs/run-1/evidence/s1-attempt-1.png').expect(200);
+      await request(app).get('/api/runs/run-1/evidence/other.png').expect(404);
+      await request(app).get('/api/runs/run-1/evidence/..%2Fpackage.json').expect(404);
+    } finally {
+      await rm(evidenceDir, { recursive: true, force: true });
+    }
+  });
+
+  it('renders escaped instructions with screenshot thumbnail links', () => {
+    const report = renderReport({
+      id: 'run-1', status: 'passed', startedAt: '2026-07-17T00:00:00.000Z', variables: {},
+      steps: [{ id: 's1', instruction: '<script>', status: 'passed', attempts: 1, screenshots: [{ path: 'run-1/s1-attempt-1.png', attempt: 1, phase: 'passed' }] }]
+    }, '首页验证');
+
+    expect(report).toContain('&lt;script&gt;');
+    expect(report).toContain('/api/runs/run-1/evidence/s1-attempt-1.png');
+    expect(report).toContain('<img');
   });
 });

@@ -1,5 +1,7 @@
 import express from 'express';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { basename, join } from 'node:path';
 import { validateWebCase } from './domain/case.js';
 import { renderReport } from './services/report-service.js';
 import { BatchService } from './services/batch-service.js';
@@ -24,7 +26,7 @@ export function createMemoryStore() {
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
-export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, runnerStatus = { ready: true, message: 'ready' } }) {
+export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), runnerStatus = { ready: true, message: 'ready' } }) {
   const app = express();
   const runService = new RunService(runner);
   const batchService = new BatchService({ runner, store });
@@ -88,6 +90,18 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     const run = store.getRun(req.params.id);
     if (!run) return res.status(404).json({ error: 'run not found' });
     return res.json(run);
+  });
+
+  app.get('/api/runs/:runId/evidence/:fileName', (req, res) => {
+    const run = store.getRun(req.params.runId);
+    const fileName = req.params.fileName;
+    const registered = new Set((run?.steps || []).flatMap((step) => [
+      step.screenshot,
+      ...(step.screenshots || []).map((evidence) => evidence.path)
+    ]).filter(Boolean).map((path) => basename(path)));
+    if (!run || basename(fileName) !== fileName || !registered.has(fileName)) return res.status(404).end();
+    const filePath = join(evidenceDir, run.id, fileName);
+    return existsSync(filePath) ? res.sendFile(filePath) : res.status(404).end();
   });
 
   app.get('/api/runs/:id/report', (req, res) => {
