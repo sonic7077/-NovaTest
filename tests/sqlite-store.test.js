@@ -129,6 +129,24 @@ describe('SQLite store', () => {
     }
   });
 
+  it('persists redacted API request and response evidence across store instances', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
+    const databasePath = join(directory, 'novatest.db');
+
+    try {
+      const store = createSqliteStore({ databasePath });
+      store.saveCase(webCase);
+      store.saveRun({
+        id: 'api-run-1', caseId: webCase.id, status: 'passed', startedAt: '2026-07-17T00:00:00.000Z', finishedAt: '2026-07-17T00:00:01.000Z', variables: {},
+        steps: [{ id: 'api-step-1', status: 'passed', attempts: 1, logs: [], api: { action: 'list_post', httpStatus: 200, durationMs: 120, request: { token: '[REDACTED]' }, response: { total: 2 } } }]
+      });
+
+      expect(createSqliteStore({ databasePath }).getRun('api-run-1').steps[0].api).toEqual({ action: 'list_post', httpStatus: 200, durationMs: 120, request: { token: '[REDACTED]' }, response: { total: 2 } });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('preserves batch run order when runs share the same start time', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
     const databasePath = join(directory, 'novatest.db');

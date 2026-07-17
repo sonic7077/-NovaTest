@@ -5,6 +5,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp, createMemoryStore } from '../server/app.js';
 import { renderReport } from '../server/services/report-service.js';
+import { cmsWhitebagCases } from '../server/seed/cms-whitebag-cases.js';
 
 const webCase = {
   name: '首页验证',
@@ -12,6 +13,14 @@ const webCase = {
   baseUrl: 'https://example.test',
   viewport: 'desktop',
   steps: [{ id: 's1', kind: 'assert', instruction: '页面显示标题' }]
+};
+
+const apiCase = {
+  name: '帖子列表',
+  target: 'api',
+  baseUrl: 'https://example.test/api.php',
+  viewport: 'desktop',
+  steps: [{ id: 'api-1', kind: 'apiRequest', instruction: '查询帖子', request: { action: 'list_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }]
 };
 
 describe('execution API', () => {
@@ -117,6 +126,16 @@ describe('execution API', () => {
     await request(app).post('/api/batches').send({ caseIds: ['unknown-case'] }).expect(400);
   });
 
+  it('rejects a batch that mixes Web UI and API test cases', async () => {
+    const app = createApp({ runner: { web: { execute: async () => ({}) }, api: { execute: async () => ({}) } }, store: createMemoryStore() });
+    const web = (await request(app).post('/api/cases').send(webCase).expect(201)).body;
+    const api = (await request(app).post('/api/cases').send(apiCase).expect(201)).body;
+
+    await request(app).post('/api/batches').send({ caseIds: [web.id, api.id] }).expect(400).expect((response) => {
+      expect(response.body.error).toBe('batch cases must share one target');
+    });
+  });
+
   it('reports whether the Web UI runner is configured', async () => {
     const app = createApp({
       runner: {},
@@ -127,7 +146,32 @@ describe('execution API', () => {
     await request(app)
       .get('/api/health')
       .expect(200)
-      .expect({ webRunner: { ready: false, message: 'missing MIDSCENE_MODEL_API_KEY' } });
+      .expect({ webRunner: { ready: false, message: 'missing MIDSCENE_MODEL_API_KEY' }, cmsRunner: { ready: false, message: 'CMS API runner is not configured' } });
+  });
+
+  it('reports the sanitized CMS runner configuration state', async () => {
+    const app = createApp({
+      runner: {},
+      store: createMemoryStore(),
+      runnerStatus: { ready: true, message: 'ready' },
+      cmsRunnerStatus: { ready: false, message: 'missing CMS_AES_KEY' }
+    });
+
+    await request(app)
+      .get('/api/health')
+      .expect(200)
+      .expect({ webRunner: { ready: true, message: 'ready' }, cmsRunner: { ready: false, message: 'missing CMS_AES_KEY' } });
+  });
+
+  it('seeds read-only CMS cases idempotently without running them', () => {
+    const store = createMemoryStore();
+    const cases = cmsWhitebagCases({ baseUrl: 'https://example.test/api.php' });
+
+    createApp({ runner: {}, store, cmsSeedCases: cases });
+    createApp({ runner: {}, store, cmsSeedCases: cases });
+
+    expect(store.listCases().map((testCase) => testCase.id)).toEqual(cases.map((testCase) => testCase.id));
+    expect(store.listCases().every((testCase) => testCase.target === 'api' && testCase.steps.every((step) => step.request.safety === 'readonly'))).toBe(true);
   });
 
   it('serves the test console from the same origin as the API', async () => {
@@ -167,6 +211,18 @@ describe('execution API', () => {
     expect(report).toContain('&lt;script&gt;');
     expect(report).toContain('/api/runs/run-1/evidence/s1-attempt-1.png');
     expect(report).toContain('<img');
+  });
+
+  it('renders redacted API request and response evidence in a report', () => {
+    const report = renderReport({
+      id: 'api-run-1', status: 'passed', startedAt: '2026-07-17T00:00:00.000Z', variables: {},
+      steps: [{ id: 'api-1', status: 'passed', attempts: 1, api: { action: 'list_post', httpStatus: 200, businessStatus: 1, durationMs: 120, request: { token: '[REDACTED]' }, response: { total: 2 } } }]
+    }, '帖子列表');
+
+    expect(report).toContain('list_post');
+    expect(report).toContain('HTTP 200');
+    expect(report).toContain('[REDACTED]');
+    expect(report).toContain('响应摘要');
   });
 
   it('uploads a PNG visual baseline for an existing case', async () => {

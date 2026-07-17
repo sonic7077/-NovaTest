@@ -1,5 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
 const steps = $('#steps');
+const apiSteps = $('#apiSteps');
 const log = $('#runLog');
 const deviceStrip = $('#deviceStrip');
 const toast = $('#toast');
@@ -20,7 +21,8 @@ function renderRoute() {
   lucide.createIcons();
   if (view === 'dashboard') loadDashboard();
   if (view === 'assets-list') loadSavedCases().catch((error) => showToast(error.message, true));
-  if (route === '#/assets/new') resetEditor();
+  if (route === '#/assets/new' || route === '#/assets/new-web') resetEditor('web');
+  if (route === '#/assets/new-api') resetEditor('api');
   if (route.startsWith('#/assets/') && route !== '#/assets/new') loadEditor(decodeURIComponent(route.slice('#/assets/'.length))).catch((error) => showToast(error.message, true));
 }
 
@@ -51,6 +53,7 @@ bindViewportButtons();
 
 document.querySelectorAll('.target-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
+    if (!tab.dataset.target) return;
     target = tab.dataset.target;
     document.querySelector('.target-tab.selected').classList.remove('selected');
     tab.classList.add('selected');
@@ -59,10 +62,22 @@ document.querySelectorAll('.target-tab').forEach((tab) => {
       selectViewport(viewport);
       bindViewportButtons();
     } else {
-      deviceStrip.innerHTML = '<span class="status-dot"></span><span><b>API 服务暂未启用</b><small>当前 MVP 优先支持 Web UI 自动化执行</small></span>';
+      deviceStrip.innerHTML = '<span class="status-dot"></span><span><b>CMS 加密接口执行</b><small>结构化 POST 请求 · 加密、断言、变量提取</small></span>';
     }
+    syncEditorTarget();
   });
 });
+
+function syncEditorTarget() {
+  const isApi = target === 'api';
+  steps.hidden = isApi;
+  $('#addStep').hidden = isApi;
+  apiSteps.hidden = !isApi;
+  $('#addApiStep').hidden = !isApi;
+  $('#editorEyebrow').textContent = isApi ? 'STRUCTURED API TEST CASE' : 'AI-POWERED WEB TEST CASE';
+  $('#editorSubtitle').textContent = isApi ? '以明确的请求、断言和变量提取定义接口回归流程。' : '自然语言描述网页步骤，由 Playwright 与 Midscene 自动执行。';
+  document.querySelectorAll('.target-tab[data-target]').forEach((tab) => tab.classList.toggle('selected', tab.dataset.target === target));
+}
 
 $('#addStep').addEventListener('click', () => {
   const number = String(steps.children.length + 1).padStart(2, '0');
@@ -75,8 +90,13 @@ $('#addStep').addEventListener('click', () => {
   lucide.createIcons();
 });
 
+$('#addApiStep').addEventListener('click', () => {
+  apiSteps.appendChild(renderApiStepNode({ instruction: '', request: { method: 'POST', safety: 'readonly', payload: {}, expectedStatus: 1, expectedJson: [], extract: {} } }, apiSteps.children.length));
+  lucide.createIcons();
+});
+
 function readCaseFromForm() {
-  if (target !== 'web') throw new Error('当前 MVP 仅支持 Web UI 执行');
+  if (target === 'api') return readApiCaseFromForm();
   return {
     name: document.querySelector('.case-meta input').value.trim(),
     target: 'web',
@@ -88,6 +108,36 @@ function readCaseFromForm() {
       instruction: step.querySelector('textarea').value.trim()
     }))
   };
+}
+
+function parseJson(value, label, fallback) {
+  if (!value.trim()) return fallback;
+  try { return JSON.parse(value); } catch { throw new Error(`${label} 必须是有效 JSON`); }
+}
+
+function readApiCaseFromForm() {
+  return {
+    name: document.querySelector('.case-meta input').value.trim(), target: 'api', baseUrl: $('#baseUrl').value.trim(), viewport: 'desktop',
+    steps: [...apiSteps.children].map((node, index) => ({
+      id: `api-step-${index + 1}`, kind: 'apiRequest', instruction: node.querySelector('[data-field="instruction"]').value.trim() || '执行接口请求',
+      request: { action: node.querySelector('[data-field="action"]').value.trim(), method: 'POST', safety: node.querySelector('[data-field="safety"]').value, payload: parseJson(node.querySelector('[data-field="payload"]').value, '请求 Body', {}), expectedStatus: Number(node.querySelector('[data-field="expectedStatus"]').value || 1), expectedJson: parseJson(node.querySelector('[data-field="expectedJson"]').value, 'JSON 断言', []), extract: parseJson(node.querySelector('[data-field="extract"]').value, '变量提取', {}) }
+    }))
+  };
+}
+
+function renderApiStepNode(step, index) {
+  const request = step.request || {};
+  const node = document.createElement('article');
+  node.className = 'step api-request';
+  node.innerHTML = `<span class="step-number">${String(index + 1).padStart(2, '0')}</span><div class="step-content"><div class="step-type query"><i data-lucide="braces"></i>接口请求</div><label>步骤说明<input data-field="instruction"></label><div class="api-grid"><label>Action<input data-field="action" placeholder="list_post"></label><label>安全级别<select data-field="safety"><option value="readonly">只读</option><option value="mutating">写操作</option></select></label><label>预期业务状态<input data-field="expectedStatus" type="number" value="1"></label></div><label>JSON Body<textarea data-field="payload" placeholder='{"status":10}'></textarea></label><label>JSON 断言<textarea data-field="expectedJson" placeholder='[{"path":"$.total","equals":1}]'></textarea></label><label>变量提取<textarea data-field="extract" placeholder='{"postId":"$.list[0].id"}'></textarea></label></div>`;
+  node.querySelector('[data-field="instruction"]').value = step.instruction || '';
+  node.querySelector('[data-field="action"]').value = request.action || '';
+  node.querySelector('[data-field="safety"]').value = request.safety || 'readonly';
+  node.querySelector('[data-field="expectedStatus"]').value = request.expectedStatus ?? 1;
+  node.querySelector('[data-field="payload"]').value = JSON.stringify(request.payload || {}, null, 2);
+  node.querySelector('[data-field="expectedJson"]').value = JSON.stringify(request.expectedJson || [], null, 2);
+  node.querySelector('[data-field="extract"]').value = JSON.stringify(request.extract || {}, null, 2);
+  return node;
 }
 
 function renumberSteps() {
@@ -112,17 +162,20 @@ function applyCase(testCase) {
   document.querySelector('.case-meta input').value = testCase.name;
   $('#baseUrl').value = testCase.baseUrl;
   steps.innerHTML = '';
-  testCase.steps.forEach((step, index) => steps.appendChild(createStepNode(step, index)));
+  apiSteps.innerHTML = '';
+  if (target === 'api') testCase.steps.forEach((step, index) => apiSteps.appendChild(renderApiStepNode(step, index)));
+  else testCase.steps.forEach((step, index) => steps.appendChild(createStepNode(step, index)));
   $('#editorTitle').textContent = editingCaseId ? `编辑用例 · ${testCase.name}` : '新建 Web UI 用例';
   $('#deleteCase').hidden = !editingCaseId;
   selectViewport(viewport);
+  syncEditorTarget();
   lucide.createIcons();
 }
 
-function resetEditor() {
+function resetEditor(nextTarget = 'web') {
   applyCase({
-    name: '', target: 'web', baseUrl: 'https://example.test', viewport: 'desktop',
-    steps: [{ id: 'step-1', kind: 'action', instruction: '' }]
+    name: '', target: nextTarget, baseUrl: nextTarget === 'api' ? 'https://example.test/api.php' : 'https://example.test', viewport: 'desktop',
+    steps: nextTarget === 'api' ? [{ id: 'api-step-1', kind: 'apiRequest', instruction: '', request: { action: '', method: 'POST', safety: 'readonly', payload: {}, expectedStatus: 1, expectedJson: [], extract: {} } }] : [{ id: 'step-1', kind: 'action', instruction: '' }]
   });
 }
 
@@ -142,6 +195,8 @@ async function loadSavedCases() {
   const response = await fetch(`/api/cases?q=${encodeURIComponent(query)}`);
   if (!response.ok) throw new Error('无法读取已保存用例');
   savedCases = await response.json();
+  const selectedTarget = $('#assetTargetFilter').value;
+  if (selectedTarget !== 'all') savedCases = savedCases.filter((testCase) => testCase.target === selectedTarget);
   $('#caseCount').textContent = savedCases.length;
   const container = $('#caseList');
   if (!savedCases.length) {
@@ -166,17 +221,17 @@ async function loadSavedCases() {
     selectCell.appendChild(select);
     const icon = document.createElement('span');
     icon.className = 'case-item-icon';
-    icon.innerHTML = '<i data-lucide="monitor"></i>';
+    icon.innerHTML = `<i data-lucide="${testCase.target === 'api' ? 'braces' : 'monitor'}"></i>`;
     const copy = document.createElement('span');
     const name = document.createElement('b');
     name.textContent = testCase.name;
     const details = document.createElement('small');
-    details.textContent = `${testCase.viewport === 'mobile' ? 'Mobile H5 · 390 × 844' : 'Desktop · 1440 × 900'} · ${testCase.steps.length} 个步骤`;
+    details.textContent = `${testCase.target === 'api' ? '接口测试 · 结构化 POST' : (testCase.viewport === 'mobile' ? 'Mobile H5 · 390 × 844' : 'Desktop · 1440 × 900')} · ${testCase.steps.length} 个步骤`;
     copy.append(name, details);
     const nameCell = document.createElement('td');
     nameCell.append(icon, copy);
     const environment = document.createElement('td');
-    environment.textContent = testCase.viewport === 'mobile' ? 'Mobile H5' : 'Desktop';
+    environment.textContent = testCase.target === 'api' ? 'API 服务' : (testCase.viewport === 'mobile' ? 'Mobile H5' : 'Desktop');
     const stepCount = document.createElement('td');
     stepCount.textContent = `${testCase.steps.length} 步`;
     const actions = document.createElement('td');
@@ -275,11 +330,12 @@ async function createBatch() {
 async function loadRunnerStatus() {
   const response = await fetch('/api/health');
   if (!response.ok) throw new Error('无法读取执行器状态');
-  const { webRunner } = await response.json();
+  const { webRunner, cmsRunner } = await response.json();
   const badge = $('#modelStatusBadge');
   $('#modelStatusText').textContent = webRunner.ready ? 'Midscene Web runner 已就绪' : webRunner.message;
   badge.textContent = webRunner.ready ? '在线' : '未配置';
   badge.classList.toggle('offline', !webRunner.ready);
+  $('#runState').dataset.cmsReady = String(cmsRunner.ready);
 }
 
 function loadDashboard() {
@@ -326,7 +382,8 @@ function addLog(message, state = '') {
 function renderRun(run) {
   const count = run.steps.length;
   const passed = run.steps.filter((step) => step.status === 'passed').length;
-  $('#runState').textContent = run.status === 'passed' ? 'Web UI 执行完成' : 'Web UI 执行失败';
+  const isApi = run.steps.some((step) => step.api);
+  $('#runState').textContent = run.status === 'passed' ? `${isApi ? '接口' : 'Web UI'} 执行完成` : `${isApi ? '接口' : 'Web UI'} 执行失败`;
   $('#statePill').textContent = run.status.toUpperCase();
   $('#statePill').style.cssText = run.status === 'passed' ? 'background:#e8f8ef;color:#178457' : 'background:#ffebeb;color:#bd3f3f';
   $('#progressBar').style.width = '100%';
@@ -334,7 +391,7 @@ function renderRun(run) {
   $('#progressCopy').textContent = `${passed} / ${count} 步骤通过`;
   log.innerHTML = '';
   run.steps.forEach((step) => {
-    addLog(`步骤 ${step.id} ${step.status === 'passed' ? '已通过' : `失败：${step.error}`}`, step.status === 'passed' ? 'success' : 'error');
+    addLog(step.api ? `${step.api.action} · HTTP ${step.api.httpStatus} · ${step.api.durationMs}ms` : `步骤 ${step.id} ${step.status === 'passed' ? '已通过' : `失败：${step.error}`}`, step.status === 'passed' ? 'success' : 'error');
     step.logs.forEach((entry) => addLog(entry.message, entry.level));
   });
   $('#reportPreview button').onclick = () => window.open(`/api/runs/${run.id}/report`, '_blank', 'noopener');
@@ -349,8 +406,8 @@ $('#saveBtn').addEventListener('click', async () => {
 
 $('#refreshCases').addEventListener('click', () => loadSavedCases().catch((error) => showToast(error.message, true)));
 $('#runBatch').addEventListener('click', createBatch);
-$('#createCase').addEventListener('click', () => { location.hash = '#/assets/new'; });
 $('#cancelEdit').addEventListener('click', () => { location.hash = '#/assets'; });
 $('#deleteCase').addEventListener('click', () => deleteEditor().catch((error) => showToast(error.message, true)));
 $('#assetSearch').addEventListener('input', () => loadSavedCases().catch((error) => showToast(error.message, true)));
+$('#assetTargetFilter').addEventListener('change', () => { selectedCaseIds.clear(); loadSavedCases().catch((error) => showToast(error.message, true)); });
 renderRoute();

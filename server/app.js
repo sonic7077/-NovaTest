@@ -28,14 +28,17 @@ export function createMemoryStore() {
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
-export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), runnerStatus = { ready: true, message: 'ready' } }) {
+export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, cmsSeedCases = [] }) {
   const app = express();
   const runService = new RunService(runner);
   const batchService = new BatchService({ runner, store });
+  cmsSeedCases.forEach((testCase) => {
+    if (!store.getCase(testCase.id)) store.saveCase(testCase);
+  });
   app.use(express.json());
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-  app.get('/api/health', (_req, res) => res.json({ webRunner: runnerStatus }));
+  app.get('/api/health', (_req, res) => res.json({ webRunner: runnerStatus, cmsRunner: cmsRunnerStatus }));
 
   app.post('/api/cases', (req, res) => {
     try { res.status(201).json(store.saveCase(validateWebCase(req.body))); }
@@ -78,6 +81,7 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
 
     const cases = caseIds.map((id) => store.getCase(id));
     if (cases.some((testCase) => !testCase)) return res.status(400).json({ error: 'test case not found' });
+    if (new Set(cases.map((testCase) => testCase.target)).size !== 1) return res.status(400).json({ error: 'batch cases must share one target' });
 
     const name = typeof req.body.name === 'string' && req.body.name.trim()
       ? req.body.name.trim()

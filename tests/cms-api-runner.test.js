@@ -34,4 +34,37 @@ describe('CMS API runner', () => {
 
     await expect(runner.execute({ id: 'delete', request: { action: 'del_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'mutating' } }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} })).rejects.toThrow('mutating API step requires allowMutations');
   });
+
+  it('interpolates payloads, asserts decrypted JSON paths, and extracts response variables', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, oauthId: 'qa', oauthType: 'pc', version: '1.0.0' },
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => encryptedResponse({ page: { id: 'post-42' }, token: 'secret-token' }) })
+    });
+
+    const result = await runner.execute({
+      id: 'post-detail',
+      request: {
+        action: 'list_post', method: 'POST', payload: { id: '{{selectedPost}}' }, expectedStatus: 1, safety: 'readonly',
+        expectedJson: [{ path: '$.page.id', equals: 'post-42' }],
+        extract: { postId: '$.page.id' }
+      }
+    }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: { selectedPost: 'post-42' } });
+
+    expect(result.variables).toEqual({ postId: 'post-42' });
+    expect(result.api).toMatchObject({ durationMs: expect.any(Number), response: { page: { id: 'post-42' } } });
+    expect(result.api.request.token).toBe('[REDACTED]');
+    expect(result.api.response.token).toBe('[REDACTED]');
+  });
+
+  it('fails an API step when a decrypted JSON assertion does not match', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, oauthId: 'qa', oauthType: 'pc', version: '1.0.0' },
+      fetchImpl: async () => ({ ok: true, status: 200, json: async () => encryptedResponse({ page: { id: 'post-42' } }) })
+    });
+
+    await expect(runner.execute({
+      id: 'post-detail',
+      request: { action: 'list_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly', expectedJson: [{ path: '$.page.id', equals: 'post-99' }] }
+    }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} })).rejects.toThrow('JSON assertion failed: $.page.id');
+  });
 });

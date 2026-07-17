@@ -145,6 +145,14 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   migrateApiRequestSchema();
 
+  function migrateApiEvidenceSchema() {
+    const columns = db.prepare('PRAGMA table_info(run_steps)').all().map((column) => column.name);
+    if (!columns.includes('api_json')) db.exec("ALTER TABLE run_steps ADD COLUMN api_json TEXT NOT NULL DEFAULT 'null'");
+    if (db.prepare('PRAGMA user_version').get().user_version < 6) db.exec('PRAGMA user_version = 6');
+  }
+
+  migrateApiEvidenceSchema();
+
   const selectCase = db.prepare(`
     SELECT id, name, target, base_url AS baseUrl, viewport
     FROM test_cases
@@ -189,11 +197,11 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   function hydrateRun(row) {
     if (!row) return undefined;
     const steps = db.prepare(`
-      SELECT step_id AS id, status, attempts, error, screenshot, logs_json, screenshots_json
+      SELECT step_id AS id, status, attempts, error, screenshot, logs_json, screenshots_json, api_json
       FROM run_steps
       WHERE run_id = ?
       ORDER BY position
-    `).all(row.id).map(({ logs_json, screenshots_json, ...step }) => ({ ...step, logs: JSON.parse(logs_json), screenshots: JSON.parse(screenshots_json || '[]') }));
+    `).all(row.id).map(({ logs_json, screenshots_json, api_json, ...step }) => ({ ...step, logs: JSON.parse(logs_json), screenshots: JSON.parse(screenshots_json || '[]'), api: JSON.parse(api_json || 'null') || undefined }));
     return {
       id: row.id,
       caseId: row.caseId,
@@ -222,11 +230,11 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     `).run(run.id, run.caseId, run.caseName || hydrateCase(selectCase.get(run.caseId))?.name || '已删除用例', run.batchId || null, run.batchPosition ?? null, run.status, run.startedAt, run.finishedAt, JSON.stringify(run.variables || {}));
     db.prepare('DELETE FROM run_steps WHERE run_id = ?').run(run.id);
     const insertStep = db.prepare(`
-      INSERT INTO run_steps (run_id, step_id, position, status, attempts, error, screenshot, logs_json, screenshots_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO run_steps (run_id, step_id, position, status, attempts, error, screenshot, logs_json, screenshots_json, api_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     run.steps.forEach((step, position) => {
-      insertStep.run(run.id, step.id, position, step.status, step.attempts, step.error || null, step.screenshot || null, JSON.stringify(step.logs || []), JSON.stringify(step.screenshots || []));
+      insertStep.run(run.id, step.id, position, step.status, step.attempts, step.error || null, step.screenshot || null, JSON.stringify(step.logs || []), JSON.stringify(step.screenshots || []), JSON.stringify(step.api || null));
     });
     return run;
   }

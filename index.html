@@ -33,7 +33,7 @@
     </header>
 
     <section class="page-heading route-view" data-route-view="dashboard">
-      <div><p class="eyebrow">WEB UI AUTOMATION OVERVIEW</p><h1>测试工作台</h1><p class="subtitle">查看 Web UI 自动化执行状态、策略和最近测试报告。</p></div>
+      <div><p class="eyebrow">AUTOMATION EXECUTION OVERVIEW</p><h1>测试工作台</h1><p class="subtitle">查看 Web UI 与接口自动化执行状态、过程和最近测试报告。</p></div>
       <div class="heading-actions"><a class="run-button" href="#/assets"><i data-lucide="folder-kanban"></i>进入测试资产</a></div>
     </section>
 
@@ -42,6 +42,11 @@
       <div class="metric"><div><span>平均执行耗时</span><strong>02:38</strong></div><div class="trend neutral"><i data-lucide="minus"></i>稳定</div></div>
       <div class="metric"><div><span>今日执行</span><strong>186</strong></div><div class="trend up"><i data-lucide="trending-up"></i>18</div></div>
       <div class="metric coverage"><div><span>覆盖目标</span><strong>3 <em>/ 3</em></strong></div><div class="coverage-dots"><b></b><b></b><b></b></div></div>
+    </section>
+
+    <section class="dashboard-targets route-view" data-route-view="dashboard" role="tablist" aria-label="执行类型">
+      <button class="target-tab selected" data-dashboard-target="web" type="button"><i data-lucide="monitor"></i>Web UI 执行</button>
+      <button class="target-tab" data-dashboard-target="api" type="button"><i data-lucide="braces"></i>接口执行</button>
     </section>
 
     <section class="dashboard-grid route-view" data-route-view="dashboard">
@@ -65,14 +70,14 @@
     </section>
 
     <section class="assets panel route-view" id="assets" data-route-view="assets-list">
-      <div class="panel-head"><div><h2>测试资产</h2><p>集中管理 Web UI 用例，并按选择顺序发起批量执行。</p></div><button class="run-button" id="createCase"><i data-lucide="plus"></i>新建用例</button></div>
-      <div class="asset-toolbar"><label class="asset-search"><i data-lucide="search"></i><input id="assetSearch" type="search" placeholder="搜索用例名称" /></label><button class="icon-button" id="refreshCases" title="刷新用例"><i data-lucide="refresh-cw"></i></button></div>
+      <div class="panel-head"><div><h2>测试资产</h2><p>按类型管理 Web UI 与接口测试用例，并按选择顺序批量执行。</p></div><div class="heading-actions"><a class="secondary-button" href="#/assets/new-web"><i data-lucide="monitor"></i>新建 Web UI</a><a class="run-button" href="#/assets/new-api"><i data-lucide="braces"></i>新建接口用例</a></div></div>
+      <div class="asset-toolbar"><label class="asset-search"><i data-lucide="search"></i><input id="assetSearch" type="search" placeholder="搜索用例名称" /></label><select id="assetTargetFilter" aria-label="用例类型"><option value="all">全部类型</option><option value="web">Web UI</option><option value="api">接口测试</option></select><button class="icon-button" id="refreshCases" title="刷新用例"><i data-lucide="refresh-cw"></i></button></div>
       <div class="asset-selection"><span id="selectedCaseCount">已选择 0 个用例</span><button class="run-button" id="runBatch" disabled><i data-lucide="list-play"></i>批量执行</button></div>
       <div class="assets-table-wrap"><table class="assets-table"><thead><tr><th scope="col">选择</th><th scope="col">用例</th><th scope="col">执行环境</th><th scope="col">步骤</th><th scope="col">操作</th></tr></thead><tbody id="caseList"><tr><td colspan="5" class="empty-state">正在读取测试资产...</td></tr></tbody></table></div>
     </section>
 
     <section class="page-heading route-view" data-route-view="asset-editor">
-      <div><p class="eyebrow">AI-POWERED WEB TEST CASE</p><h1 id="editorTitle">新建 Web UI 用例</h1><p class="subtitle">自然语言描述网页步骤，由 Playwright 与 Midscene 自动执行。</p></div>
+      <div><p class="eyebrow" id="editorEyebrow">AI-POWERED WEB TEST CASE</p><h1 id="editorTitle">新建 Web UI 用例</h1><p class="subtitle" id="editorSubtitle">自然语言描述网页步骤，由 Playwright 与 Midscene 自动执行。</p></div>
       <div class="heading-actions"><button class="secondary-button" id="cancelEdit"><i data-lucide="arrow-left"></i>返回资产</button><button class="secondary-button" id="deleteCase"><i data-lucide="trash-2"></i>删除</button><button class="run-button" id="saveBtn"><i data-lucide="save"></i>保存用例</button></div>
     </section>
 
@@ -97,6 +102,8 @@
           <div class="step" data-kind="query"><span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">04</span><div class="step-content"><div class="step-type query"><i data-lucide="scan-search"></i>数据提取</div><textarea>提取订单号和应付金额，保存为变量 orderId、totalAmount</textarea></div><button class="step-menu" title="步骤菜单"><i data-lucide="more-horizontal"></i></button></div>
         </div>
         <button class="add-step" id="addStep"><i data-lucide="plus"></i>添加自然语言步骤</button>
+        <div class="api-steps" id="apiSteps" hidden></div>
+        <button class="add-step" id="addApiStep" hidden><i data-lucide="plus"></i>添加接口请求</button>
       </article>
     </section>
   </main>

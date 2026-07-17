@@ -25,11 +25,17 @@ describe('test console stylesheet', () => {
     expect(html).toContain('data-route-view="dashboard"');
     expect(html).toContain('data-route-view="asset-editor"');
     expect(html).toContain('id="assetSearch"');
-    expect(html).toContain('id="createCase"');
     expect(html).toContain('id="deleteCase"');
+    expect(html).toContain('#/assets/new-web');
+    expect(html).toContain('#/assets/new-api');
+    expect(html).toContain('id="assetTargetFilter"');
+    expect(html).toContain('id="apiSteps"');
+    expect(html).toContain('data-dashboard-target="api"');
     expect(script).toContain('function renderRoute()');
     expect(script).toContain('async function loadEditor');
     expect(script).toContain('async function deleteEditor');
+    expect(script).toContain('function readApiCaseFromForm()');
+    expect(script).toContain('function renderApiStepNode(');
     expect(stylesheet).toContain('@media (max-width: 760px)');
     expect(stylesheet.length).toBeGreaterThan(5000);
   });
