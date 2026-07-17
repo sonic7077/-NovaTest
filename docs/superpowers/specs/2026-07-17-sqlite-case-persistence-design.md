@@ -69,9 +69,9 @@
 
 1. 创建全部表、外键和唯一索引。
 2. 若 `test_cases` 已有记录，不读取 JSON 文件。
-3. 若数据库为空且 `data/store.json` 存在，在一个 SQLite 事务中导入全部 cases、runs、batches 及其嵌套数据。
-4. 数据库提交成功后，将原文件重命名为 `data/store.json.migrated`；若该备份已存在，保留原 JSON 文件不覆盖备份。
-5. 导入或重命名失败时报告启动错误，回滚数据库事务并保留原 JSON 文件。
+3. 若数据库为空且 `data/store.json` 存在，在一个 SQLite 事务中导入全部 cases、runs、batches 及其嵌套数据，并在提交前将原文件重命名为 `data/store.json.migrated`；若该备份已存在，保留原 JSON 文件不覆盖备份。
+4. SQLite 提交失败时，若本次已创建迁移备份且源文件不存在，则将备份改回源文件。
+5. 导入、重命名或提交失败时报告启动错误，回滚数据库事务并保留原 JSON 文件。
 
 导入批次时，根据 `caseIds` 和 `runIds` 分别创建 `batch_cases` 与 `test_runs.batch_id` 关联。缺失的历史用例或运行 ID 不创建无效外键记录；其余有效记录仍导入。
 
