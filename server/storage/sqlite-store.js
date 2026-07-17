@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { existsSync, readFileSync, renameSync } from 'node:fs';
 
 const schema = `
   PRAGMA foreign_keys = ON;
@@ -22,7 +23,7 @@ const schema = `
   );
 `;
 
-export function createSqliteStore({ databasePath }) {
+export function createSqliteStore({ databasePath, legacyJsonPath }) {
   const db = new DatabaseSync(databasePath);
   db.exec(schema);
   db.exec(`
@@ -45,6 +46,7 @@ export function createSqliteStore({ databasePath }) {
       id TEXT PRIMARY KEY,
       case_id TEXT NOT NULL REFERENCES test_cases(id),
       batch_id TEXT REFERENCES test_batches(id),
+      batch_position INTEGER,
       status TEXT NOT NULL,
       started_at TEXT NOT NULL,
       finished_at TEXT,
@@ -71,7 +73,7 @@ export function createSqliteStore({ databasePath }) {
       db.exec('COMMIT');
       return result;
     } catch (error) {
-      db.exec('ROLLBACK');
+      try { db.exec('ROLLBACK'); } catch { /* The transaction may have already ended. */ }
       throw error;
     }
   }
@@ -138,16 +140,17 @@ export function createSqliteStore({ databasePath }) {
 
   function writeRun(run) {
     db.prepare(`
-      INSERT INTO test_runs (id, case_id, batch_id, status, started_at, finished_at, variables_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_runs (id, case_id, batch_id, batch_position, status, started_at, finished_at, variables_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         case_id = excluded.case_id,
         batch_id = COALESCE(excluded.batch_id, test_runs.batch_id),
+        batch_position = COALESCE(excluded.batch_position, test_runs.batch_position),
         status = excluded.status,
         started_at = excluded.started_at,
         finished_at = excluded.finished_at,
         variables_json = excluded.variables_json
-    `).run(run.id, run.caseId, run.batchId || null, run.status, run.startedAt, run.finishedAt, JSON.stringify(run.variables || {}));
+    `).run(run.id, run.caseId, run.batchId || null, run.batchPosition ?? null, run.status, run.startedAt, run.finishedAt, JSON.stringify(run.variables || {}));
     db.prepare('DELETE FROM run_steps WHERE run_id = ?').run(run.id);
     const insertStep = db.prepare(`
       INSERT INTO run_steps (run_id, step_id, position, status, attempts, error, screenshot, logs_json)
@@ -171,7 +174,7 @@ export function createSqliteStore({ databasePath }) {
       SELECT id
       FROM test_runs
       WHERE batch_id = ?
-      ORDER BY started_at, id
+      ORDER BY batch_position, started_at, id
     `).all(row.id).map(({ id }) => id);
     return {
       id: row.id,
@@ -197,13 +200,59 @@ export function createSqliteStore({ databasePath }) {
     db.prepare('DELETE FROM batch_cases WHERE batch_id = ?').run(batch.id);
     const insertCase = db.prepare('INSERT INTO batch_cases (batch_id, case_id, position) VALUES (?, ?, ?)');
     batch.caseIds.forEach((caseId, position) => insertCase.run(batch.id, caseId, position));
-    const linkRun = db.prepare('UPDATE test_runs SET batch_id = ? WHERE id = ?');
-    batch.runIds.forEach((runId) => linkRun.run(batch.id, runId));
+    db.prepare('UPDATE test_runs SET batch_id = NULL, batch_position = NULL WHERE batch_id = ?').run(batch.id);
+    const linkRun = db.prepare('UPDATE test_runs SET batch_id = ?, batch_position = ? WHERE id = ?');
+    batch.runIds.forEach((runId, position) => linkRun.run(batch.id, position, runId));
     return batch;
   }
 
   const saveRun = (run) => inTransaction(() => writeRun(run));
   const saveBatch = (batch) => inTransaction(() => writeBatch(batch));
+
+  function migrateLegacyStore() {
+    if (!legacyJsonPath || !existsSync(legacyJsonPath)) return;
+    const { count } = db.prepare('SELECT COUNT(*) AS count FROM test_cases').get();
+    if (count > 0) return;
+
+    const legacy = JSON.parse(readFileSync(legacyJsonPath, 'utf8'));
+    const backupPath = `${legacyJsonPath}.migrated`;
+    let renamed = false;
+
+    try {
+      inTransaction(() => {
+        const caseIds = new Set();
+        Object.entries(legacy.cases || {}).forEach(([key, testCase]) => {
+          const id = testCase.id || (key === 'undefined' ? crypto.randomUUID() : key);
+          writeCase({ ...testCase, id });
+          caseIds.add(id);
+        });
+
+        const runIds = new Set();
+        Object.entries(legacy.runs || {}).forEach(([key, run]) => {
+          if (!run.caseId || !caseIds.has(run.caseId)) return;
+          const id = run.id || key;
+          writeRun({ ...run, id });
+          runIds.add(id);
+        });
+
+        Object.entries(legacy.batches || {}).forEach(([key, batch]) => {
+          const id = batch.id || key;
+          const caseIdsInBatch = (batch.caseIds || []).filter((caseId) => caseIds.has(caseId));
+          writeBatch({ ...batch, id, caseIds: caseIdsInBatch, runIds: (batch.runIds || []).filter((runId) => runIds.has(runId)) });
+        });
+
+        if (!existsSync(backupPath)) {
+          renameSync(legacyJsonPath, backupPath);
+          renamed = true;
+        }
+      });
+    } catch (error) {
+      if (renamed && !existsSync(legacyJsonPath)) renameSync(backupPath, legacyJsonPath);
+      throw error;
+    }
+  }
+
+  migrateLegacyStore();
 
   return {
     saveCase,

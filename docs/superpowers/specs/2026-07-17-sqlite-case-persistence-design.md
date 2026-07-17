@@ -47,7 +47,7 @@
 
 ### 运行与步骤结果
 
-`test_runs` 保存每个用例的一次执行：`id`、`case_id`、可空的 `batch_id`、`status`、`started_at`、`finished_at`、`variables_json`。
+`test_runs` 保存每个用例的一次执行：`id`、`case_id`、可空的 `batch_id`、可空的 `batch_position`、`status`、`started_at`、`finished_at`、`variables_json`。`batch_position` 保证运行 ID 在时间戳相同的情况下仍能按批次实际执行顺序还原。
 
 `run_steps` 保存步骤级结果：`run_id`、`step_id`、`position`、`status`、`attempts`、`error`、`screenshot`、`logs_json`。其中变量与日志是结构不固定的运行证据，使用 JSON 文本保存；截图继续保存既有文件路径。`run_id + position` 唯一，确保报告输出顺序可预测。
 

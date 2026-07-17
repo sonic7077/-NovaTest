@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { createApp } from './app.js';
 import { createProductionRunner } from './runners/production-runner.js';
-import { createFileStore } from './storage/file-store.js';
+import { createSqliteStore } from './storage/sqlite-store.js';
 
 async function main() {
   let runner;
@@ -15,7 +15,7 @@ async function main() {
     console.warn(`Web UI runner is unavailable: ${error.message}`);
   }
   const port = Number(process.env.PORT || 4173);
-  const store = createFileStore('data/store.json');
+  const store = createSqliteStore({ databasePath: 'data/novatest.db', legacyJsonPath: 'data/store.json' });
   createApp({ runner, store, runnerStatus }).listen(port, '127.0.0.1', () => console.log(`NovaTest is running at http://127.0.0.1:${port}`));
 }
 
