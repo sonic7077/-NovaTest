@@ -68,6 +68,10 @@ describe('SQLite store', () => {
           attempts: 2,
           error: 'missing',
           screenshot: 'evidence/a.png',
+          screenshots: [
+            { path: 'run-1/step-1-attempt-1.png', attempt: 1, phase: 'failed' },
+            { path: 'run-1/step-1-attempt-2.png', attempt: 2, phase: 'passed' }
+          ],
           logs: [{ level: 'warn', message: 'retrying' }]
         }]
       });
@@ -84,7 +88,14 @@ describe('SQLite store', () => {
       const reloaded = createSqliteStore({ databasePath });
       expect(reloaded.getRun('run-1')).toMatchObject({
         variables: { orderId: 'A-1' },
-        steps: [{ screenshot: 'evidence/a.png', logs: [{ message: 'retrying' }] }]
+        steps: [{
+          screenshot: 'evidence/a.png',
+          screenshots: [
+            { path: 'run-1/step-1-attempt-1.png', attempt: 1, phase: 'failed' },
+            { path: 'run-1/step-1-attempt-2.png', attempt: 2, phase: 'passed' }
+          ],
+          logs: [{ message: 'retrying' }]
+        }]
       });
       expect(reloaded.getBatch('batch-1')).toMatchObject({ caseIds: [webCase.id], runIds: ['run-1'] });
     } finally {
