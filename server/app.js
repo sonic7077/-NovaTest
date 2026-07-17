@@ -1,7 +1,9 @@
 import express from 'express';
 import { existsSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { basename, join } from 'node:path';
+import multer from 'multer';
 import { validateWebCase } from './domain/case.js';
 import { renderReport } from './services/report-service.js';
 import { BatchService } from './services/batch-service.js';
@@ -31,6 +33,7 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
   const runService = new RunService(runner);
   const batchService = new BatchService({ runner, store });
   app.use(express.json());
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
   app.get('/api/health', (_req, res) => res.json({ webRunner: runnerStatus }));
 
@@ -44,6 +47,18 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
   app.get('/api/cases/:id', (req, res) => {
     const testCase = store.getCase(req.params.id);
     return testCase ? res.json(testCase) : res.status(404).json({ error: 'test case not found' });
+  });
+
+  app.post('/api/cases/:id/assets', upload.single('file'), async (req, res) => {
+    if (!store.getCase(req.params.id)) return res.status(404).json({ error: 'test case not found' });
+    if (!req.file || !['image/png', 'image/jpeg', 'image/webp'].includes(req.file.mimetype)) return res.status(400).json({ error: 'invalid image file' });
+    const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[req.file.mimetype];
+    const id = crypto.randomUUID();
+    const assetPath = `${req.params.id}/${id}.${extension}`;
+    const directory = join(projectRoot, 'data/case-assets', req.params.id);
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, `${id}.${extension}`), req.file.buffer);
+    return res.status(201).json({ id, assetPath, source: 'upload' });
   });
 
   app.put('/api/cases/:id', (req, res) => {

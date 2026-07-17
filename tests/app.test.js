@@ -168,4 +168,15 @@ describe('execution API', () => {
     expect(report).toContain('/api/runs/run-1/evidence/s1-attempt-1.png');
     expect(report).toContain('<img');
   });
+
+  it('uploads a PNG visual baseline for an existing case', async () => {
+    const app = createApp({ runner: {}, store: createMemoryStore() });
+    const created = (await request(app).post('/api/cases').send(webCase).expect(201)).body;
+
+    await request(app)
+      .post(`/api/cases/${created.id}/assets`)
+      .attach('file', Buffer.from([137, 80, 78, 71]), { filename: 'baseline.png', contentType: 'image/png' })
+      .expect(201)
+      .expect((response) => expect(response.body).toMatchObject({ source: 'upload', assetPath: expect.stringMatching(new RegExp(`^${created.id}/`)) }));
+  });
 });
