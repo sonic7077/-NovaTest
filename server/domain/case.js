@@ -12,6 +12,11 @@ export function validateWebCase(input) {
     if (!step?.id || !stepKinds.has(step.kind) || !step.instruction?.trim()) {
       throw new Error('invalid step');
     }
+    (step.visualChecks || []).forEach((visualCheck) => {
+      if (!visualCheck?.id || !['upload', 'run'].includes(visualCheck.source) || !visualCheck.description?.trim() || !visualCheck.assetPath?.startsWith(`${input.id}/`)) {
+        throw new Error('invalid visual check');
+      }
+    });
   });
 
   return input;

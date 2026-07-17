@@ -48,6 +48,19 @@ describe('SQLite store', () => {
     }
   });
 
+  it('persists step visual baselines across store instances', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
+    const databasePath = join(directory, 'novatest.db');
+    const visualChecks = [{ id: 'visual-1', assetPath: 'case-1/visual-1.png', source: 'upload', description: '显示应付金额' }];
+
+    try {
+      createSqliteStore({ databasePath }).saveCase({ ...webCase, steps: [{ ...webCase.steps[0], visualChecks }] });
+      expect(createSqliteStore({ databasePath }).getCase(webCase.id).steps[0].visualChecks).toEqual(visualChecks);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('persists run evidence and ordered batch links across instances', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
     const databasePath = join(directory, 'novatest.db');

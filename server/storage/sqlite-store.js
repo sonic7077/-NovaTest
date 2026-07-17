@@ -129,13 +129,21 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   migrateEvidenceSchema();
 
+  function migrateVisualCheckSchema() {
+    const columns = db.prepare('PRAGMA table_info(test_steps)').all().map((column) => column.name);
+    if (!columns.includes('visual_checks_json')) db.exec("ALTER TABLE test_steps ADD COLUMN visual_checks_json TEXT NOT NULL DEFAULT '[]'");
+    if (db.prepare('PRAGMA user_version').get().user_version < 4) db.exec('PRAGMA user_version = 4');
+  }
+
+  migrateVisualCheckSchema();
+
   const selectCase = db.prepare(`
     SELECT id, name, target, base_url AS baseUrl, viewport
     FROM test_cases
     WHERE id = ?
   `);
   const selectSteps = db.prepare(`
-    SELECT id, kind, instruction
+    SELECT id, kind, instruction, visual_checks_json
     FROM test_steps
     WHERE case_id = ?
     ORDER BY position
@@ -143,7 +151,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   function hydrateCase(row) {
     if (!row) return undefined;
-    return { ...row, steps: selectSteps.all(row.id) };
+    return { ...row, steps: selectSteps.all(row.id).map(({ visual_checks_json, ...step }) => ({ ...step, visualChecks: JSON.parse(visual_checks_json || '[]') })) };
   }
 
   function writeCase(testCase) {
@@ -161,10 +169,10 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     `).run(saved.id, saved.name, saved.target, saved.baseUrl, saved.viewport, timestamp, timestamp);
     db.prepare('DELETE FROM test_steps WHERE case_id = ?').run(saved.id);
     const insertStep = db.prepare(`
-      INSERT INTO test_steps (id, case_id, position, kind, instruction)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO test_steps (id, case_id, position, kind, instruction, visual_checks_json)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    saved.steps.forEach((step, position) => insertStep.run(step.id, saved.id, position, step.kind, step.instruction));
+    saved.steps.forEach((step, position) => insertStep.run(step.id, saved.id, position, step.kind, step.instruction, JSON.stringify(step.visualChecks || [])));
     return saved;
   }
 

@@ -19,4 +19,17 @@ describe('web test case', () => {
     expect(interpolate({ order: '{{orderId}}' }, { orderId: 'A-1' })).toEqual({ order: 'A-1' });
     expect(() => interpolate('{{missing}}', {})).toThrow('missing variable: missing');
   });
+
+  it('accepts case-scoped visual baselines and rejects invalid ones', () => {
+    const testCase = validateWebCase({
+      id: 'case-1', name: '登录', target: 'web', baseUrl: 'https://example.test', viewport: 'desktop',
+      steps: [{
+        id: 's1', kind: 'assert', instruction: '显示登录按钮',
+        visualChecks: [{ id: 'visual-1', assetPath: 'case-1/visual-1.png', source: 'upload', description: '登录按钮在首屏可见' }]
+      }]
+    });
+
+    expect(testCase.steps[0].visualChecks).toHaveLength(1);
+    expect(() => validateWebCase({ ...testCase, steps: [{ ...testCase.steps[0], visualChecks: [{ id: 'visual-2', assetPath: 'other/visual-2.png', source: 'upload', description: '' }] }] })).toThrow('invalid visual check');
+  });
 });
