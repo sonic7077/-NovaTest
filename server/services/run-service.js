@@ -11,6 +11,7 @@ export class RunService {
   }
 
   async start(testCase) {
+    const runner = this.runner[testCase.target] || this.runner;
     const run = {
       id: crypto.randomUUID(),
       caseId: testCase.id,
@@ -31,7 +32,7 @@ export class RunService {
         executionContext.attempt = attempt;
         try {
           const resolvedStep = { ...step, instruction: interpolate(step.instruction, run.variables) };
-          const evidence = await this.runner.execute(resolvedStep, executionContext);
+          const evidence = await runner.execute(resolvedStep, executionContext);
           Object.assign(run.variables, evidence.variables);
           const { screenshots = [], ...stepEvidence } = evidence;
           Object.assign(stepRun, stepEvidence, { status: 'passed' });

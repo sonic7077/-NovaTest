@@ -85,4 +85,18 @@ describe('RunService', () => {
       { path: `${run.id}/s1-attempt-2.png`, attempt: 2, phase: 'passed' }
     ]);
   });
+
+  it('selects the API runner for API test cases', async () => {
+    let selected = false;
+    const service = new RunService({
+      web: { execute: async () => { throw new Error('wrong runner'); } },
+      api: { execute: async () => { selected = true; return { api: { action: 'config' } }; } }
+    });
+    const apiCase = { ...testCase, target: 'api', steps: [{ id: 's1', kind: 'apiRequest', instruction: '读取配置', request: { action: 'config', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }] };
+
+    const run = await service.start(apiCase);
+
+    expect(selected).toBe(true);
+    expect(run.status).toBe('passed');
+  });
 });
