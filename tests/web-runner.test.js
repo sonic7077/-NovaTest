@@ -45,4 +45,40 @@ describe('web runner', () => {
 
     expect(navigations).toEqual(['https://example.test']);
   });
+
+  it('writes success evidence to its run directory', async () => {
+    const screenshots = [];
+    const runner = createWebRunner({
+      browser: { newPage: async () => ({ screenshot: async ({ path }) => { screenshots.push(path); return path; } }) },
+      agentFactory: () => ({ aiAct: async () => {} }),
+      screenshotDir: 'evidence'
+    });
+
+    const result = await runner.execute(
+      { id: 's1', kind: 'action', instruction: '打开首页' },
+      { runId: 'run-1', attempt: 2, viewport: { width: 1440, height: 900 } }
+    );
+
+    expect(screenshots).toEqual(['evidence/run-1/s1-attempt-2.png']);
+    expect(result).toMatchObject({
+      screenshot: 'run-1/s1-attempt-2.png',
+      screenshots: [{ path: 'run-1/s1-attempt-2.png', attempt: 2, phase: 'passed' }]
+    });
+  });
+
+  it('attaches failed screenshot evidence without changing the Midscene error', async () => {
+    const runner = createWebRunner({
+      browser: { newPage: async () => ({ screenshot: async ({ path }) => path }) },
+      agentFactory: () => ({ aiAssert: async () => { throw new Error('标题缺失'); } }),
+      screenshotDir: 'evidence'
+    });
+
+    await expect(runner.execute(
+      { id: 's1', kind: 'assert', instruction: '显示标题' },
+      { runId: 'run-1', attempt: 1, viewport: { width: 1440, height: 900 } }
+    )).rejects.toMatchObject({
+      message: '标题缺失',
+      evidence: { path: 'run-1/s1-attempt-1.png', attempt: 1, phase: 'failed' }
+    });
+  });
 });
