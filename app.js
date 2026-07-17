@@ -1,13 +1,30 @@
 const $ = (selector) => document.querySelector(selector);
 const steps = $('#steps');
-const runButton = $('#runBtn');
 const log = $('#runLog');
 const deviceStrip = $('#deviceStrip');
 const toast = $('#toast');
 let target = 'web';
 let viewport = 'desktop';
 let savedCases = [];
+let editingCaseId = null;
 const selectedCaseIds = new Set();
+
+function renderRoute() {
+  const route = location.hash || '#/dashboard';
+  const view = route === '#/dashboard' ? 'dashboard' : (route === '#/assets' ? 'assets-list' : 'asset-editor');
+  document.querySelectorAll('.route-view').forEach((element) => { element.hidden = element.dataset.routeView !== view; });
+  document.querySelectorAll('.nav-item[href^="#/"]').forEach((link) => link.classList.toggle('active', link.getAttribute('href') === (view === 'dashboard' ? '#/dashboard' : '#/assets')));
+  $('#breadcrumb').innerHTML = view === 'dashboard'
+    ? '工作台 <i data-lucide="chevron-right"></i> <span>执行概览</span>'
+    : `测试资产 <i data-lucide="chevron-right"></i> <span>${view === 'assets-list' ? '用例库' : 'Web UI 用例编排'}</span>`;
+  lucide.createIcons();
+  if (view === 'dashboard') loadDashboard();
+  if (view === 'assets-list') loadSavedCases().catch((error) => showToast(error.message, true));
+  if (route === '#/assets/new') resetEditor();
+  if (route.startsWith('#/assets/') && route !== '#/assets/new') loadEditor(decodeURIComponent(route.slice('#/assets/'.length))).catch((error) => showToast(error.message, true));
+}
+
+window.addEventListener('hashchange', renderRoute);
 
 lucide.createIcons();
 
@@ -89,32 +106,52 @@ function createStepNode(step, index) {
 }
 
 function applyCase(testCase) {
+  editingCaseId = testCase.id || null;
   target = testCase.target;
   viewport = testCase.viewport;
   document.querySelector('.case-meta input').value = testCase.name;
   $('#baseUrl').value = testCase.baseUrl;
   steps.innerHTML = '';
   testCase.steps.forEach((step, index) => steps.appendChild(createStepNode(step, index)));
+  $('#editorTitle').textContent = editingCaseId ? `编辑用例 · ${testCase.name}` : '新建 Web UI 用例';
+  $('#deleteCase').hidden = !editingCaseId;
   selectViewport(viewport);
   lucide.createIcons();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function resetEditor() {
+  applyCase({
+    name: '', target: 'web', baseUrl: 'https://example.test', viewport: 'desktop',
+    steps: [{ id: 'step-1', kind: 'action', instruction: '' }]
+  });
+}
+
+export async function loadEditor(id) {
+  const response = await fetch(`/api/cases/${encodeURIComponent(id)}`);
+  if (response.status === 404) {
+    location.hash = '#/assets';
+    showToast('该测试用例不存在或已删除', true);
+    return;
+  }
+  if (!response.ok) throw new Error('无法读取测试用例');
+  applyCase(await response.json());
 }
 
 async function loadSavedCases() {
-  const response = await fetch('/api/cases');
+  const query = $('#assetSearch').value.trim();
+  const response = await fetch(`/api/cases?q=${encodeURIComponent(query)}`);
   if (!response.ok) throw new Error('无法读取已保存用例');
   savedCases = await response.json();
   $('#caseCount').textContent = savedCases.length;
   const container = $('#caseList');
   if (!savedCases.length) {
-    container.innerHTML = '<p class="empty-state">还没有保存的用例。完成步骤编辑后点击“保存草稿”。</p>';
+    container.innerHTML = '<tr><td colspan="5" class="empty-state">未找到测试用例。</td></tr>';
     updateBatchSelection();
     return;
   }
   container.innerHTML = '';
   savedCases.forEach((testCase) => {
-    const item = document.createElement('article');
-    item.className = 'case-item';
+    const item = document.createElement('tr');
     const select = document.createElement('input');
     select.type = 'checkbox';
     select.className = 'case-select';
@@ -125,6 +162,8 @@ async function loadSavedCases() {
       else selectedCaseIds.delete(testCase.id);
       updateBatchSelection();
     });
+    const selectCell = document.createElement('td');
+    selectCell.appendChild(select);
     const icon = document.createElement('span');
     icon.className = 'case-item-icon';
     icon.innerHTML = '<i data-lucide="monitor"></i>';
@@ -134,13 +173,21 @@ async function loadSavedCases() {
     const details = document.createElement('small');
     details.textContent = `${testCase.viewport === 'mobile' ? 'Mobile H5 · 390 × 844' : 'Desktop · 1440 × 900'} · ${testCase.steps.length} 个步骤`;
     copy.append(name, details);
+    const nameCell = document.createElement('td');
+    nameCell.append(icon, copy);
+    const environment = document.createElement('td');
+    environment.textContent = testCase.viewport === 'mobile' ? 'Mobile H5' : 'Desktop';
+    const stepCount = document.createElement('td');
+    stepCount.textContent = `${testCase.steps.length} 步`;
+    const actions = document.createElement('td');
     const edit = document.createElement('button');
     edit.className = 'case-open';
     edit.type = 'button';
-    edit.title = '打开用例';
-    edit.innerHTML = '<i data-lucide="chevron-right"></i>';
-    edit.addEventListener('click', () => applyCase(testCase));
-    item.append(select, icon, copy, edit);
+    edit.title = '编辑用例';
+    edit.innerHTML = '<i data-lucide="pencil"></i>';
+    edit.addEventListener('click', () => { location.hash = `#/assets/${encodeURIComponent(testCase.id)}`; });
+    actions.appendChild(edit);
+    item.append(selectCell, nameCell, environment, stepCount, actions);
     container.appendChild(item);
   });
   updateBatchSelection();
@@ -199,18 +246,6 @@ function renderBatchHistory(batches) {
   });
 }
 
-async function loadBatches() {
-  const response = await fetch('/api/batches');
-  if (!response.ok) throw new Error('无法读取批次历史');
-  const batches = await response.json();
-  const details = await Promise.all(batches.map(async (batch) => {
-    const detailResponse = await fetch(`/api/batches/${batch.id}`);
-    if (!detailResponse.ok) throw new Error('无法读取批次详情');
-    return detailResponse.json();
-  }));
-  renderBatchHistory(details);
-}
-
 async function createBatch() {
   const button = $('#runBatch');
   const caseIds = selectedCasesInOrder();
@@ -227,8 +262,7 @@ async function createBatch() {
     if (!response.ok) throw new Error((await response.json()).error || '批量执行失败');
     selectedCaseIds.clear();
     await loadSavedCases();
-    await loadBatches();
-    showToast('批量执行已完成');
+    showToast('批量执行任务已创建');
   } catch (error) {
     showToast(error.message, true);
   } finally {
@@ -248,10 +282,38 @@ async function loadRunnerStatus() {
   badge.classList.toggle('offline', !webRunner.ready);
 }
 
+function loadDashboard() {
+  loadRunnerStatus().catch((error) => showToast(error.message, true));
+}
+
 export async function saveCase() {
-  const response = await fetch('/api/cases', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(readCaseFromForm()) });
+  const id = editingCaseId;
+  const response = await fetch(id ? `/api/cases/${encodeURIComponent(id)}` : '/api/cases', {
+    method: id ? 'PUT' : 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(readCaseFromForm())
+  });
   if (!response.ok) throw new Error((await response.json()).error || '保存失败');
-  return response.json();
+  const saved = await response.json();
+  editingCaseId = saved.id;
+  $('#editorTitle').textContent = `编辑用例 · ${saved.name}`;
+  $('#deleteCase').hidden = false;
+  return saved;
+}
+
+export async function deleteEditor() {
+  if (!editingCaseId || !window.confirm('删除用例定义后，已生成的执行记录和报告会保留。确定删除吗？')) return;
+  const button = $('#deleteCase');
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/cases/${encodeURIComponent(editingCaseId)}`, { method: 'DELETE' });
+    if (!response.ok && response.status !== 404) throw new Error('删除测试用例失败');
+    selectedCaseIds.delete(editingCaseId);
+    showToast('测试用例已删除');
+    location.hash = '#/assets';
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function addLog(message, state = '') {
@@ -281,36 +343,14 @@ function renderRun(run) {
 }
 
 $('#saveBtn').addEventListener('click', async () => {
-  try { await saveCase(); await loadSavedCases(); showToast('Web UI 用例已保存'); }
+  try { await saveCase(); showToast('Web UI 用例已保存'); }
   catch (error) { showToast(error.message, true); }
 });
 
 $('#refreshCases').addEventListener('click', () => loadSavedCases().catch((error) => showToast(error.message, true)));
 $('#runBatch').addEventListener('click', createBatch);
-loadSavedCases().catch((error) => showToast(error.message, true));
-loadBatches().catch((error) => showToast(error.message, true));
-loadRunnerStatus().catch((error) => showToast(error.message, true));
-
-runButton.addEventListener('click', async () => {
-  if (runButton.disabled) return;
-  try {
-    runButton.disabled = true;
-    runButton.innerHTML = '<i data-lucide="loader-circle"></i>创建任务';
-    $('#runState').textContent = '正在创建 Web UI 执行任务';
-    $('#statePill').textContent = 'RUNNING';
-    $('#progressBar').style.width = '10%';
-    log.innerHTML = '';
-    const testCase = await saveCase();
-    const response = await fetch(`/api/cases/${testCase.id}/runs`, { method: 'POST' });
-    if (!response.ok) throw new Error('执行任务创建失败');
-    renderRun(await response.json());
-  } catch (error) {
-    $('#runState').textContent = '执行任务创建失败';
-    addLog(error.message, 'error');
-    showToast(error.message, true);
-  } finally {
-    runButton.disabled = false;
-    runButton.innerHTML = '<i data-lucide="play"></i>再次运行';
-    lucide.createIcons();
-  }
-});
+$('#createCase').addEventListener('click', () => { location.hash = '#/assets/new'; });
+$('#cancelEdit').addEventListener('click', () => { location.hash = '#/assets'; });
+$('#deleteCase').addEventListener('click', () => deleteEditor().catch((error) => showToast(error.message, true)));
+$('#assetSearch').addEventListener('input', () => loadSavedCases().catch((error) => showToast(error.message, true)));
+renderRoute();
