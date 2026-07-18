@@ -394,13 +394,26 @@ async function loadSavedCases() {
     const stepCount = document.createElement('td');
     stepCount.textContent = `${testCase.steps.length} 步`;
     const actions = document.createElement('td');
+    actions.className = 'case-row-actions';
+    const run = document.createElement('button');
+    run.className = 'case-open';
+    run.type = 'button';
+    run.title = '执行用例';
+    run.innerHTML = '<i data-lucide="play"></i>';
+    run.addEventListener('click', () => runSavedCase(testCase).catch((error) => showToast(error.message, true)));
     const edit = document.createElement('button');
     edit.className = 'case-open';
     edit.type = 'button';
     edit.title = '编辑用例';
     edit.innerHTML = '<i data-lucide="pencil"></i>';
     edit.addEventListener('click', () => { location.hash = projectCaseRoute(activeProjectId, testCase.id); });
-    actions.appendChild(edit);
+    const remove = document.createElement('button');
+    remove.className = 'case-open danger';
+    remove.type = 'button';
+    remove.title = '删除用例';
+    remove.innerHTML = '<i data-lucide="trash-2"></i>';
+    remove.addEventListener('click', () => deleteSavedCase(testCase).catch((error) => showToast(error.message, true)));
+    actions.append(run, edit, remove);
     item.append(selectCell, nameCell, environment, stepCount, actions);
     container.appendChild(item);
   });
@@ -423,10 +436,25 @@ function selectedCasesInOrder() {
   return savedCases.filter((testCase) => selectedCaseIds.has(testCase.id)).map((testCase) => testCase.id);
 }
 
+function toggleVisibleCases() {
+  const visibleIds = savedCases.map(({ id }) => id);
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedCaseIds.has(id));
+  visibleIds.forEach((id) => {
+    if (allSelected) selectedCaseIds.delete(id);
+    else selectedCaseIds.add(id);
+  });
+  loadSavedCases().catch((error) => showToast(error.message, true));
+}
+
 function updateBatchSelection() {
   const count = selectedCasesInOrder().length;
   $('#selectedCaseCount').textContent = `已选择 ${count} 个用例`;
   $('#runBatch').disabled = count === 0;
+  $('#deleteSelectedCases').disabled = count === 0;
+  const selectAll = $('#selectAllCases');
+  selectAll.disabled = savedCases.length === 0;
+  selectAll.checked = savedCases.length > 0 && count === savedCases.length;
+  selectAll.indeterminate = count > 0 && count < savedCases.length;
 }
 
 function formatBatchTime(value) {
@@ -458,17 +486,48 @@ function renderBatchHistory(batches) {
     summary.textContent = `${passed} 通过 · ${failed} 失败`;
     const reports = document.createElement('div');
     reports.className = 'batch-reports';
-    batch.runs.forEach((run) => {
-      const report = document.createElement('a');
-      report.href = `/api/runs/${run.id}/report`;
-      report.target = '_blank';
-      report.rel = 'noopener';
-      report.textContent = `${run.caseId.slice(0, 8)} ${run.status === 'passed' ? '通过' : '失败'}报告`;
-      reports.appendChild(report);
-    });
+    const report = document.createElement('a');
+    report.href = `/api/batches/${batch.id}/report`;
+    report.target = '_blank';
+    report.rel = 'noopener';
+    report.textContent = '查看汇总报告';
+    reports.appendChild(report);
     item.append(title, state, summary, reports);
     container.appendChild(item);
   });
+}
+
+async function deleteSavedCase(testCase) {
+  if (!window.confirm(`删除用例“${testCase.name}”？已生成的执行记录和报告会保留。`)) return;
+  const response = await fetch(`/api/cases/${encodeURIComponent(testCase.id)}`, { method: 'DELETE' });
+  if (!response.ok && response.status !== 404) throw new Error('删除测试用例失败');
+  selectedCaseIds.delete(testCase.id);
+  await loadSavedCases();
+  await loadBatchHistory(testCase.projectId);
+  showToast('测试用例已删除');
+}
+
+async function deleteSelectedCases() {
+  const caseIds = selectedCasesInOrder();
+  if (!caseIds.length || !window.confirm(`删除已选择的 ${caseIds.length} 个用例？已生成的执行记录和报告会保留。`)) return;
+  for (const caseId of caseIds) {
+    const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}`, { method: 'DELETE' });
+    if (!response.ok && response.status !== 404) throw new Error('批量删除测试用例失败');
+    selectedCaseIds.delete(caseId);
+  }
+  await loadSavedCases();
+  await loadBatchHistory();
+  showToast('已删除选择的测试用例');
+}
+
+async function runSavedCase(testCase) {
+  const response = await fetch(`/api/cases/${encodeURIComponent(testCase.id)}/runs`, { method: 'POST' });
+  if (!response.ok) throw new Error((await response.json()).error || '执行测试用例失败');
+  const run = await response.json();
+  location.hash = '#/dashboard';
+  renderRun(run);
+  await loadBatchHistory(testCase.projectId);
+  showToast(run.status === 'passed' ? '测试用例执行完成' : '测试用例执行失败', run.status !== 'passed');
 }
 
 async function createBatch() {
@@ -604,6 +663,8 @@ $('#saveBtn').addEventListener('click', async () => {
 $('#projectCreateForm').addEventListener('submit', (event) => createProject(event).catch((error) => showToast(error.message, true)));
 $('#refreshCases').addEventListener('click', () => loadSavedCases().catch((error) => showToast(error.message, true)));
 $('#runBatch').addEventListener('click', createBatch);
+$('#selectAllCases').addEventListener('change', toggleVisibleCases);
+$('#deleteSelectedCases').addEventListener('click', () => deleteSelectedCases().catch((error) => showToast(error.message, true)));
 $('#debugApiCase').addEventListener('click', () => debugApiCase().catch((error) => showToast(error.message, true)));
 $('#cancelEdit').addEventListener('click', () => { location.hash = activeProjectId ? projectAssetsRoute(activeProjectId) : '#/assets'; });
 $('#deleteCase').addEventListener('click', () => deleteEditor().catch((error) => showToast(error.message, true)));

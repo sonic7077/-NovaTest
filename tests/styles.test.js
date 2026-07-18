@@ -35,6 +35,8 @@ describe('test console stylesheet', () => {
     expect(html).toContain('id="newWebCaseLink"');
     expect(html).toContain('id="newApiCaseLink"');
     expect(html).toContain('id="assetTargetFilter"');
+    expect(html).toContain('id="selectAllCases"');
+    expect(html).toContain('id="deleteSelectedCases"');
     expect(html).toContain('id="apiSteps"');
     expect(html).toContain('id="debugApiCase"');
     expect(html).toContain('id="apiRequestPreview"');
@@ -50,9 +52,15 @@ describe('test console stylesheet', () => {
     expect(script).toContain('async function loadBatchHistory(projectId = activeProjectId)');
     expect(script).toContain('`/api/batches?projectId=${encodeURIComponent(projectId)}`');
     expect(script).toContain('async function loadProjects()');
+    expect(script).toContain('function toggleVisibleCases()');
+    expect(script).toContain('async function deleteSelectedCases()');
+    expect(script).toContain('async function runSavedCase(testCase)');
+    expect(script).toContain('async function deleteSavedCase(testCase)');
+    expect(script).toContain('`/api/batches/${batch.id}/report`');
     expect(script).toContain("'/api/projects'");
     expect(script).toContain('#/projects/');
     expect(stylesheet).toContain('.api-request { grid-template-columns: 28px minmax(0, 1fr); }');
+    expect(stylesheet).toContain('.case-row-actions');
     expect(stylesheet).toContain('.api-request .step-content { min-width: 0; }');
     expect(script).toContain("target === 'api' ? '接口用例编排' : 'Web UI 用例编排'");
     expect(script).toContain('function updateEditorBreadcrumb()');
