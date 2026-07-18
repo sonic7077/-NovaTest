@@ -40,6 +40,12 @@ function resolvedBusinessStatus(outer, data) {
   return outer.status ?? (outer.errcode === 0 ? 1 : outer.errcode);
 }
 
+function sessionToken(data) {
+  if (typeof data === 'string' && data.trim()) return data;
+  if (data && typeof data === 'object' && typeof data.data === 'string' && data.data.trim()) return data.data;
+  return null;
+}
+
 export class CmsApiRunner {
   constructor({ config, fetchImpl = fetch }) {
     this.config = config;
@@ -97,8 +103,13 @@ export class CmsApiRunner {
         password: this.config.password,
         secret: generateTotp(this.config.googleSecret)
       }), baseUrl, 1);
-      if (typeof result.data !== 'string' || !result.data.trim()) throw new Error('CMS authentication returned no token');
-      session.token = result.data;
+      const token = sessionToken(result.data);
+      if (!token) {
+        const error = new Error('CMS authentication returned no token');
+        error.api = result.api;
+        throw error;
+      }
+      session.token = token;
       session.loginApi = result.api;
       return session;
     } catch (error) {

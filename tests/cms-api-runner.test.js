@@ -102,6 +102,28 @@ describe('CMS API runner', () => {
     expect(result.api.response).toEqual({ data: { config: { featureEnabled: true } } });
   });
 
+  it('reuses the session value from a nested login envelope', async () => {
+    let submittedConfigPayload;
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password' },
+      fetchImpl: async (url, options) => {
+        const action = new URL(url).pathname.split('/').at(-1);
+        if (action === 'config') submittedConfigPayload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
+        return {
+          ok: true,
+          status: 200,
+          json: async () => action === 'loginByPassword'
+            ? encryptedResponse({ status: 1, crypt: true, data: 'nested-session-token', msg: 'ok' })
+            : encryptedResponse({ data: { config: { featureEnabled: true } } })
+        };
+      }
+    });
+
+    await runner.execute(apiStep('config'), { testCase: { baseUrl: 'https://example.test' }, variables: {} });
+
+    expect(submittedConfigPayload.token).toBe('nested-session-token');
+  });
+
   it('fails when a decrypted business body overrides an outer success status', async () => {
     const runner = new CmsApiRunner({
       config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
