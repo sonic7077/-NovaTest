@@ -270,12 +270,13 @@ describe('execution API', () => {
 
     expect(report).toContain('list_post');
     expect(report).toContain('HTTP 200');
-    expect(report).toContain('解密后响应');
+    expect(report).toContain('响应内容');
     expect(report).toContain('********');
     expect(report).toContain('&quot;config&quot;');
     expect(report).toContain('&quot;featureEnabled&quot;');
     expect(report).not.toContain('secret-token');
     expect(report).not.toContain('响应摘要');
+    expect(report).not.toContain('解密后响应');
   });
 
   it('uploads a PNG visual baseline for an existing case', async () => {

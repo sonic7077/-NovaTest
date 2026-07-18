@@ -158,7 +158,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
 .toast svg { width: 15px; color: #d1f36b; }
 .assets { margin: 0 42px 38px; padding: 21px; }
 .route-view[hidden] { display: none; }
-.asset-toolbar { display: flex; align-items: center; gap: 9px; margin-top: 18px; }
+.asset-toolbar { display: grid; grid-template-columns: minmax(260px, 1fr) 180px 36px; align-items: center; gap: 9px; margin-top: 18px; }
 .back-link { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 7px; color: #527667; text-decoration: none; font-size: 11px; font-weight: 800; }
 .back-link svg { width: 14px; }
 .project-create { display: flex; align-items: end; gap: 10px; margin-top: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
@@ -184,6 +184,8 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
 .api-preview h3 { margin: 0 0 8px; color: #3c5a4d; font-size: 12px; }
 .api-preview pre { max-height: 220px; padding: 10px; margin: 0; overflow: auto; color: #31423b; background: #fff; border: 1px solid #e1e9e5; border-radius: 4px; font: 11px/1.45 "DM Mono", monospace; }
 .asset-search { display: flex; align-items: center; flex: 1; gap: 8px; height: 36px; padding: 0 10px; background: #fff; border: 1px solid #dce5e1; border-radius: 6px; }
+.asset-toolbar select { width: 180px; height: 36px; }
+.asset-search { min-width: 0; }
 .asset-search svg { width: 15px; color: #83918b; }
 .asset-search input { min-width: 0; width: 100%; color: #31423b; background: transparent; border: 0; outline: 0; font-size: 12px; }
 .asset-selection { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 0; margin-top: 17px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -258,6 +260,8 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
   .project-list { grid-template-columns: 1fr; }
   .asset-selection { align-items: stretch; flex-direction: column; }
   .asset-selection .run-button { width: 100%; }
+  .asset-toolbar { grid-template-columns: minmax(0, 1fr) 36px; }
+  .asset-toolbar select { grid-column: 1 / -1; width: 100%; }
   .heading-actions { width: 100%; }
   .heading-actions button { flex: 1; }
 }

@@ -96,7 +96,7 @@ document.querySelectorAll('.target-tab').forEach((tab) => {
       selectViewport(viewport);
       bindViewportButtons();
     } else {
-      deviceStrip.innerHTML = '<span class="status-dot"></span><span><b>CMS 加密接口执行</b><small>结构化 POST 请求 · 加密、断言、变量提取</small></span>';
+      deviceStrip.innerHTML = '<span class="status-dot"></span><span><b>接口测试执行</b><small>结构化 POST 请求 · 断言、变量提取</small></span>';
     }
     syncEditorTarget();
   });
@@ -224,7 +224,7 @@ function applyCase(testCase) {
   $('#editorTitle').textContent = editingCaseId ? `编辑用例 · ${testCase.name}` : `新建 ${target === 'api' ? '接口' : 'Web UI'} 用例`;
   $('#deleteCase').hidden = !editingCaseId;
   if (target === 'web') selectViewport(viewport);
-  else deviceStrip.innerHTML = '<span class="status-dot"></span><span><b>CMS 加密接口执行</b><small>结构化 POST 请求 · 加密、断言、变量提取</small></span>';
+  else deviceStrip.innerHTML = '<span class="status-dot"></span><span><b>接口测试执行</b><small>结构化 POST 请求 · 断言、变量提取</small></span>';
   syncEditorTarget();
   lucide.createIcons();
 }

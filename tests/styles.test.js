@@ -17,6 +17,8 @@ describe('test console stylesheet', () => {
     expect(stylesheet).toContain('.workspace-grid');
     expect(stylesheet).toContain('.case-editor');
     expect(stylesheet).toContain('.asset-selection');
+    expect(stylesheet).toContain('.asset-toolbar { display: grid; grid-template-columns: minmax(260px, 1fr) 180px 36px;');
+    expect(stylesheet).toContain('.asset-toolbar select { width: 180px; height: 36px; }');
     expect(stylesheet).toContain('.batch-history');
     expect(stylesheet).toContain('.route-view');
     expect(stylesheet).toContain('.assets-table');
@@ -25,6 +27,7 @@ describe('test console stylesheet', () => {
     expect(html).toContain('data-route-view="dashboard"');
     expect(html).toContain('data-route-view="asset-editor"');
     expect(html).toContain('id="assetSearch"');
+    expect(html).not.toContain('社区 CMS');
     expect(html).toContain('id="projectList"');
     expect(html).toContain('id="createProject"');
     expect(html).toContain('id="caseProjectId"');
@@ -53,6 +56,8 @@ describe('test console stylesheet', () => {
     expect(stylesheet).toContain('.api-request .step-content { min-width: 0; }');
     expect(script).toContain("target === 'api' ? '接口用例编排' : 'Web UI 用例编排'");
     expect(script).toContain('function updateEditorBreadcrumb()');
+    expect(script).toContain('<b>接口测试执行</b><small>结构化 POST 请求 · 断言、变量提取</small>');
+    expect(script).not.toContain('CMS 加密接口执行');
     expect(stylesheet).toContain('@media (max-width: 760px)');
     expect(stylesheet.length).toBeGreaterThan(5000);
   });
