@@ -25,6 +25,11 @@ export function createFileStore(filePath) {
       if (id !== key) delete data.cases[key];
       if (id !== testCase.id || saved.projectId !== testCase.projectId) changed = true;
     });
+    Object.entries(data.batches).forEach(([key, batch]) => {
+      if (batch.projectId) return;
+      data.batches[key] = { ...batch, projectId: defaultProject.id };
+      changed = true;
+    });
     if (changed) save(data);
     return data;
   }
@@ -78,8 +83,15 @@ export function createFileStore(filePath) {
     },
     saveRun(run) { const data = load(); data.runs[run.id] = run; save(data); return run; },
     getRun(id) { return load().runs[id]; },
-    saveBatch(batch) { const data = load(); data.batches[batch.id] = batch; save(data); return batch; },
+    saveBatch(batch) {
+      const data = load();
+      const defaultProject = Object.values(data.projects).find((project) => project.name === '默认项目');
+      const saved = { ...batch, projectId: batch.projectId || defaultProject.id };
+      data.batches[saved.id] = saved;
+      save(data);
+      return saved;
+    },
     getBatch(id) { return load().batches[id]; },
-    listBatches() { return Object.values(load().batches); }
+    listBatches(projectId = '') { return Object.values(load().batches).filter((batch) => !projectId || batch.projectId === projectId); }
   };
 }

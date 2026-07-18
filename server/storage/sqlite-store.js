@@ -36,6 +36,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS test_batches (
       id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id),
       name TEXT NOT NULL,
       status TEXT NOT NULL,
       started_at TEXT,
@@ -179,6 +180,16 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   migrateApiEvidenceSchema();
   migrateProjectSchema();
 
+  function migrateBatchProjectSchema() {
+    const columns = db.prepare('PRAGMA table_info(test_batches)').all().map((column) => column.name);
+    if (!columns.includes('project_id')) db.exec('ALTER TABLE test_batches ADD COLUMN project_id TEXT REFERENCES projects(id)');
+    db.prepare("UPDATE test_batches SET project_id = ? WHERE project_id IS NULL OR TRIM(project_id) = ''").run(defaultProject().id);
+    db.exec('CREATE INDEX IF NOT EXISTS test_batches_project_id_idx ON test_batches(project_id)');
+    if (db.prepare('PRAGMA user_version').get().user_version < 8) db.exec('PRAGMA user_version = 8');
+  }
+
+  migrateBatchProjectSchema();
+
   const selectCase = db.prepare(`
     SELECT id, project_id AS projectId, name, target, base_url AS baseUrl, viewport
     FROM test_cases
@@ -284,6 +295,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     `).all(row.id).map(({ id }) => id);
     return {
       id: row.id,
+      projectId: row.projectId,
       name: row.name,
       caseIds,
       status: row.status,
@@ -294,22 +306,25 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   }
 
   function writeBatch(batch) {
+    const projectId = batch.projectId || defaultProject().id;
+    if (!db.prepare('SELECT 1 FROM projects WHERE id = ?').get(projectId)) throw new Error('project not found');
     db.prepare(`
-      INSERT INTO test_batches (id, name, status, started_at, finished_at, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO test_batches (id, project_id, name, status, started_at, finished_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
+        project_id = excluded.project_id,
         name = excluded.name,
         status = excluded.status,
         started_at = excluded.started_at,
         finished_at = excluded.finished_at
-    `).run(batch.id, batch.name, batch.status, batch.startedAt, batch.finishedAt, batch.startedAt || new Date().toISOString());
+    `).run(batch.id, projectId, batch.name, batch.status, batch.startedAt, batch.finishedAt, batch.startedAt || new Date().toISOString());
     db.prepare('DELETE FROM batch_cases WHERE batch_id = ?').run(batch.id);
     const insertCase = db.prepare('INSERT INTO batch_cases (batch_id, case_id, position) VALUES (?, ?, ?)');
     batch.caseIds.forEach((caseId, position) => insertCase.run(batch.id, caseId, position));
     db.prepare('UPDATE test_runs SET batch_id = NULL, batch_position = NULL WHERE batch_id = ?').run(batch.id);
     const linkRun = db.prepare('UPDATE test_runs SET batch_id = ?, batch_position = ? WHERE id = ?');
     batch.runIds.forEach((runId, position) => linkRun.run(batch.id, position, runId));
-    return batch;
+    return { ...batch, projectId };
   }
 
   const saveRun = (run) => inTransaction(() => writeRun(run));
@@ -436,17 +451,18 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     saveBatch,
     getBatch(id) {
       return hydrateBatch(db.prepare(`
-        SELECT id, name, status, started_at AS startedAt, finished_at AS finishedAt
+        SELECT id, project_id AS projectId, name, status, started_at AS startedAt, finished_at AS finishedAt
         FROM test_batches
         WHERE id = ?
       `).get(id));
     },
-    listBatches() {
+    listBatches(projectId = '') {
       return db.prepare(`
-        SELECT id, name, status, started_at AS startedAt, finished_at AS finishedAt
+        SELECT id, project_id AS projectId, name, status, started_at AS startedAt, finished_at AS finishedAt
         FROM test_batches
+        ${projectId ? 'WHERE project_id = ?' : ''}
         ORDER BY created_at, id
-      `).all().map(hydrateBatch);
+      `).all(...(projectId ? [projectId] : [])).map(hydrateBatch);
     }
   };
 }

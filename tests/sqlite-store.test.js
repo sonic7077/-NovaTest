@@ -25,6 +25,7 @@ describe('SQLite store', () => {
     try {
       const store = createSqliteStore({ databasePath });
       store.saveCase(webCase);
+      const projectId = store.listProjects()[0].id;
 
       const [defaultProject] = store.listProjects();
       expect(defaultProject).toMatchObject({ name: '默认项目', caseCount: 1 });
@@ -105,6 +106,7 @@ describe('SQLite store', () => {
     try {
       const store = createSqliteStore({ databasePath });
       store.saveCase(webCase);
+      const projectId = store.listProjects()[0].id;
       store.saveRun({
         id: 'run-1',
         caseId: webCase.id,
@@ -127,6 +129,7 @@ describe('SQLite store', () => {
       });
       store.saveBatch({
         id: 'batch-1',
+        projectId,
         name: '回归',
         caseIds: [webCase.id],
         status: 'failed',
@@ -147,7 +150,7 @@ describe('SQLite store', () => {
           logs: [{ message: 'retrying' }]
         }]
       });
-      expect(reloaded.getBatch('batch-1')).toMatchObject({ caseIds: [webCase.id], runIds: ['run-1'] });
+      expect(reloaded.getBatch('batch-1')).toMatchObject({ projectId, caseIds: [webCase.id], runIds: ['run-1'] });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

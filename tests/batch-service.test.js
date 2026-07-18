@@ -6,6 +6,7 @@ import { CmsApiRunner } from '../server/runners/cms-api-runner.js';
 
 const firstCase = {
   id: 'case-1',
+  projectId: 'default-project',
   name: '失败用例',
   target: 'web',
   baseUrl: 'https://example.test',
@@ -34,6 +35,7 @@ describe('BatchService', () => {
 
     const batch = await new BatchService({ runner, store }).start({
       name: '冒烟回归',
+      projectId: 'default-project',
       caseIds: [firstCase.id, secondCase.id],
       cases: [firstCase, secondCase]
     });
@@ -41,6 +43,7 @@ describe('BatchService', () => {
     expect(executedCases).toEqual(['case-1', 'case-1', 'case-2']);
     expect(batch).toMatchObject({
       name: '冒烟回归',
+      projectId: 'default-project',
       caseIds: ['case-1', 'case-2'],
       status: 'failed'
     });
@@ -55,6 +58,7 @@ describe('BatchService', () => {
     const store = createMemoryStore();
     const batch = await new BatchService({ runner: { execute: async () => ({}) }, store }).start({
       name: '全量通过',
+      projectId: 'default-project',
       caseIds: [secondCase.id],
       cases: [secondCase]
     });
@@ -77,15 +81,16 @@ describe('BatchService', () => {
       }
     });
     const cases = ['config', 'list_post'].map((action, index) => ({
-      id: `api-${index + 1}`, name: action, target: 'api', baseUrl: 'https://example.test/api.php', viewport: 'desktop',
+      id: `api-${index + 1}`, projectId: 'default-project', name: action, target: 'api', baseUrl: 'https://example.test/api.php', viewport: 'desktop',
       steps: [{ id: action, kind: 'apiRequest', instruction: action, request: { action, method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }]
     }));
     const store = createMemoryStore();
 
-    const batch = await new BatchService({ runner: { api }, store }).start({ name: 'CMS 批量冒烟', caseIds: cases.map((testCase) => testCase.id), cases });
+    const batch = await new BatchService({ runner: { api }, store }).start({ name: 'CMS 批量冒烟', projectId: 'default-project', caseIds: cases.map((testCase) => testCase.id), cases });
 
     expect(actions).toEqual(['loginByPassword', 'config', 'list_post']);
     expect(batch.status).toBe('passed');
+    expect(batch.projectId).toBe('default-project');
     expect(batch.runIds).toHaveLength(2);
     expect(batch.runIds.map((id) => store.getRun(id).variables)).toEqual([{}, {}]);
   });

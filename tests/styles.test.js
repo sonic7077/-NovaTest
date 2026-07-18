@@ -44,7 +44,8 @@ describe('test console stylesheet', () => {
     expect(script).toContain('function renderApiStepNode(');
     expect(script).toContain('const projectRoute = /^#\\/projects\\/');
     expect(script).toContain('async function debugApiCase()');
-    expect(script).toContain('async function loadBatchHistory()');
+    expect(script).toContain('async function loadBatchHistory(projectId = activeProjectId)');
+    expect(script).toContain('`/api/batches?projectId=${encodeURIComponent(projectId)}`');
     expect(script).toContain('async function loadProjects()');
     expect(script).toContain("'/api/projects'");
     expect(script).toContain('#/projects/');

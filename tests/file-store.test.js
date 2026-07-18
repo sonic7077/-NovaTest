@@ -72,8 +72,10 @@ describe('file store', () => {
     try {
       createFileStore(filePath).saveBatch(batch);
       const reloaded = createFileStore(filePath);
-      expect(reloaded.getBatch(batch.id)).toEqual(batch);
-      expect(reloaded.listBatches()).toEqual([batch]);
+      const stored = reloaded.getBatch(batch.id);
+      expect(stored).toMatchObject(batch);
+      expect(stored.projectId).toEqual(expect.any(String));
+      expect(reloaded.listBatches(stored.projectId)).toMatchObject([stored]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

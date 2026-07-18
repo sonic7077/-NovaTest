@@ -146,6 +146,22 @@ describe('execution API', () => {
       });
   });
 
+  it('filters batch history by its persisted project ID', async () => {
+    const app = createApp({ runner: { execute: async () => ({}) }, store: createMemoryStore() });
+    const firstProject = (await request(app).post('/api/projects').send({ name: '项目一' }).expect(201)).body;
+    const secondProject = (await request(app).post('/api/projects').send({ name: '项目二' }).expect(201)).body;
+    const firstCase = (await request(app).post('/api/cases').send({ ...webCase, projectId: firstProject.id }).expect(201)).body;
+    const secondCase = (await request(app).post('/api/cases').send({ ...webCase, name: '项目二用例', projectId: secondProject.id }).expect(201)).body;
+    const firstBatch = (await request(app).post('/api/batches').send({ caseIds: [firstCase.id] }).expect(202)).body;
+    await request(app).post('/api/batches').send({ caseIds: [secondCase.id] }).expect(202);
+
+    await request(app).get('/api/batches').expect(200).expect(({ body }) => expect(body).toHaveLength(2));
+    await request(app).get(`/api/batches?projectId=${firstProject.id}`).expect(200).expect(({ body }) => {
+      expect(body).toMatchObject([{ id: firstBatch.id, projectId: firstProject.id }]);
+      expect(body).toHaveLength(1);
+    });
+  });
+
   it('rejects empty, duplicate, and unknown batch selections', async () => {
     const app = createApp({ runner: {}, store: createMemoryStore() });
     const created = await request(app).post('/api/cases').send(webCase).expect(201);

@@ -408,8 +408,8 @@ async function loadSavedCases() {
   lucide.createIcons();
 }
 
-async function loadBatchHistory() {
-  const response = await fetch('/api/batches');
+async function loadBatchHistory(projectId = activeProjectId) {
+  const response = await fetch(projectId ? `/api/batches?projectId=${encodeURIComponent(projectId)}` : '/api/batches');
   if (!response.ok) throw new Error('无法读取批量执行历史');
   const summaries = await response.json();
   const batches = await Promise.all(summaries.slice(0, 8).map(async (batch) => {

@@ -7,9 +7,10 @@ export class BatchService {
     this.runService = new RunService(runner);
   }
 
-  async start({ name, caseIds, cases }) {
+  async start({ name, projectId, caseIds, cases }) {
     const batch = {
       id: crypto.randomUUID(),
+      projectId,
       name,
       caseIds: [...caseIds],
       status: 'running',

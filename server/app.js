@@ -43,9 +43,9 @@ export function createMemoryStore() {
     saveRun(run) { runs.set(run.id, run); return run; },
     getRun(id) { return runs.get(id); },
     deleteCase(id) { return cases.delete(id); },
-    saveBatch(batch) { batches.set(batch.id, batch); return batch; },
+    saveBatch(batch) { const saved = { ...batch, projectId: batch.projectId || 'default-project' }; batches.set(saved.id, saved); return saved; },
     getBatch(id) { return batches.get(id); },
-    listBatches() { return [...batches.values()]; }
+    listBatches(projectId = '') { return [...batches.values()].filter((batch) => !projectId || batch.projectId === projectId); }
   };
 }
 
@@ -136,10 +136,10 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     const name = typeof req.body.name === 'string' && req.body.name.trim()
       ? req.body.name.trim()
       : `批量执行 ${new Date().toLocaleString('zh-CN')}`;
-    return res.status(202).json(await batchService.start({ name, caseIds, cases }));
+    return res.status(202).json(await batchService.start({ name, projectId: cases[0].projectId, caseIds, cases }));
   });
 
-  app.get('/api/batches', (_req, res) => res.json(store.listBatches().reverse()));
+  app.get('/api/batches', (req, res) => res.json(store.listBatches(req.query.projectId || '').reverse()));
 
   app.get('/api/batches/:id', (req, res) => {
     const batch = store.getBatch(req.params.id);
