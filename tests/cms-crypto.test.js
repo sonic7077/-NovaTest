@@ -17,6 +17,18 @@ describe('CMS crypto transport', () => {
     expect(request.body).toContain('timestamp=1700000000');
     expect(request.body).toContain('data=');
     expect(request.body).toContain('sign=');
-    expect(redactSecrets({ token: 'secret-token', password: 'secret-password', data: request.data, sign: request.sign })).toEqual({ token: '[REDACTED]', password: '[REDACTED]', data: '[REDACTED]', sign: '[REDACTED]' });
+    expect(redactSecrets({
+      token: 'secret-token',
+      password: 'secret-password',
+      data: request.data,
+      sign: request.sign,
+      nested: { key: 'nested-secret', ok: true }
+    })).toEqual({
+      token: '********',
+      password: '********',
+      data: '********',
+      sign: '********',
+      nested: { key: '********', ok: true }
+    });
   });
 });

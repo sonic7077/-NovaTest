@@ -57,8 +57,8 @@ describe('CMS API runner', () => {
 
     expect(result.variables).toEqual({ postId: 'post-42' });
     expect(result.api).toMatchObject({ durationMs: expect.any(Number), response: { page: { id: 'post-42' } } });
-    expect(result.api.request.token).toBe('[REDACTED]');
-    expect(result.api.response.token).toBe('[REDACTED]');
+    expect(result.api.request.token).toBe('********');
+    expect(result.api.response.token).toBe('********');
   });
 
   it('fails an API step when a decrypted JSON assertion does not match', async () => {

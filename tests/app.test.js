@@ -261,13 +261,20 @@ describe('execution API', () => {
   it('renders redacted API request and response evidence in a report', () => {
     const report = renderReport({
       id: 'api-run-1', status: 'passed', startedAt: '2026-07-17T00:00:00.000Z', variables: {},
-      steps: [{ id: 'api-1', status: 'passed', attempts: 1, api: { action: 'list_post', httpStatus: 200, businessStatus: 1, durationMs: 120, request: { token: '[REDACTED]' }, response: { total: 2 } } }]
+      steps: [{ id: 'api-1', status: 'passed', attempts: 1, api: {
+        action: 'list_post', httpStatus: 200, businessStatus: 1, durationMs: 120,
+        request: { token: 'secret-token' },
+        response: { total: 2, password: 'secret-password' }
+      } }]
     }, '帖子列表');
 
     expect(report).toContain('list_post');
     expect(report).toContain('HTTP 200');
-    expect(report).toContain('[REDACTED]');
-    expect(report).toContain('响应摘要');
+    expect(report).toContain('解密后响应');
+    expect(report).toContain('********');
+    expect(report).not.toContain('secret-token');
+    expect(report).not.toContain('secret-password');
+    expect(report).not.toContain('响应摘要');
   });
 
   it('uploads a PNG visual baseline for an existing case', async () => {
