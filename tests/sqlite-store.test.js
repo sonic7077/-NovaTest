@@ -18,6 +18,30 @@ const webCase = {
 };
 
 describe('SQLite store', () => {
+  it('assigns legacy cases to the default project and scopes case queries by project', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
+    const databasePath = join(directory, 'novatest.db');
+
+    try {
+      const store = createSqliteStore({ databasePath });
+      store.saveCase(webCase);
+
+      const [defaultProject] = store.listProjects();
+      expect(defaultProject).toMatchObject({ name: '默认项目', caseCount: 1 });
+      expect(store.getCase(webCase.id).projectId).toBe(defaultProject.id);
+      expect(store.listCases('', defaultProject.id).map((testCase) => testCase.id)).toEqual([webCase.id]);
+      expect(store.deleteProject(defaultProject.id)).toBe(false);
+
+      const created = store.saveProject({ name: '社区 CMS' });
+      store.saveCase({ ...webCase, id: 'case-2', name: '接口登录', projectId: created.id });
+      expect(store.listCases('', created.id).map((testCase) => testCase.id)).toEqual(['case-2']);
+      expect(store.deleteProject(created.id)).toBe(false);
+      expect(() => store.saveProject({ name: ' 社区 cms ' })).toThrow(/project name already exists/);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('persists a case with steps in position order across store instances', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
     const databasePath = join(directory, 'novatest.db');

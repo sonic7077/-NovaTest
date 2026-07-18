@@ -5,6 +5,26 @@ import { describe, expect, it } from 'vitest';
 import { createFileStore } from '../server/storage/file-store.js';
 
 describe('file store', () => {
+  it('migrates legacy cases into the default project and filters by project', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-store-'));
+    const filePath = join(directory, 'store.json');
+    try {
+      await writeFile(filePath, JSON.stringify({ cases: { legacy: { name: '旧用例', target: 'web', steps: [] } } }));
+      const store = createFileStore(filePath);
+      const [defaultProject] = store.listProjects();
+      const [legacy] = store.listCases('', defaultProject.id);
+      expect(defaultProject).toMatchObject({ name: '默认项目', caseCount: 1 });
+      expect(legacy).toMatchObject({ id: 'legacy', projectId: defaultProject.id });
+
+      const project = store.saveProject({ name: '社区 CMS' });
+      store.saveCase({ id: 'api-1', name: '帖子列表', target: 'api', projectId: project.id, steps: [] });
+      expect(store.listCases('', project.id).map((testCase) => testCase.id)).toEqual(['api-1']);
+      expect(store.deleteProject(project.id)).toBe(false);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('persists cases and runs across store instances', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-store-'));
     const filePath = join(directory, 'store.json');
@@ -17,7 +37,8 @@ describe('file store', () => {
       store.saveRun(run);
 
       const reloaded = createFileStore(filePath);
-      expect(reloaded.listCases()).toEqual([testCase]);
+      expect(reloaded.listCases()).toMatchObject([testCase]);
+      expect(reloaded.listCases()[0].projectId).toEqual(expect.any(String));
       expect(reloaded.getRun('run-1')).toEqual(run);
       expect(JSON.parse(await readFile(filePath, 'utf8'))).toMatchObject({ cases: { 'case-1': testCase } });
     } finally {

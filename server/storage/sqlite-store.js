@@ -3,8 +3,15 @@ import { existsSync, readFileSync, renameSync } from 'node:fs';
 
 const schema = `
   PRAGMA foreign_keys = ON;
+  CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS test_cases (
     id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
     name TEXT NOT NULL,
     target TEXT NOT NULL,
     base_url TEXT NOT NULL,
@@ -76,6 +83,24 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
       try { db.exec('ROLLBACK'); } catch { /* The transaction may have already ended. */ }
       throw error;
     }
+  }
+
+  function defaultProject() {
+    const project = db.prepare('SELECT id, name, created_at AS createdAt, updated_at AS updatedAt FROM projects WHERE name = ?').get('默认项目');
+    if (project) return project;
+    const timestamp = new Date().toISOString();
+    const created = { id: crypto.randomUUID(), name: '默认项目', createdAt: timestamp, updatedAt: timestamp };
+    db.prepare('INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)').run(created.id, created.name, created.createdAt, created.updatedAt);
+    return created;
+  }
+
+  function migrateProjectSchema() {
+    const columns = db.prepare('PRAGMA table_info(test_cases)').all().map((column) => column.name);
+    if (!columns.includes('project_id')) db.exec('ALTER TABLE test_cases ADD COLUMN project_id TEXT REFERENCES projects(id)');
+    const project = defaultProject();
+    db.prepare("UPDATE test_cases SET project_id = ? WHERE project_id IS NULL OR TRIM(project_id) = ''").run(project.id);
+    db.exec('CREATE INDEX IF NOT EXISTS test_cases_project_id_idx ON test_cases(project_id)');
+    if (db.prepare('PRAGMA user_version').get().user_version < 7) db.exec('PRAGMA user_version = 7');
   }
 
   function migrateHistorySchema() {
@@ -152,9 +177,10 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   }
 
   migrateApiEvidenceSchema();
+  migrateProjectSchema();
 
   const selectCase = db.prepare(`
-    SELECT id, name, target, base_url AS baseUrl, viewport
+    SELECT id, project_id AS projectId, name, target, base_url AS baseUrl, viewport
     FROM test_cases
     WHERE id = ?
   `);
@@ -171,18 +197,21 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   }
 
   function writeCase(testCase) {
-    const saved = { ...testCase, id: testCase.id || crypto.randomUUID() };
+    const projectId = testCase.projectId || defaultProject().id;
+    if (!db.prepare('SELECT 1 FROM projects WHERE id = ?').get(projectId)) throw new Error('project not found');
+    const saved = { ...testCase, id: testCase.id || crypto.randomUUID(), projectId };
     const timestamp = new Date().toISOString();
     db.prepare(`
-      INSERT INTO test_cases (id, name, target, base_url, viewport, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_cases (id, project_id, name, target, base_url, viewport, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
+        project_id = excluded.project_id,
         name = excluded.name,
         target = excluded.target,
         base_url = excluded.base_url,
         viewport = excluded.viewport,
         updated_at = excluded.updated_at
-    `).run(saved.id, saved.name, saved.target, saved.baseUrl, saved.viewport, timestamp, timestamp);
+    `).run(saved.id, saved.projectId, saved.name, saved.target, saved.baseUrl, saved.viewport, timestamp, timestamp);
     db.prepare('DELETE FROM test_steps WHERE case_id = ?').run(saved.id);
     const insertStep = db.prepare(`
       INSERT INTO test_steps (id, case_id, position, kind, instruction, visual_checks_json, request_json)
@@ -332,19 +361,68 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   migrateLegacyStore();
 
+  function listProjects() {
+    return db.prepare(`
+      SELECT projects.id, projects.name, projects.created_at AS createdAt, projects.updated_at AS updatedAt,
+        SUM(CASE WHEN test_cases.target = 'web' THEN 1 ELSE 0 END) AS webCaseCount,
+        SUM(CASE WHEN test_cases.target = 'api' THEN 1 ELSE 0 END) AS apiCaseCount,
+        COUNT(test_cases.id) AS caseCount
+      FROM projects
+      LEFT JOIN test_cases ON test_cases.project_id = projects.id
+      GROUP BY projects.id
+      ORDER BY projects.created_at, projects.id
+    `).all().map((project) => ({ ...project, webCaseCount: Number(project.webCaseCount), apiCaseCount: Number(project.apiCaseCount), caseCount: Number(project.caseCount) }));
+  }
+
+  function getProject(id) {
+    return listProjects().find((project) => project.id === id);
+  }
+
+  function saveProject(project) {
+    const name = project?.name?.trim();
+    if (!name) throw new Error('project name required');
+    const timestamp = new Date().toISOString();
+    const id = project.id || crypto.randomUUID();
+    try {
+      if (project.id) {
+        const result = db.prepare('UPDATE projects SET name = ?, updated_at = ? WHERE id = ?').run(name, timestamp, id);
+        if (result.changes === 0) throw new Error('project not found');
+      } else {
+        db.prepare('INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)').run(id, name, timestamp, timestamp);
+      }
+    } catch (error) {
+      if (String(error.message).includes('UNIQUE constraint failed')) throw new Error('project name already exists');
+      throw error;
+    }
+    return getProject(id);
+  }
+
+  function deleteProject(id) {
+    if (db.prepare('SELECT 1 FROM test_cases WHERE project_id = ? LIMIT 1').get(id)) return false;
+    return db.prepare('DELETE FROM projects WHERE id = ?').run(id).changes > 0;
+  }
+
   return {
     saveCase,
     getCase(id) { return hydrateCase(selectCase.get(id)); },
-    listCases(query = '') {
+    listCases(query = '', projectId = '') {
       const normalized = query.trim();
+      const conditions = [];
+      const parameters = [];
+      if (normalized) { conditions.push('LOWER(name) LIKE LOWER(?)'); parameters.push(`%${normalized}%`); }
+      if (projectId) { conditions.push('project_id = ?'); parameters.push(projectId); }
       const statement = db.prepare(`
-        SELECT id, name, target, base_url AS baseUrl, viewport
+        SELECT id, project_id AS projectId, name, target, base_url AS baseUrl, viewport
         FROM test_cases
-        ${normalized ? 'WHERE LOWER(name) LIKE LOWER(?)' : ''}
+        ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
         ORDER BY created_at, id
       `);
-      return (normalized ? statement.all(`%${normalized}%`) : statement.all()).map(hydrateCase);
+      return statement.all(...parameters).map(hydrateCase);
     },
+    listProjects,
+    getProject,
+    saveProject,
+    deleteProject,
     saveRun,
     getRun(id) {
       return hydrateRun(db.prepare(`
