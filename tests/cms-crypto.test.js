@@ -37,4 +37,9 @@ describe('CMS crypto transport', () => {
       data: { config: { featureEnabled: true } }, sign: '********', token: '********'
     });
   });
+
+  it('masks login secret values in every API evidence boundary', () => {
+    expect(redactSecrets({ secret: '123456' })).toEqual({ secret: '********' });
+    expect(redactBusinessSecrets({ secret: '123456' })).toEqual({ secret: '********' });
+  });
 });

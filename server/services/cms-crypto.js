@@ -1,8 +1,8 @@
 import { createCipheriv, createDecipheriv, createHash } from 'node:crypto';
 
 const SECRET_MASK = '********';
-const TRANSPORT_SECRET_KEY = /token|password|data|sign|key|iv/i;
-const BUSINESS_SECRET_KEY = /token|password|sign|key|iv/i;
+const TRANSPORT_SECRET_KEY = /token|password|secret|data|sign|key|iv/i;
+const BUSINESS_SECRET_KEY = /token|password|secret|sign|key|iv/i;
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
