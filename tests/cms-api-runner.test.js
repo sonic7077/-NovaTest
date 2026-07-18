@@ -51,6 +51,29 @@ describe('CMS API runner', () => {
     expect(result.api.response).toEqual({ data: { config: { featureEnabled: true } }, token: '********' });
   });
 
+  it('keeps unmarked login data for the session while decrypting the business response', async () => {
+    let submittedConfigPayload;
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url, options) => {
+        const action = new URL(url).pathname.split('/').at(-1);
+        if (action === 'config') submittedConfigPayload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
+        return {
+          ok: true,
+          status: 200,
+          json: async () => action === 'loginByPassword'
+            ? unmarkedEncryptedResponse({ status: 1, data: [], crypt: false })
+            : unmarkedEncryptedResponse({ data: { config: { featureEnabled: true } } })
+        };
+      }
+    });
+
+    const result = await runner.execute({ id: 'config', request: { action: 'config', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }, { testCase: { baseUrl: 'https://example.test' }, variables: {} });
+
+    expect(submittedConfigPayload.token).toEqual(expect.any(String));
+    expect(result.api.response).toEqual({ data: { config: { featureEnabled: true } } });
+  });
+
   it('refuses mutating requests without explicit permission', async () => {
     const runner = new CmsApiRunner({ config: cryptoConfig, fetchImpl: async () => { throw new Error('must not fetch'); } });
 

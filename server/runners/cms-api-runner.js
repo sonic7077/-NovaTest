@@ -23,8 +23,9 @@ function parseEncryptedResponse(data, config) {
   return JSON.parse(decryptPayload(data, config));
 }
 
-function responseData(outer, config) {
+function responseData(outer, config, autoDecrypt = true) {
   if (outer.crypt) return parseEncryptedResponse(outer.data, config);
+  if (!autoDecrypt) return outer.data;
   if (typeof outer.data !== 'string') return outer.data;
   try { return parseEncryptedResponse(outer.data, config); }
   catch { return outer.data; }
@@ -61,7 +62,7 @@ export class CmsApiRunner {
     const outer = await response.json();
     const businessStatus = outer.status ?? (outer.errcode === 0 ? 1 : outer.errcode);
     if (!response.ok || businessStatus !== expectedStatus) throw new Error(`API assertion failed: ${action}`);
-    const data = responseData(outer, this.config);
+    const data = responseData(outer, this.config, action !== 'loginByPassword');
     return {
       api: {
         action,
