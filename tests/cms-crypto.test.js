@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRequestBody, decryptPayload, encryptPayload, redactSecrets } from '../server/services/cms-crypto.js';
+import { buildRequestBody, decryptPayload, encryptPayload, redactBusinessSecrets, redactSecrets } from '../server/services/cms-crypto.js';
 
 const config = { key: '1234567890abcdef', iv: 'abcdef1234567890', appKey: 'app-key' };
 
@@ -29,6 +29,12 @@ describe('CMS crypto transport', () => {
       data: '********',
       sign: '********',
       nested: { key: '********', ok: true }
+    });
+  });
+
+  it('preserves business data objects while redacting business secrets', () => {
+    expect(redactBusinessSecrets({ data: { config: { featureEnabled: true } }, sign: 'secret-sign', token: 'secret-token' })).toEqual({
+      data: { config: { featureEnabled: true } }, sign: '********', token: '********'
     });
   });
 });

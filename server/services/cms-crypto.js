@@ -1,6 +1,8 @@
 import { createCipheriv, createDecipheriv, createHash } from 'node:crypto';
 
 const SECRET_MASK = '********';
+const TRANSPORT_SECRET_KEY = /token|password|data|sign|key|iv/i;
+const BUSINESS_SECRET_KEY = /token|password|sign|key|iv/i;
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -26,8 +28,12 @@ export function buildRequestBody(payload, config, timestamp = Math.floor(Date.no
   return { data, sign, body: new URLSearchParams({ timestamp: String(timestamp), data, sign }).toString() };
 }
 
-export function redactSecrets(value) {
-  if (Array.isArray(value)) return value.map(redactSecrets);
+function redactByKey(value, secretKey) {
+  if (Array.isArray(value)) return value.map((item) => redactByKey(item, secretKey));
   if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, /token|password|data|sign|key|iv/i.test(key) ? SECRET_MASK : redactSecrets(item)]));
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, secretKey.test(key) ? SECRET_MASK : redactByKey(item, secretKey)]));
 }
+
+export const redactTransportSecrets = (value) => redactByKey(value, TRANSPORT_SECRET_KEY);
+export const redactBusinessSecrets = (value) => redactByKey(value, BUSINESS_SECRET_KEY);
+export const redactSecrets = redactTransportSecrets;

@@ -8,6 +8,10 @@ function encryptedResponse(data) {
   return { status: 1, crypt: true, data: encryptPayload(JSON.stringify(data), cryptoConfig) };
 }
 
+function unmarkedEncryptedResponse(data) {
+  return { status: 1, data: encryptPayload(JSON.stringify(data), cryptoConfig) };
+}
+
 describe('CMS API runner', () => {
   it('logs in, decrypts responses, and injects the token into later requests', async () => {
     const bodies = [];
@@ -28,6 +32,23 @@ describe('CMS API runner', () => {
     expect(list.api).toMatchObject({ action: 'list_post', businessStatus: 1, response: { list: [] } });
     expect(bodies).toHaveLength(2);
     expect(bodies[1]).not.toContain('token-1');
+  });
+
+  it('decrypts an unmarked encrypted business response and preserves its data object', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => new URL(url).pathname.endsWith('/loginByPassword')
+          ? { status: 1, data: 'token-1' }
+          : unmarkedEncryptedResponse({ data: { config: { featureEnabled: true } }, token: 'secret-token' })
+      })
+    });
+
+    const result = await runner.execute({ id: 'config', request: { action: 'config', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }, { testCase: { baseUrl: 'https://example.test' }, variables: {} });
+
+    expect(result.api.response).toEqual({ data: { config: { featureEnabled: true } }, token: '********' });
   });
 
   it('refuses mutating requests without explicit permission', async () => {

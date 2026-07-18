@@ -1,4 +1,4 @@
-import { buildRequestBody, decryptPayload, redactSecrets } from '../services/cms-crypto.js';
+import { buildRequestBody, decryptPayload, redactBusinessSecrets, redactTransportSecrets } from '../services/cms-crypto.js';
 import { interpolate } from '../domain/case.js';
 
 function jsonPathValue(value, path) {
@@ -17,6 +17,17 @@ function assertJson(data, expectedJson = []) {
 
 function extractVariables(data, extract = {}) {
   return Object.fromEntries(Object.entries(extract).map(([name, path]) => [name, jsonPathValue(data, path)]));
+}
+
+function parseEncryptedResponse(data, config) {
+  return JSON.parse(decryptPayload(data, config));
+}
+
+function responseData(outer, config) {
+  if (outer.crypt) return parseEncryptedResponse(outer.data, config);
+  if (typeof outer.data !== 'string') return outer.data;
+  try { return parseEncryptedResponse(outer.data, config); }
+  catch { return outer.data; }
 }
 
 export class CmsApiRunner {
@@ -50,7 +61,7 @@ export class CmsApiRunner {
     const outer = await response.json();
     const businessStatus = outer.status ?? (outer.errcode === 0 ? 1 : outer.errcode);
     if (!response.ok || businessStatus !== expectedStatus) throw new Error(`API assertion failed: ${action}`);
-    const data = outer.crypt ? JSON.parse(decryptPayload(outer.data, this.config)) : outer.data;
+    const data = responseData(outer, this.config);
     return {
       api: {
         action,
@@ -58,8 +69,8 @@ export class CmsApiRunner {
         httpStatus: response.status,
         businessStatus,
         durationMs: Math.round(performance.now() - startedAt),
-        request: redactSecrets(payload),
-        response: action === 'loginByPassword' ? '[REDACTED]' : redactSecrets(data)
+        request: redactTransportSecrets(payload),
+        response: action === 'loginByPassword' ? '********' : redactBusinessSecrets(data)
       },
       data
     };
