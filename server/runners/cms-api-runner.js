@@ -71,19 +71,21 @@ export class CmsApiRunner {
     const outer = await response.json();
     const data = responseData(outer, this.config);
     const businessStatus = resolvedBusinessStatus(outer, data);
-    if (!response.ok || businessStatus !== expectedStatus) throw new Error(`API assertion failed: ${action}`);
-    return {
-      api: {
-        action,
-        method: 'POST',
-        httpStatus: response.status,
-        businessStatus,
-        durationMs: Math.round(performance.now() - startedAt),
-        request: redactTransportSecrets(payload),
-        response: action === 'loginByPassword' ? '********' : redactBusinessSecrets(data)
-      },
-      data
+    const api = {
+      action,
+      method: 'POST',
+      httpStatus: response.status,
+      businessStatus,
+      durationMs: Math.round(performance.now() - startedAt),
+      request: redactTransportSecrets(payload),
+      response: action === 'loginByPassword' ? '********' : redactBusinessSecrets(data)
     };
+    if (!response.ok || businessStatus !== expectedStatus) {
+      const error = new Error(`API assertion failed: ${action}`);
+      error.api = api;
+      throw error;
+    }
+    return { api, data };
   }
 
   async authenticate(baseUrl, session) {

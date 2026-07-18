@@ -297,6 +297,24 @@ describe('execution API', () => {
     expect(report).not.toContain('解密后响应');
   });
 
+  it('renders redacted request and response evidence for a failed API step', () => {
+    const report = renderReport({
+      id: 'api-run-failed', status: 'failed', startedAt: '2026-07-17T00:00:00.000Z', variables: {},
+      steps: [{ id: 'api-1', status: 'failed', attempts: 2, error: 'API assertion failed: list_post', api: {
+        action: 'list_post', httpStatus: 200, businessStatus: 0, durationMs: 120,
+        request: { token: 'synthetic-token', password: 'synthetic-password', secret: '123456' },
+        response: { status: 0, token: 'synthetic-token', secret: '123456' }
+      } }]
+    }, '帖子列表');
+
+    expect(report).toContain('请求摘要');
+    expect(report).toContain('响应内容');
+    expect(report).toContain('********');
+    expect(report).not.toContain('synthetic-token');
+    expect(report).not.toContain('synthetic-password');
+    expect(report).not.toContain('123456');
+  });
+
   it('renders a batch report with Shanghai local time and ordered run details', () => {
     const report = renderBatchReport(
       { id: 'batch-1', name: '查询回归', status: 'failed', startedAt: '2026-07-18T05:40:00.000Z', finishedAt: '2026-07-18T05:41:02.000Z', caseIds: ['case-1', 'case-2'] },

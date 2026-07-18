@@ -46,6 +46,7 @@ export class RunService {
           break;
         } catch (error) {
           stepRun.error = error.message;
+          if (error.api) stepRun.api = error.api;
           if (error.evidence) stepRun.screenshots.push(error.evidence);
           if (error.evidenceWarning) stepRun.logs.push({ level: 'warn', message: error.evidenceWarning });
           if (attempt === 1) stepRun.logs.push({ level: 'warn', message: `${error.message}; retrying once` });

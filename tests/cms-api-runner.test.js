@@ -117,6 +117,31 @@ describe('CMS API runner', () => {
     await expect(runner.execute(apiStep('list_post'), { testCase: { baseUrl: 'https://example.test' }, variables: {} })).rejects.toThrow('API assertion failed: list_post');
   });
 
+  it('attaches redacted evidence when a business assertion fails', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, googleSecret, username: 'synthetic-user', password: 'synthetic-password' },
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => new URL(url).pathname.endsWith('/loginByPassword')
+          ? encryptedResponse('synthetic-token')
+          : encryptedResponse({ status: 0, secret: '123456', token: 'synthetic-token' })
+      })
+    });
+
+    const error = await runner.execute(apiStep('list_post'), { testCase: { baseUrl: 'https://example.test' }, variables: {} }).catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      message: 'API assertion failed: list_post',
+      api: {
+        action: 'list_post',
+        businessStatus: 0,
+        request: { token: '********' },
+        response: { status: 0, secret: '********', token: '********' }
+      }
+    });
+  });
+
   it('refuses mutating requests without explicit permission', async () => {
     const runner = new CmsApiRunner({ config: cryptoConfig, fetchImpl: async () => { throw new Error('must not fetch'); } });
 

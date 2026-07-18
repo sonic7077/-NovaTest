@@ -37,6 +37,21 @@ describe('RunService', () => {
     expect(run.steps[0]).toMatchObject({ status: 'failed', attempts: 2, error: 'element missing' });
   });
 
+  it('keeps redacted API evidence when an API step fails', async () => {
+    const error = new Error('API assertion failed: config');
+    error.api = { action: 'config', request: { secret: '********' }, response: { status: 0 } };
+    const runner = { api: { execute: async () => { throw error; } } };
+    const apiCase = {
+      ...testCase,
+      target: 'api',
+      steps: [{ id: 'config', kind: 'apiRequest', instruction: '读取配置', request: { action: 'config', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }]
+    };
+
+    const run = await new RunService(runner).start(apiCase);
+
+    expect(run.steps[0].api).toEqual(error.api);
+  });
+
   it('passes the configured mobile viewport to the runner', async () => {
     let receivedContext;
     const mobileCase = { ...testCase, viewport: 'mobile' };
