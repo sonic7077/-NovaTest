@@ -1,4 +1,4 @@
-import { redactSecrets } from './cms-crypto.js';
+import { redactBusinessSecrets, redactTransportSecrets } from './cms-crypto.js';
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
@@ -17,8 +17,8 @@ function evidenceMarkup(runId, step) {
 function apiEvidenceMarkup(step) {
   if (!step.api) return evidenceMarkup(step.runId || '', step);
   const api = step.api;
-  const request = redactSecrets(api.request);
-  const response = redactSecrets(api.response);
+  const request = redactTransportSecrets(api.request);
+  const response = redactBusinessSecrets(api.response);
   return `<div class="api-evidence"><strong>${escapeHtml(api.action)} · HTTP ${escapeHtml(api.httpStatus)} · 业务状态 ${escapeHtml(api.businessStatus)} · ${escapeHtml(api.durationMs)}ms</strong><details><summary>请求摘要</summary><pre>${escapeHtml(JSON.stringify(request, null, 2))}</pre></details><details><summary>解密后响应</summary><pre>${escapeHtml(JSON.stringify(response, null, 2))}</pre></details></div>`;
 }
 

@@ -264,7 +264,7 @@ describe('execution API', () => {
       steps: [{ id: 'api-1', status: 'passed', attempts: 1, api: {
         action: 'list_post', httpStatus: 200, businessStatus: 1, durationMs: 120,
         request: { token: 'secret-token' },
-        response: { total: 2, password: 'secret-password' }
+        response: { data: { config: { featureEnabled: true } }, token: 'secret-token' }
       } }]
     }, '帖子列表');
 
@@ -272,8 +272,9 @@ describe('execution API', () => {
     expect(report).toContain('HTTP 200');
     expect(report).toContain('解密后响应');
     expect(report).toContain('********');
+    expect(report).toContain('&quot;config&quot;');
+    expect(report).toContain('&quot;featureEnabled&quot;');
     expect(report).not.toContain('secret-token');
-    expect(report).not.toContain('secret-password');
     expect(report).not.toContain('响应摘要');
   });
 
