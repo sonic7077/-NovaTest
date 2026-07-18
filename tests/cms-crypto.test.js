@@ -42,4 +42,20 @@ describe('CMS crypto transport', () => {
     expect(redactSecrets({ secret: '123456' })).toEqual({ secret: '********' });
     expect(redactBusinessSecrets({ secret: '123456' })).toEqual({ secret: '********' });
   });
+
+  it('masks encryption and digest configuration fields in business evidence', () => {
+    expect(redactBusinessSecrets({
+      video_encrypt_api: 'synthetic-encryption-value',
+      video_encrypt_m3u8: 'synthetic-m3u8-value',
+      sha256: 'synthetic-digest',
+      m3u8_encrypt: 0,
+      safeLabel: 'visible'
+    })).toEqual({
+      video_encrypt_api: '********',
+      video_encrypt_m3u8: '********',
+      sha256: '********',
+      m3u8_encrypt: '********',
+      safeLabel: 'visible'
+    });
+  });
 });
