@@ -23,12 +23,20 @@ function parseEncryptedResponse(data, config) {
   return JSON.parse(decryptPayload(data, config));
 }
 
-function responseData(outer, config, autoDecrypt = true) {
+function responseData(outer, config) {
   if (outer.crypt) return parseEncryptedResponse(outer.data, config);
-  if (!autoDecrypt) return outer.data;
   if (typeof outer.data !== 'string') return outer.data;
   try { return parseEncryptedResponse(outer.data, config); }
   catch { return outer.data; }
+}
+
+function resolvedBusinessStatus(outer, data) {
+  if (data && typeof data === 'object') {
+    if (typeof data.status === 'number') return data.status;
+    if (data.errcode === 0) return 1;
+    if (typeof data.errcode === 'number') return data.errcode;
+  }
+  return outer.status ?? (outer.errcode === 0 ? 1 : outer.errcode);
 }
 
 export class CmsApiRunner {
@@ -60,9 +68,9 @@ export class CmsApiRunner {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: encrypted.body
     });
     const outer = await response.json();
-    const businessStatus = outer.status ?? (outer.errcode === 0 ? 1 : outer.errcode);
+    const data = responseData(outer, this.config);
+    const businessStatus = resolvedBusinessStatus(outer, data);
     if (!response.ok || businessStatus !== expectedStatus) throw new Error(`API assertion failed: ${action}`);
-    const data = responseData(outer, this.config, action !== 'loginByPassword');
     return {
       api: {
         action,

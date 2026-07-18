@@ -12,6 +12,10 @@ function unmarkedEncryptedResponse(data) {
   return { status: 1, data: encryptPayload(JSON.stringify(data), cryptoConfig) };
 }
 
+function apiStep(action, payload = {}) {
+  return { id: action, kind: 'apiRequest', instruction: action, request: { action, method: 'POST', payload, expectedStatus: 1, safety: 'readonly' } };
+}
+
 describe('CMS API runner', () => {
   it('logs in, decrypts responses, and injects the token into later requests', async () => {
     const bodies = [];
@@ -51,8 +55,9 @@ describe('CMS API runner', () => {
     expect(result.api.response).toEqual({ data: { config: { featureEnabled: true } }, token: '********' });
   });
 
-  it('keeps unmarked login data for the session while decrypting the business response', async () => {
+  it('decrypts an unmarked encrypted login token before reusing the session', async () => {
     let submittedConfigPayload;
+    const syntheticSessionValue = 'synthetic-session-value';
     const runner = new CmsApiRunner({
       config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
       fetchImpl: async (url, options) => {
@@ -62,16 +67,31 @@ describe('CMS API runner', () => {
           ok: true,
           status: 200,
           json: async () => action === 'loginByPassword'
-            ? unmarkedEncryptedResponse({ status: 1, data: [], crypt: false })
+            ? { errcode: 0, data: encryptPayload(JSON.stringify(syntheticSessionValue), cryptoConfig) }
             : unmarkedEncryptedResponse({ data: { config: { featureEnabled: true } } })
         };
       }
     });
 
-    const result = await runner.execute({ id: 'config', request: { action: 'config', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }, { testCase: { baseUrl: 'https://example.test' }, variables: {} });
+    const result = await runner.execute(apiStep('config'), { testCase: { baseUrl: 'https://example.test' }, variables: {} });
 
-    expect(submittedConfigPayload.token).toEqual(expect.any(String));
+    expect(submittedConfigPayload.token).toBe(syntheticSessionValue);
     expect(result.api.response).toEqual({ data: { config: { featureEnabled: true } } });
+  });
+
+  it('fails when a decrypted business body overrides an outer success status', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => new URL(url).pathname.endsWith('/loginByPassword')
+          ? encryptedResponse('synthetic-session-value')
+          : encryptedResponse({ status: 0, msg: 'token invalid' })
+      })
+    });
+
+    await expect(runner.execute(apiStep('list_post'), { testCase: { baseUrl: 'https://example.test' }, variables: {} })).rejects.toThrow('API assertion failed: list_post');
   });
 
   it('refuses mutating requests without explicit permission', async () => {
