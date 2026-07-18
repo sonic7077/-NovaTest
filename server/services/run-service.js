@@ -10,7 +10,7 @@ export class RunService {
     this.runner = runner;
   }
 
-  async start(testCase) {
+  async start(testCase, { apiSession } = {}) {
     const runner = this.runner[testCase.target] || this.runner;
     const run = {
       id: crypto.randomUUID(),
@@ -21,7 +21,13 @@ export class RunService {
       variables: {},
       steps: []
     };
-    const executionContext = { ...run, testCase, viewport: viewports[testCase.viewport], runId: run.id };
+    const executionContext = {
+      ...run,
+      testCase,
+      viewport: viewports[testCase.viewport],
+      runId: run.id,
+      apiSession: apiSession || (testCase.target === 'api' && typeof runner.createSession === 'function' ? runner.createSession() : undefined)
+    };
 
     for (const step of testCase.steps) {
       const stepRun = { id: step.id, status: 'running', attempts: 0, logs: [], screenshots: [] };

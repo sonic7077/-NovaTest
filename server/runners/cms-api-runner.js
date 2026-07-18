@@ -25,44 +25,74 @@ export class CmsApiRunner {
     this.fetchImpl = fetchImpl;
   }
 
-  async execute(step, context) {
-    const { request } = step;
-    if (request.safety === 'mutating' && !context.allowMutations) throw new Error('mutating API step requires allowMutations');
-    const startedAt = performance.now();
-    const payload = {
+  createSession() {
+    return {};
+  }
+
+  clientPayload(payload = {}) {
+    return {
       oauth_id: this.config.oauthId,
       oauth_type: this.config.oauthType,
       version: this.config.version,
       bundleId: this.config.bundleId,
       language: this.config.language,
       via: this.config.via,
-      ...(request.action === 'loginByPassword' ? { username: this.config.username, password: this.config.password } : { token: context.variables.token }),
-      ...interpolate(request.payload || {}, context.variables)
+      ...payload
     };
+  }
+
+  async request(action, payload, baseUrl, expectedStatus) {
+    const startedAt = performance.now();
     const encrypted = buildRequestBody(payload, this.config);
-    const response = await this.fetchImpl(`${context.testCase.baseUrl}/api/remote/${request.action}`, {
+    const response = await this.fetchImpl(`${baseUrl}/api/remote/${action}`, {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: encrypted.body
     });
     const outer = await response.json();
     const businessStatus = outer.status ?? (outer.errcode === 0 ? 1 : outer.errcode);
-    if (!response.ok || businessStatus !== request.expectedStatus) throw new Error(`API assertion failed: ${request.action}`);
+    if (!response.ok || businessStatus !== expectedStatus) throw new Error(`API assertion failed: ${action}`);
     const data = outer.crypt ? JSON.parse(decryptPayload(outer.data, this.config)) : outer.data;
-    assertJson(data, request.expectedJson);
-    const variables = {
-      ...(request.action === 'loginByPassword' ? { token: data } : {}),
-      ...extractVariables(data, request.extract)
-    };
     return {
-      variables,
       api: {
-        action: request.action,
+        action,
         method: 'POST',
         httpStatus: response.status,
         businessStatus,
         durationMs: Math.round(performance.now() - startedAt),
         request: redactSecrets(payload),
-        response: redactSecrets(data)
-      }
+        response: action === 'loginByPassword' ? '[REDACTED]' : redactSecrets(data)
+      },
+      data
     };
+  }
+
+  async authenticate(baseUrl, session) {
+    if (session.authenticationError) throw new Error(session.authenticationError);
+    if (session.token) return session;
+    try {
+      const result = await this.request('loginByPassword', this.clientPayload({ username: this.config.username, password: this.config.password }), baseUrl, 1);
+      if (typeof result.data !== 'string' || !result.data.trim()) throw new Error('CMS authentication returned no token');
+      session.token = result.data;
+      session.loginApi = result.api;
+      return session;
+    } catch (error) {
+      session.authenticationError = error.message;
+      throw error;
+    }
+  }
+
+  async execute(step, context) {
+    const { request } = step;
+    if (request.safety === 'mutating' && !context.allowMutations) throw new Error('mutating API step requires allowMutations');
+    const session = context.apiSession ||= this.createSession();
+    if (request.action === 'loginByPassword') {
+      await this.authenticate(context.testCase.baseUrl, session);
+      return { variables: {}, api: session.loginApi };
+    }
+
+    await this.authenticate(context.testCase.baseUrl, session);
+    const payload = this.clientPayload({ token: session.token, ...interpolate(request.payload || {}, context.variables) });
+    const result = await this.request(request.action, payload, context.testCase.baseUrl, request.expectedStatus);
+    assertJson(result.data, request.expectedJson);
+    return { variables: extractVariables(result.data, request.extract), api: result.api };
   }
 }

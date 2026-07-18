@@ -2,6 +2,7 @@ import { RunService } from './run-service.js';
 
 export class BatchService {
   constructor({ runner, store }) {
+    this.runner = runner;
     this.store = store;
     this.runService = new RunService(runner);
   }
@@ -17,9 +18,13 @@ export class BatchService {
       finishedAt: null
     };
     this.store.saveBatch(batch);
+    const apiRunner = this.runner.api;
+    const apiSession = cases[0]?.target === 'api' && typeof apiRunner?.createSession === 'function'
+      ? apiRunner.createSession()
+      : undefined;
 
     for (const testCase of cases) {
-      const run = { ...await this.runService.start(testCase), caseName: testCase.name };
+      const run = { ...await this.runService.start(testCase, { apiSession }), caseName: testCase.name };
       this.store.saveRun(run);
       batch.runIds.push(run.id);
       this.store.saveBatch(batch);

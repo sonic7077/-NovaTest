@@ -23,7 +23,8 @@ describe('CMS API runner', () => {
     const login = await runner.execute({ id: 'login', request: { action: 'loginByPassword', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }, context);
     const list = await runner.execute({ id: 'list', request: { action: 'list_post', method: 'POST', payload: { status: 10 }, expectedStatus: 1, safety: 'readonly' } }, context);
 
-    expect(login.variables).toEqual({ token: 'token-1' });
+    expect(login.variables).toEqual({});
+    expect(context.apiSession).toMatchObject({ token: 'token-1' });
     expect(list.api).toMatchObject({ action: 'list_post', businessStatus: 1, response: { list: [] } });
     expect(bodies).toHaveLength(2);
     expect(bodies[1]).not.toContain('token-1');
@@ -38,7 +39,11 @@ describe('CMS API runner', () => {
   it('interpolates payloads, asserts decrypted JSON paths, and extracts response variables', async () => {
     const runner = new CmsApiRunner({
       config: { ...cryptoConfig, oauthId: 'qa', oauthType: 'pc', version: '1.0.0' },
-      fetchImpl: async () => ({ ok: true, status: 200, json: async () => encryptedResponse({ page: { id: 'post-42' }, token: 'secret-token' }) })
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword') ? 'token-1' : { page: { id: 'post-42' }, token: 'secret-token' })
+      })
     });
 
     const result = await runner.execute({
@@ -59,7 +64,11 @@ describe('CMS API runner', () => {
   it('fails an API step when a decrypted JSON assertion does not match', async () => {
     const runner = new CmsApiRunner({
       config: { ...cryptoConfig, oauthId: 'qa', oauthType: 'pc', version: '1.0.0' },
-      fetchImpl: async () => ({ ok: true, status: 200, json: async () => encryptedResponse({ page: { id: 'post-42' } }) })
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword') ? 'token-1' : { page: { id: 'post-42' } })
+      })
     });
 
     await expect(runner.execute({
@@ -72,9 +81,9 @@ describe('CMS API runner', () => {
     let submittedPayload;
     const runner = new CmsApiRunner({
       config: { ...cryptoConfig, oauthId: 'qa-pc', oauthType: 'web', version: '1.0.0', bundleId: 'com.example.cms', language: 'zh', via: 'web' },
-      fetchImpl: async (_url, options) => {
+      fetchImpl: async (url, options) => {
         submittedPayload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
-        return { ok: true, status: 200, json: async () => encryptedResponse({}) };
+        return { ok: true, status: 200, json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword') ? 'token-1' : {}) };
       }
     });
 
@@ -89,9 +98,54 @@ describe('CMS API runner', () => {
       fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ errcode: 0, data: 'token-1' }) })
     });
 
-    const result = await runner.execute({ id: 'login', request: { action: 'loginByPassword', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} });
+    const context = { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} };
+    const result = await runner.execute({ id: 'login', request: { action: 'loginByPassword', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }, context);
 
-    expect(result.variables).toEqual({ token: 'token-1' });
+    expect(result.variables).toEqual({});
+    expect(context.apiSession).toMatchObject({ token: 'token-1' });
     expect(result.api.businessStatus).toBe(1);
+  });
+
+  it('authenticates once for a shared session and keeps its token out of run variables', async () => {
+    const payloads = [];
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url, options) => {
+        const payload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
+        const action = new URL(url).pathname.split('/').at(-1);
+        payloads.push({ action, ...payload });
+        const data = action === 'loginByPassword' ? 'token-1' : { ok: true };
+        return { ok: true, status: 200, json: async () => encryptedResponse(data) };
+      }
+    });
+    const context = { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {}, apiSession: {} };
+
+    const config = await runner.execute({ id: 'config', request: { action: 'config', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }, context);
+    const posts = await runner.execute({ id: 'posts', request: { action: 'list_post', method: 'POST', payload: { status: 10 }, expectedStatus: 1, safety: 'readonly' } }, context);
+
+    expect(payloads.map((payload) => payload.action)).toEqual(['loginByPassword', 'config', 'list_post']);
+    expect(payloads.slice(1).map((payload) => payload.token)).toEqual(['token-1', 'token-1']);
+    expect(config.variables).toEqual({});
+    expect(posts.variables).toEqual({});
+    expect(context.apiSession).toMatchObject({ token: 'token-1' });
+  });
+
+  it('does not send business requests after shared authentication fails', async () => {
+    const actions = [];
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url, options) => {
+        const payload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
+        actions.push(new URL(url).pathname.split('/').at(-1));
+        return { ok: true, status: 200, json: async () => ({ status: 0, data: 'denied' }) };
+      }
+    });
+    const context = { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {}, apiSession: {} };
+    const config = { id: 'config', request: { action: 'config', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } };
+    const posts = { id: 'posts', request: { action: 'list_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } };
+
+    await expect(runner.execute(config, context)).rejects.toThrow('API assertion failed: loginByPassword');
+    await expect(runner.execute(posts, context)).rejects.toThrow('API assertion failed: loginByPassword');
+    expect(actions).toEqual(['loginByPassword']);
   });
 });
