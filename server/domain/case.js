@@ -3,6 +3,7 @@ const viewports = new Set(['desktop', 'mobile']);
 
 export function validateWebCase(input) {
   if (!input || typeof input !== 'object') throw new Error('invalid web case');
+  if (!input.projectId?.trim()) throw new Error('project required');
   if (!input.name?.trim() || !['web', 'api'].includes(input.target)) throw new Error('invalid test case');
   if (!/^https?:\/\//.test(input.baseUrl || '')) throw new Error('invalid base URL');
   if (input.target === 'web' && !viewports.has(input.viewport)) throw new Error('invalid viewport');

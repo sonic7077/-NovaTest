@@ -13,10 +13,33 @@ export function createMemoryStore() {
   const cases = new Map();
   const runs = new Map();
   const batches = new Map();
+  const projects = new Map([['default-project', { id: 'default-project', name: '默认项目', createdAt: '1970-01-01T00:00:00.000Z', updatedAt: '1970-01-01T00:00:00.000Z' }]]);
+  function listProjects() {
+    return [...projects.values()].map((project) => {
+      const projectCases = [...cases.values()].filter((testCase) => testCase.projectId === project.id);
+      return { ...project, caseCount: projectCases.length, webCaseCount: projectCases.filter((testCase) => testCase.target === 'web').length, apiCaseCount: projectCases.filter((testCase) => testCase.target === 'api').length };
+    });
+  }
   return {
-    saveCase(testCase) { const saved = { ...testCase, id: testCase.id || crypto.randomUUID() }; cases.set(saved.id, saved); return saved; },
+    saveCase(testCase) { const saved = { ...testCase, id: testCase.id || crypto.randomUUID(), projectId: testCase.projectId || 'default-project' }; cases.set(saved.id, saved); return saved; },
     getCase(id) { return cases.get(id); },
-    listCases(query = '') { return [...cases.values()].filter((testCase) => testCase.name.toLowerCase().includes(query.toLowerCase())); },
+    listCases(query = '', projectId = '') { return [...cases.values()].filter((testCase) => testCase.name.toLowerCase().includes(query.toLowerCase()) && (!projectId || testCase.projectId === projectId)); },
+    listProjects,
+    getProject(id) { return listProjects().find((project) => project.id === id); },
+    saveProject(project) {
+      const name = project?.name?.trim();
+      if (!name) throw new Error('project name required');
+      if ([...projects.values()].some((item) => item.id !== project.id && item.name.toLowerCase() === name.toLowerCase())) throw new Error('project name already exists');
+      const timestamp = new Date().toISOString();
+      const saved = { id: project.id || crypto.randomUUID(), name, createdAt: project.createdAt || timestamp, updatedAt: timestamp };
+      if (project.id && !projects.has(project.id)) throw new Error('project not found');
+      projects.set(saved.id, saved);
+      return this.getProject(saved.id);
+    },
+    deleteProject(id) {
+      if (!projects.has(id) || [...cases.values()].some((testCase) => testCase.projectId === id)) return false;
+      return projects.delete(id);
+    },
     saveRun(run) { runs.set(run.id, run); return run; },
     getRun(id) { return runs.get(id); },
     deleteCase(id) { return cases.delete(id); },
@@ -40,12 +63,38 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
 
   app.get('/api/health', (_req, res) => res.json({ webRunner: runnerStatus, cmsRunner: cmsRunnerStatus }));
 
+  app.get('/api/projects', (_req, res) => res.json(store.listProjects()));
+
+  app.post('/api/projects', (req, res) => {
+    try { return res.status(201).json(store.saveProject(req.body)); }
+    catch (error) { return res.status(error.message === 'project name already exists' ? 409 : 400).json({ error: error.message }); }
+  });
+
+  app.put('/api/projects/:id', (req, res) => {
+    if (!store.getProject(req.params.id)) return res.status(404).json({ error: 'project not found' });
+    try { return res.json(store.saveProject({ ...req.body, id: req.params.id })); }
+    catch (error) { return res.status(error.message === 'project name already exists' ? 409 : 400).json({ error: error.message }); }
+  });
+
+  app.delete('/api/projects/:id', (req, res) => {
+    const project = store.getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'project not found' });
+    if (project.caseCount > 0) return res.status(409).json({ error: 'project contains test cases' });
+    return store.deleteProject(project.id) ? res.status(204).end() : res.status(404).json({ error: 'project not found' });
+  });
+
+  function validateProjectCase(input) {
+    const testCase = validateWebCase(input);
+    if (!store.getProject(testCase.projectId)) throw new Error('project not found');
+    return testCase;
+  }
+
   app.post('/api/cases', (req, res) => {
-    try { res.status(201).json(store.saveCase(validateWebCase(req.body))); }
+    try { res.status(201).json(store.saveCase(validateProjectCase(req.body))); }
     catch (error) { res.status(400).json({ error: error.message }); }
   });
 
-  app.get('/api/cases', (req, res) => res.json(store.listCases(req.query.q || '')));
+  app.get('/api/cases', (req, res) => res.json(store.listCases(req.query.q || '', req.query.projectId || '')));
 
   app.get('/api/cases/:id', (req, res) => {
     const testCase = store.getCase(req.params.id);
@@ -66,7 +115,7 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
 
   app.put('/api/cases/:id', (req, res) => {
     if (!store.getCase(req.params.id)) return res.status(404).json({ error: 'test case not found' });
-    try { return res.json(store.saveCase({ ...validateWebCase(req.body), id: req.params.id })); }
+    try { return res.json(store.saveCase({ ...validateProjectCase(req.body), id: req.params.id })); }
     catch (error) { return res.status(400).json({ error: error.message }); }
   });
 
@@ -82,6 +131,7 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     const cases = caseIds.map((id) => store.getCase(id));
     if (cases.some((testCase) => !testCase)) return res.status(400).json({ error: 'test case not found' });
     if (new Set(cases.map((testCase) => testCase.target)).size !== 1) return res.status(400).json({ error: 'batch cases must share one target' });
+    if (new Set(cases.map((testCase) => testCase.projectId)).size !== 1) return res.status(409).json({ error: '批量执行只能选择同一项目的用例' });
 
     const name = typeof req.body.name === 'string' && req.body.name.trim()
       ? req.body.name.trim()

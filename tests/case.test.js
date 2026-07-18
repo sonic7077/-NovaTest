@@ -4,6 +4,7 @@ import { interpolate, validateWebCase } from '../server/domain/case.js';
 describe('web test case', () => {
   it('accepts a desktop web case with natural language steps', () => {
     const testCase = validateWebCase({
+      projectId: 'project-1',
       name: '登录',
       target: 'web',
       baseUrl: 'https://example.test',
@@ -22,7 +23,7 @@ describe('web test case', () => {
 
   it('accepts case-scoped visual baselines and rejects invalid ones', () => {
     const testCase = validateWebCase({
-      id: 'case-1', name: '登录', target: 'web', baseUrl: 'https://example.test', viewport: 'desktop',
+      id: 'case-1', projectId: 'project-1', name: '登录', target: 'web', baseUrl: 'https://example.test', viewport: 'desktop',
       steps: [{
         id: 's1', kind: 'assert', instruction: '显示登录按钮',
         visualChecks: [{ id: 'visual-1', assetPath: 'case-1/visual-1.png', source: 'upload', description: '登录按钮在首屏可见' }]
@@ -35,7 +36,7 @@ describe('web test case', () => {
 
   it('accepts explicit readonly API request steps and rejects unsafe request definitions', () => {
     const testCase = validateWebCase({
-      id: 'api-case-1', name: '帖子列表', target: 'api', baseUrl: 'https://example.test/api.php', viewport: 'desktop',
+      id: 'api-case-1', projectId: 'project-1', name: '帖子列表', target: 'api', baseUrl: 'https://example.test/api.php', viewport: 'desktop',
       steps: [{ id: 's1', kind: 'apiRequest', instruction: '查询帖子列表', request: { action: 'list_post', method: 'POST', payload: { status: 10 }, expectedStatus: 1, safety: 'readonly' } }]
     });
 

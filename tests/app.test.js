@@ -8,6 +8,7 @@ import { renderReport } from '../server/services/report-service.js';
 import { cmsWhitebagCases } from '../server/seed/cms-whitebag-cases.js';
 
 const webCase = {
+  projectId: 'default-project',
   name: '首页验证',
   target: 'web',
   baseUrl: 'https://example.test',
@@ -16,6 +17,7 @@ const webCase = {
 };
 
 const apiCase = {
+  projectId: 'default-project',
   name: '帖子列表',
   target: 'api',
   baseUrl: 'https://example.test/api.php',
@@ -24,6 +26,33 @@ const apiCase = {
 };
 
 describe('execution API', () => {
+  it('manages projects and only returns the selected project cases', async () => {
+    const app = createApp({ runner: {}, store: createMemoryStore() });
+    const project = (await request(app).post('/api/projects').send({ name: '社区 CMS' }).expect(201)).body;
+    const otherProject = (await request(app).post('/api/projects').send({ name: '商城 Web' }).expect(201)).body;
+    const first = (await request(app).post('/api/cases').send({ ...webCase, projectId: project.id }).expect(201)).body;
+    await request(app).post('/api/cases').send({ ...apiCase, projectId: otherProject.id }).expect(201);
+
+    await request(app).get(`/api/cases?projectId=${project.id}`).expect(200).expect(({ body }) => {
+      expect(body).toMatchObject([{ id: first.id, projectId: project.id }]);
+    });
+    await request(app).put(`/api/cases/${first.id}`).send({ ...webCase, projectId: 'missing-project' }).expect(400);
+    await request(app).delete(`/api/projects/${project.id}`).expect(409);
+    await request(app).post('/api/projects').send({ name: ' 社区 cms ' }).expect(409);
+  });
+
+  it('rejects a batch that mixes projects before execution', async () => {
+    const app = createApp({ runner: { execute: async () => ({}) }, store: createMemoryStore() });
+    const firstProject = (await request(app).post('/api/projects').send({ name: '项目一' }).expect(201)).body;
+    const secondProject = (await request(app).post('/api/projects').send({ name: '项目二' }).expect(201)).body;
+    const first = (await request(app).post('/api/cases').send({ ...webCase, projectId: firstProject.id }).expect(201)).body;
+    const second = (await request(app).post('/api/cases').send({ ...webCase, name: '详情验证', projectId: secondProject.id }).expect(201)).body;
+
+    await request(app).post('/api/batches').send({ caseIds: [first.id, second.id] }).expect(409).expect(({ body }) => {
+      expect(body.error).toBe('批量执行只能选择同一项目的用例');
+    });
+  });
+
   it('creates a web case, starts a run and returns its report', async () => {
     const app = createApp({
       runner: { execute: async () => ({ screenshot: 'evidence/s1.png' }) },
