@@ -10,20 +10,27 @@ let savedCases = [];
 let editingCaseId = null;
 const selectedCaseIds = new Set();
 
+function updateEditorBreadcrumb() {
+  $('#breadcrumb').innerHTML = `测试资产 <i data-lucide="chevron-right"></i> <span>${target === 'api' ? '接口用例编排' : 'Web UI 用例编排'}</span>`;
+}
+
 function renderRoute() {
   const route = location.hash || '#/dashboard';
   const view = route === '#/dashboard' ? 'dashboard' : (route === '#/assets' ? 'assets-list' : 'asset-editor');
   document.querySelectorAll('.route-view').forEach((element) => { element.hidden = element.dataset.routeView !== view; });
   document.querySelectorAll('.nav-item[href^="#/"]').forEach((link) => link.classList.toggle('active', link.getAttribute('href') === (view === 'dashboard' ? '#/dashboard' : '#/assets')));
-  $('#breadcrumb').innerHTML = view === 'dashboard'
-    ? '工作台 <i data-lucide="chevron-right"></i> <span>执行概览</span>'
-    : `测试资产 <i data-lucide="chevron-right"></i> <span>${view === 'assets-list' ? '用例库' : 'Web UI 用例编排'}</span>`;
+  if (view === 'dashboard') $('#breadcrumb').innerHTML = '工作台 <i data-lucide="chevron-right"></i> <span>执行概览</span>';
+  else if (view === 'assets-list') $('#breadcrumb').innerHTML = '测试资产 <i data-lucide="chevron-right"></i> <span>用例库</span>';
+  else updateEditorBreadcrumb();
   lucide.createIcons();
   if (view === 'dashboard') loadDashboard();
-  if (view === 'assets-list') loadSavedCases().catch((error) => showToast(error.message, true));
+  if (view === 'assets-list') {
+    loadSavedCases().catch((error) => showToast(error.message, true));
+    loadBatchHistory().catch((error) => showToast(error.message, true));
+  }
   if (route === '#/assets/new' || route === '#/assets/new-web') resetEditor('web');
   if (route === '#/assets/new-api') resetEditor('api');
-  if (route.startsWith('#/assets/') && route !== '#/assets/new') loadEditor(decodeURIComponent(route.slice('#/assets/'.length))).catch((error) => showToast(error.message, true));
+  if (route.startsWith('#/assets/') && !['#/assets/new', '#/assets/new-web', '#/assets/new-api'].includes(route)) loadEditor(decodeURIComponent(route.slice('#/assets/'.length))).catch((error) => showToast(error.message, true));
 }
 
 window.addEventListener('hashchange', renderRoute);
@@ -55,8 +62,6 @@ document.querySelectorAll('.target-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
     if (!tab.dataset.target) return;
     target = tab.dataset.target;
-    document.querySelector('.target-tab.selected').classList.remove('selected');
-    tab.classList.add('selected');
     if (target === 'web') {
       deviceStrip.innerHTML = '<span class="status-dot"></span><span><b>Chromium · Desktop</b><small>1440 × 900 · Playwright browser context</small></span><div class="viewport-switch"><button class="viewport-button selected" data-viewport="desktop">Desktop</button><button class="viewport-button" data-viewport="mobile">Mobile H5</button></div>';
       selectViewport(viewport);
@@ -74,9 +79,14 @@ function syncEditorTarget() {
   $('#addStep').hidden = isApi;
   apiSteps.hidden = !isApi;
   $('#addApiStep').hidden = !isApi;
+  $('#apiRequestPreview').hidden = !isApi;
+  $('#debugApiCase').hidden = !isApi;
   $('#editorEyebrow').textContent = isApi ? 'STRUCTURED API TEST CASE' : 'AI-POWERED WEB TEST CASE';
   $('#editorSubtitle').textContent = isApi ? '以明确的请求、断言和变量提取定义接口回归流程。' : '自然语言描述网页步骤，由 Playwright 与 Midscene 自动执行。';
   document.querySelectorAll('.target-tab[data-target]').forEach((tab) => tab.classList.toggle('selected', tab.dataset.target === target));
+  updateEditorBreadcrumb();
+  lucide.createIcons();
+  if (isApi) updateApiRequestPreview();
 }
 
 $('#addStep').addEventListener('click', () => {
@@ -93,7 +103,21 @@ $('#addStep').addEventListener('click', () => {
 $('#addApiStep').addEventListener('click', () => {
   apiSteps.appendChild(renderApiStepNode({ instruction: '', request: { method: 'POST', safety: 'readonly', payload: {}, expectedStatus: 1, expectedJson: [], extract: {} } }, apiSteps.children.length));
   lucide.createIcons();
+  updateApiRequestPreview();
 });
+
+apiSteps.addEventListener('input', updateApiRequestPreview);
+
+function updateApiRequestPreview() {
+  const first = apiSteps.firstElementChild;
+  if (!first) return;
+  const value = (field) => first.querySelector(`[data-field="${field}"]`)?.value || '';
+  try {
+    $('#apiPreviewCode').textContent = JSON.stringify({ method: 'POST', action: value('action'), payload: parseJson(value('payload'), '请求 Body', {}), expectedStatus: Number(value('expectedStatus') || 1), expectedJson: parseJson(value('expectedJson'), 'JSON 断言', []), extract: parseJson(value('extract'), '变量提取', {}) }, null, 2);
+  } catch (error) {
+    $('#apiPreviewCode').textContent = error.message;
+  }
+}
 
 function readCaseFromForm() {
   if (target === 'api') return readApiCaseFromForm();
@@ -165,9 +189,10 @@ function applyCase(testCase) {
   apiSteps.innerHTML = '';
   if (target === 'api') testCase.steps.forEach((step, index) => apiSteps.appendChild(renderApiStepNode(step, index)));
   else testCase.steps.forEach((step, index) => steps.appendChild(createStepNode(step, index)));
-  $('#editorTitle').textContent = editingCaseId ? `编辑用例 · ${testCase.name}` : '新建 Web UI 用例';
+  $('#editorTitle').textContent = editingCaseId ? `编辑用例 · ${testCase.name}` : `新建 ${target === 'api' ? '接口' : 'Web UI'} 用例`;
   $('#deleteCase').hidden = !editingCaseId;
-  selectViewport(viewport);
+  if (target === 'web') selectViewport(viewport);
+  else deviceStrip.innerHTML = '<span class="status-dot"></span><span><b>CMS 加密接口执行</b><small>结构化 POST 请求 · 加密、断言、变量提取</small></span>';
   syncEditorTarget();
   lucide.createIcons();
 }
@@ -249,6 +274,17 @@ async function loadSavedCases() {
   lucide.createIcons();
 }
 
+async function loadBatchHistory() {
+  const response = await fetch('/api/batches');
+  if (!response.ok) throw new Error('无法读取批量执行历史');
+  const summaries = await response.json();
+  const batches = await Promise.all(summaries.slice(0, 8).map(async (batch) => {
+    const detail = await fetch(`/api/batches/${encodeURIComponent(batch.id)}`);
+    return detail.ok ? detail.json() : { ...batch, runs: [] };
+  }));
+  renderBatchHistory(batches);
+}
+
 function selectedCasesInOrder() {
   return savedCases.filter((testCase) => selectedCaseIds.has(testCase.id)).map((testCase) => testCase.id);
 }
@@ -315,9 +351,19 @@ async function createBatch() {
       body: JSON.stringify({ caseIds })
     });
     if (!response.ok) throw new Error((await response.json()).error || '批量执行失败');
+    const batch = await response.json();
+    const detail = await fetch(`/api/batches/${encodeURIComponent(batch.id)}`);
+    if (!detail.ok) throw new Error('无法读取批量执行结果');
+    const completedBatch = await detail.json();
+    const latestRun = completedBatch.runs.at(-1);
+    if (latestRun) {
+      location.hash = '#/dashboard';
+      renderRun(latestRun);
+    }
     selectedCaseIds.clear();
     await loadSavedCases();
-    showToast('批量执行任务已创建');
+    await loadBatchHistory();
+    showToast('批量执行完成');
   } catch (error) {
     showToast(error.message, true);
   } finally {
@@ -372,6 +418,18 @@ export async function deleteEditor() {
   }
 }
 
+async function debugApiCase() {
+  if (target !== 'api') return;
+  const saved = await saveCase();
+  const response = await fetch(`/api/cases/${encodeURIComponent(saved.id)}/runs`, { method: 'POST' });
+  if (!response.ok) throw new Error((await response.json()).error || '接口调试失败');
+  const run = await response.json();
+  location.hash = '#/dashboard';
+  renderRun(run);
+  await loadBatchHistory();
+  showToast(run.status === 'passed' ? '接口调试完成' : '接口调试失败', run.status !== 'passed');
+}
+
 function addLog(message, state = '') {
   const line = document.createElement('div');
   line.className = `log-line ${state}`;
@@ -400,12 +458,13 @@ function renderRun(run) {
 }
 
 $('#saveBtn').addEventListener('click', async () => {
-  try { await saveCase(); showToast('Web UI 用例已保存'); }
+  try { const saved = await saveCase(); showToast(`${saved.target === 'api' ? '接口' : 'Web UI'} 用例已保存`); }
   catch (error) { showToast(error.message, true); }
 });
 
 $('#refreshCases').addEventListener('click', () => loadSavedCases().catch((error) => showToast(error.message, true)));
 $('#runBatch').addEventListener('click', createBatch);
+$('#debugApiCase').addEventListener('click', () => debugApiCase().catch((error) => showToast(error.message, true)));
 $('#cancelEdit').addEventListener('click', () => { location.hash = '#/assets'; });
 $('#deleteCase').addEventListener('click', () => deleteEditor().catch((error) => showToast(error.message, true)));
 $('#assetSearch').addEventListener('input', () => loadSavedCases().catch((error) => showToast(error.message, true)));

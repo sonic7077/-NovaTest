@@ -74,11 +74,12 @@
       <div class="asset-toolbar"><label class="asset-search"><i data-lucide="search"></i><input id="assetSearch" type="search" placeholder="搜索用例名称" /></label><select id="assetTargetFilter" aria-label="用例类型"><option value="all">全部类型</option><option value="web">Web UI</option><option value="api">接口测试</option></select><button class="icon-button" id="refreshCases" title="刷新用例"><i data-lucide="refresh-cw"></i></button></div>
       <div class="asset-selection"><span id="selectedCaseCount">已选择 0 个用例</span><button class="run-button" id="runBatch" disabled><i data-lucide="list-play"></i>批量执行</button></div>
       <div class="assets-table-wrap"><table class="assets-table"><thead><tr><th scope="col">选择</th><th scope="col">用例</th><th scope="col">执行环境</th><th scope="col">步骤</th><th scope="col">操作</th></tr></thead><tbody id="caseList"><tr><td colspan="5" class="empty-state">正在读取测试资产...</td></tr></tbody></table></div>
+      <section class="batch-history"><div class="batch-history-head"><h3>最近批量执行</h3><p>执行完成后可直接打开每条用例的测试报告。</p></div><div id="batchHistoryList"></div></section>
     </section>
 
     <section class="page-heading route-view" data-route-view="asset-editor">
       <div><p class="eyebrow" id="editorEyebrow">AI-POWERED WEB TEST CASE</p><h1 id="editorTitle">新建 Web UI 用例</h1><p class="subtitle" id="editorSubtitle">自然语言描述网页步骤，由 Playwright 与 Midscene 自动执行。</p></div>
-      <div class="heading-actions"><button class="secondary-button" id="cancelEdit"><i data-lucide="arrow-left"></i>返回资产</button><button class="secondary-button" id="deleteCase"><i data-lucide="trash-2"></i>删除</button><button class="run-button" id="saveBtn"><i data-lucide="save"></i>保存用例</button></div>
+      <div class="heading-actions"><button class="secondary-button" id="cancelEdit"><i data-lucide="arrow-left"></i>返回资产</button><button class="secondary-button" id="deleteCase"><i data-lucide="trash-2"></i>删除</button><button class="secondary-button" id="debugApiCase" hidden><i data-lucide="play"></i>保存并调试</button><button class="run-button" id="saveBtn"><i data-lucide="save"></i>保存用例</button></div>
     </section>
 
     <section class="workspace-grid route-view" data-route-view="asset-editor">
@@ -104,6 +105,7 @@
         <button class="add-step" id="addStep"><i data-lucide="plus"></i>添加自然语言步骤</button>
         <div class="api-steps" id="apiSteps" hidden></div>
         <button class="add-step" id="addApiStep" hidden><i data-lucide="plus"></i>添加接口请求</button>
+        <section class="api-preview" id="apiRequestPreview" hidden><h3>请求预览</h3><pre id="apiPreviewCode"></pre></section>
       </article>
     </section>
   </main>
