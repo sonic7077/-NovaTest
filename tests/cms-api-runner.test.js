@@ -3,6 +3,7 @@ import { decryptPayload, encryptPayload } from '../server/services/cms-crypto.js
 import { CmsApiRunner } from '../server/runners/cms-api-runner.js';
 
 const cryptoConfig = { key: '1234567890abcdef', iv: 'abcdef1234567890', appKey: 'app-key' };
+const googleSecret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
 
 function encryptedResponse(data) {
   return { status: 1, crypt: true, data: encryptPayload(JSON.stringify(data), cryptoConfig) };
@@ -20,7 +21,7 @@ describe('CMS API runner', () => {
   it('logs in, decrypts responses, and injects the token into later requests', async () => {
     const bodies = [];
     const runner = new CmsApiRunner({
-      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'pc', version: '1.0.0' },
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'pc', version: '1.0.0' },
       fetchImpl: async (_url, options) => {
         bodies.push(options.body);
         return { ok: true, status: 200, json: async () => bodies.length === 1 ? encryptedResponse('token-1') : encryptedResponse({ list: [] }) };
@@ -38,9 +39,31 @@ describe('CMS API runner', () => {
     expect(bodies[1]).not.toContain('token-1');
   });
 
+  it('sends a generated code only on encrypted login', async () => {
+    const payloads = [];
+    const runner = new CmsApiRunner({
+      config: {
+        ...cryptoConfig,
+        username: 'synthetic-user',
+        password: 'synthetic-password',
+        googleSecret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
+      },
+      fetchImpl: async (url, options) => {
+        payloads.push(JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig)));
+        const action = new URL(url).pathname.split('/').at(-1);
+        return { ok: true, status: 200, json: async () => encryptedResponse(action === 'loginByPassword' ? 'synthetic-token' : { ok: true }) };
+      }
+    });
+
+    await runner.execute(apiStep('config'), { testCase: { baseUrl: 'https://example.test' }, variables: {} });
+
+    expect(payloads[0]).toMatchObject({ username: 'synthetic-user', password: 'synthetic-password', secret: expect.stringMatching(/^\d{6}$/) });
+    expect(payloads[1]).not.toHaveProperty('secret');
+  });
+
   it('decrypts an unmarked encrypted business response and preserves its data object', async () => {
     const runner = new CmsApiRunner({
-      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
       fetchImpl: async (url) => ({
         ok: true,
         status: 200,
@@ -59,7 +82,7 @@ describe('CMS API runner', () => {
     let submittedConfigPayload;
     const syntheticSessionValue = 'synthetic-session-value';
     const runner = new CmsApiRunner({
-      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
       fetchImpl: async (url, options) => {
         const action = new URL(url).pathname.split('/').at(-1);
         if (action === 'config') submittedConfigPayload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
@@ -81,7 +104,7 @@ describe('CMS API runner', () => {
 
   it('fails when a decrypted business body overrides an outer success status', async () => {
     const runner = new CmsApiRunner({
-      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
       fetchImpl: async (url) => ({
         ok: true,
         status: 200,
@@ -102,7 +125,7 @@ describe('CMS API runner', () => {
 
   it('interpolates payloads, asserts decrypted JSON paths, and extracts response variables', async () => {
     const runner = new CmsApiRunner({
-      config: { ...cryptoConfig, oauthId: 'qa', oauthType: 'pc', version: '1.0.0' },
+      config: { ...cryptoConfig, googleSecret, oauthId: 'qa', oauthType: 'pc', version: '1.0.0' },
       fetchImpl: async (url) => ({
         ok: true,
         status: 200,
@@ -127,7 +150,7 @@ describe('CMS API runner', () => {
 
   it('fails an API step when a decrypted JSON assertion does not match', async () => {
     const runner = new CmsApiRunner({
-      config: { ...cryptoConfig, oauthId: 'qa', oauthType: 'pc', version: '1.0.0' },
+      config: { ...cryptoConfig, googleSecret, oauthId: 'qa', oauthType: 'pc', version: '1.0.0' },
       fetchImpl: async (url) => ({
         ok: true,
         status: 200,
@@ -144,7 +167,7 @@ describe('CMS API runner', () => {
   it('sends configured CMS public client parameters with each request', async () => {
     let submittedPayload;
     const runner = new CmsApiRunner({
-      config: { ...cryptoConfig, oauthId: 'qa-pc', oauthType: 'web', version: '1.0.0', bundleId: 'com.example.cms', language: 'zh', via: 'web' },
+      config: { ...cryptoConfig, googleSecret, oauthId: 'qa-pc', oauthType: 'web', version: '1.0.0', bundleId: 'com.example.cms', language: 'zh', via: 'web' },
       fetchImpl: async (url, options) => {
         submittedPayload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
         return { ok: true, status: 200, json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword') ? 'token-1' : {}) };
@@ -158,7 +181,7 @@ describe('CMS API runner', () => {
 
   it('accepts the white-bag errcode success protocol and keeps its token', async () => {
     const runner = new CmsApiRunner({
-      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
       fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ errcode: 0, data: 'token-1' }) })
     });
 
@@ -173,7 +196,7 @@ describe('CMS API runner', () => {
   it('authenticates once for a shared session and keeps its token out of run variables', async () => {
     const payloads = [];
     const runner = new CmsApiRunner({
-      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
       fetchImpl: async (url, options) => {
         const payload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
         const action = new URL(url).pathname.split('/').at(-1);
@@ -197,7 +220,7 @@ describe('CMS API runner', () => {
   it('does not send business requests after shared authentication fails', async () => {
     const actions = [];
     const runner = new CmsApiRunner({
-      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
       fetchImpl: async (url, options) => {
         const payload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
         actions.push(new URL(url).pathname.split('/').at(-1));

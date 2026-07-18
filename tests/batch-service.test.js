@@ -69,9 +69,10 @@ describe('BatchService', () => {
 
   it('shares one CMS login session across all API cases in a batch', async () => {
     const cryptoConfig = { key: '1234567890abcdef', iv: 'abcdef1234567890', appKey: 'app-key' };
+    const googleSecret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
     const actions = [];
     const api = new CmsApiRunner({
-      config: { ...cryptoConfig, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
       fetchImpl: async (url, options) => {
         const payload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
         const action = new URL(url).pathname.split('/').at(-1);

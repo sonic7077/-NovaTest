@@ -1,5 +1,6 @@
 import { buildRequestBody, decryptPayload, redactBusinessSecrets, redactTransportSecrets } from '../services/cms-crypto.js';
 import { interpolate } from '../domain/case.js';
+import { generateTotp } from '../services/totp.js';
 
 function jsonPathValue(value, path) {
   if (typeof path !== 'string' || !/^\$(?:\.[A-Za-z_$][\w$]*|\[\d+\])*$/.test(path)) throw new Error(`invalid JSON path: ${path}`);
@@ -89,7 +90,11 @@ export class CmsApiRunner {
     if (session.authenticationError) throw new Error(session.authenticationError);
     if (session.token) return session;
     try {
-      const result = await this.request('loginByPassword', this.clientPayload({ username: this.config.username, password: this.config.password }), baseUrl, 1);
+      const result = await this.request('loginByPassword', this.clientPayload({
+        username: this.config.username,
+        password: this.config.password,
+        secret: generateTotp(this.config.googleSecret)
+      }), baseUrl, 1);
       if (typeof result.data !== 'string' || !result.data.trim()) throw new Error('CMS authentication returned no token');
       session.token = result.data;
       session.loginApi = result.api;
