@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { basename, join } from 'node:path';
 import multer from 'multer';
 import { validateWebCase } from './domain/case.js';
-import { renderReport } from './services/report-service.js';
+import { renderBatchReport, renderReport } from './services/report-service.js';
 import { BatchService } from './services/batch-service.js';
 import { RunService } from './services/run-service.js';
 
@@ -145,6 +145,13 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     const batch = store.getBatch(req.params.id);
     if (!batch) return res.status(404).json({ error: 'batch not found' });
     return res.json({ ...batch, runs: batch.runIds.map((id) => store.getRun(id)).filter(Boolean) });
+  });
+
+  app.get('/api/batches/:id/report', (req, res) => {
+    const batch = store.getBatch(req.params.id);
+    if (!batch) return res.status(404).send('batch report not found');
+    const runs = batch.runIds.map((id) => store.getRun(id)).filter(Boolean);
+    return res.type('html').send(renderBatchReport(batch, runs));
   });
 
   app.post('/api/cases/:id/runs', async (req, res) => {

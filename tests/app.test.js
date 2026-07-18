@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp, createMemoryStore } from '../server/app.js';
-import { renderReport } from '../server/services/report-service.js';
+import { renderBatchReport, renderReport } from '../server/services/report-service.js';
 import { cmsWhitebagCases } from '../server/seed/cms-whitebag-cases.js';
 
 const webCase = {
@@ -146,6 +146,24 @@ describe('execution API', () => {
       });
   });
 
+  it('serves one summary report for every run in a batch', async () => {
+    const app = createApp({ runner: { execute: async () => ({}) }, store: createMemoryStore() });
+    const first = (await request(app).post('/api/cases').send(webCase).expect(201)).body;
+    const second = (await request(app).post('/api/cases').send({ ...webCase, name: '详情验证' }).expect(201)).body;
+    const batch = (await request(app).post('/api/batches').send({ name: '项目回归', caseIds: [first.id, second.id] }).expect(202)).body;
+
+    await request(app)
+      .get(`/api/batches/${batch.id}/report`)
+      .expect(200)
+      .expect('content-type', /html/)
+      .expect((response) => {
+        expect(response.text).toContain('项目回归');
+        expect(response.text).toContain('首页验证');
+        expect(response.text).toContain('详情验证');
+      });
+    await request(app).get('/api/batches/missing/report').expect(404);
+  });
+
   it('filters batch history by its persisted project ID', async () => {
     const app = createApp({ runner: { execute: async () => ({}) }, store: createMemoryStore() });
     const firstProject = (await request(app).post('/api/projects').send({ name: '项目一' }).expect(201)).body;
@@ -277,6 +295,24 @@ describe('execution API', () => {
     expect(report).not.toContain('secret-token');
     expect(report).not.toContain('响应摘要');
     expect(report).not.toContain('解密后响应');
+  });
+
+  it('renders a batch report with Shanghai local time and ordered run details', () => {
+    const report = renderBatchReport(
+      { id: 'batch-1', name: '查询回归', status: 'failed', startedAt: '2026-07-18T05:40:00.000Z', finishedAt: '2026-07-18T05:41:02.000Z', caseIds: ['case-1', 'case-2'] },
+      [
+        { id: 'run-1', caseId: 'case-1', caseName: '帖子列表查询', status: 'passed', startedAt: '2026-07-18T05:40:00.000Z', finishedAt: '2026-07-18T05:40:10.000Z', variables: {}, steps: [{ id: 'list_post', instruction: '帖子列表查询', status: 'passed', attempts: 1, api: { action: 'list_post', httpStatus: 200, businessStatus: 1, durationMs: 100, request: { token: 'synthetic-session-value' }, response: { status: 1 } } }] },
+        { id: 'run-2', caseId: 'case-2', caseName: '评论列表查询', status: 'failed', startedAt: '2026-07-18T05:40:10.000Z', finishedAt: '2026-07-18T05:41:02.000Z', variables: {}, steps: [{ id: 'list_post_comments', instruction: '评论列表查询', status: 'failed', attempts: 2, error: 'API assertion failed', api: { action: 'list_post_comments', httpStatus: 200, businessStatus: 0, durationMs: 80, request: { token: 'synthetic-session-value' }, response: { status: 0 } } }] }
+      ]
+    );
+
+    expect(report).toContain('查询回归');
+    expect(report).toContain('<strong>1</strong> 通过 · <strong>1</strong> 失败');
+    expect(report).toContain('2026-07-18 13:40:00');
+    expect(report).toContain('帖子列表查询');
+    expect(report).toContain('评论列表查询');
+    expect(report).toContain('********');
+    expect(report).not.toContain('synthetic-session-value');
   });
 
   it('uploads a PNG visual baseline for an existing case', async () => {
