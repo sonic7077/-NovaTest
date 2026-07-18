@@ -25,9 +25,12 @@ describe('test console stylesheet', () => {
     expect(html).toContain('data-route-view="dashboard"');
     expect(html).toContain('data-route-view="asset-editor"');
     expect(html).toContain('id="assetSearch"');
+    expect(html).toContain('id="projectList"');
+    expect(html).toContain('id="createProject"');
+    expect(html).toContain('id="caseProjectId"');
     expect(html).toContain('id="deleteCase"');
-    expect(html).toContain('#/assets/new-web');
-    expect(html).toContain('#/assets/new-api');
+    expect(html).toContain('id="newWebCaseLink"');
+    expect(html).toContain('id="newApiCaseLink"');
     expect(html).toContain('id="assetTargetFilter"');
     expect(html).toContain('id="apiSteps"');
     expect(html).toContain('id="debugApiCase"');
@@ -39,9 +42,12 @@ describe('test console stylesheet', () => {
     expect(script).toContain('async function deleteEditor');
     expect(script).toContain('function readApiCaseFromForm()');
     expect(script).toContain('function renderApiStepNode(');
-    expect(script).toContain("!['#/assets/new', '#/assets/new-web', '#/assets/new-api'].includes(route)");
+    expect(script).toContain('const projectRoute = /^#\\/projects\\/');
     expect(script).toContain('async function debugApiCase()');
     expect(script).toContain('async function loadBatchHistory()');
+    expect(script).toContain('async function loadProjects()');
+    expect(script).toContain("'/api/projects'");
+    expect(script).toContain('#/projects/');
     expect(stylesheet).toContain('.api-request { grid-template-columns: 28px minmax(0, 1fr); }');
     expect(stylesheet).toContain('.api-request .step-content { min-width: 0; }');
     expect(script).toContain("target === 'api' ? '接口用例编排' : 'Web UI 用例编排'");

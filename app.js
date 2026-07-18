@@ -8,29 +8,58 @@ let target = 'web';
 let viewport = 'desktop';
 let savedCases = [];
 let editingCaseId = null;
+let activeProjectId = null;
+let activeProjectName = '';
 const selectedCaseIds = new Set();
 
 function updateEditorBreadcrumb() {
-  $('#breadcrumb').innerHTML = `测试资产 <i data-lucide="chevron-right"></i> <span>${target === 'api' ? '接口用例编排' : 'Web UI 用例编排'}</span>`;
+  $('#breadcrumb').innerHTML = `测试资产 <i data-lucide="chevron-right"></i> <span>${activeProjectName || '项目'} · ${target === 'api' ? '接口用例编排' : 'Web UI 用例编排'}</span>`;
 }
 
 function renderRoute() {
   const route = location.hash || '#/dashboard';
-  const view = route === '#/dashboard' ? 'dashboard' : (route === '#/assets' ? 'assets-list' : 'asset-editor');
+  const projectRoute = /^#\/projects\/([^/]+)\/assets(?:\/([^/]+))?$/.exec(route);
+  const view = route === '#/dashboard' ? 'dashboard' : (route === '#/assets' ? 'projects-list' : (projectRoute ? (projectRoute[2] ? 'asset-editor' : 'assets-list') : 'asset-editor'));
   document.querySelectorAll('.route-view').forEach((element) => { element.hidden = element.dataset.routeView !== view; });
   document.querySelectorAll('.nav-item[href^="#/"]').forEach((link) => link.classList.toggle('active', link.getAttribute('href') === (view === 'dashboard' ? '#/dashboard' : '#/assets')));
   if (view === 'dashboard') $('#breadcrumb').innerHTML = '工作台 <i data-lucide="chevron-right"></i> <span>执行概览</span>';
-  else if (view === 'assets-list') $('#breadcrumb').innerHTML = '测试资产 <i data-lucide="chevron-right"></i> <span>用例库</span>';
+  else if (view === 'projects-list') $('#breadcrumb').innerHTML = '测试资产 <i data-lucide="chevron-right"></i> <span>项目目录</span>';
   else updateEditorBreadcrumb();
   lucide.createIcons();
   if (view === 'dashboard') loadDashboard();
-  if (view === 'assets-list') {
-    loadSavedCases().catch((error) => showToast(error.message, true));
-    loadBatchHistory().catch((error) => showToast(error.message, true));
+  if (view === 'projects-list') loadProjects().catch((error) => showToast(error.message, true));
+  if (projectRoute) {
+    const [, encodedProjectId, action] = projectRoute;
+    activeProjectId = decodeURIComponent(encodedProjectId);
+    loadProjectContext().then(async () => {
+      if (!action) {
+        await loadSavedCases();
+        await loadBatchHistory();
+      } else if (action === 'new-web' || action === 'new-api') {
+        await populateProjectSelect(activeProjectId);
+        resetEditor(action === 'new-api' ? 'api' : 'web', activeProjectId);
+      } else {
+        await loadEditor(decodeURIComponent(action), activeProjectId);
+      }
+    }).catch((error) => showToast(error.message, true));
+  } else if (route === '#/assets/new' || route === '#/assets/new-web' || route === '#/assets/new-api') {
+    redirectToDefaultProject(route.endsWith('new-api') ? 'new-api' : 'new-web').catch((error) => showToast(error.message, true));
+  } else if (route.startsWith('#/assets/')) {
+    loadEditor(decodeURIComponent(route.slice('#/assets/'.length))).then((testCase) => {
+      if (testCase?.projectId) location.hash = projectCaseRoute(testCase.projectId, testCase.id);
+    }).catch((error) => showToast(error.message, true));
   }
-  if (route === '#/assets/new' || route === '#/assets/new-web') resetEditor('web');
-  if (route === '#/assets/new-api') resetEditor('api');
-  if (route.startsWith('#/assets/') && !['#/assets/new', '#/assets/new-web', '#/assets/new-api'].includes(route)) loadEditor(decodeURIComponent(route.slice('#/assets/'.length))).catch((error) => showToast(error.message, true));
+}
+
+function projectAssetsRoute(projectId) { return `#/projects/${encodeURIComponent(projectId)}/assets`; }
+function projectCaseRoute(projectId, caseId) { return `${projectAssetsRoute(projectId)}/${encodeURIComponent(caseId)}`; }
+
+async function redirectToDefaultProject(action = '') {
+  const response = await fetch('/api/projects');
+  if (!response.ok) throw new Error('无法读取测试项目');
+  const [project] = await response.json();
+  if (!project) throw new Error('请先创建测试项目');
+  location.hash = `${projectAssetsRoute(project.id)}${action ? `/${action}` : ''}`;
 }
 
 window.addEventListener('hashchange', renderRoute);
@@ -122,6 +151,7 @@ function updateApiRequestPreview() {
 function readCaseFromForm() {
   if (target === 'api') return readApiCaseFromForm();
   return {
+    projectId: $('#caseProjectId').value,
     name: document.querySelector('.case-meta input').value.trim(),
     target: 'web',
     baseUrl: $('#baseUrl').value.trim(),
@@ -141,7 +171,7 @@ function parseJson(value, label, fallback) {
 
 function readApiCaseFromForm() {
   return {
-    name: document.querySelector('.case-meta input').value.trim(), target: 'api', baseUrl: $('#baseUrl').value.trim(), viewport: 'desktop',
+    projectId: $('#caseProjectId').value, name: document.querySelector('.case-meta input').value.trim(), target: 'api', baseUrl: $('#baseUrl').value.trim(), viewport: 'desktop',
     steps: [...apiSteps.children].map((node, index) => ({
       id: `api-step-${index + 1}`, kind: 'apiRequest', instruction: node.querySelector('[data-field="instruction"]').value.trim() || '执行接口请求',
       request: { action: node.querySelector('[data-field="action"]').value.trim(), method: 'POST', safety: node.querySelector('[data-field="safety"]').value, payload: parseJson(node.querySelector('[data-field="payload"]').value, '请求 Body', {}), expectedStatus: Number(node.querySelector('[data-field="expectedStatus"]').value || 1), expectedJson: parseJson(node.querySelector('[data-field="expectedJson"]').value, 'JSON 断言', []), extract: parseJson(node.querySelector('[data-field="extract"]').value, '变量提取', {}) }
@@ -183,6 +213,8 @@ function applyCase(testCase) {
   editingCaseId = testCase.id || null;
   target = testCase.target;
   viewport = testCase.viewport;
+  activeProjectId = testCase.projectId || activeProjectId;
+  $('#caseProjectId').value = activeProjectId;
   document.querySelector('.case-meta input').value = testCase.name;
   $('#baseUrl').value = testCase.baseUrl;
   steps.innerHTML = '';
@@ -197,14 +229,14 @@ function applyCase(testCase) {
   lucide.createIcons();
 }
 
-function resetEditor(nextTarget = 'web') {
+function resetEditor(nextTarget = 'web', projectId = activeProjectId) {
   applyCase({
-    name: '', target: nextTarget, baseUrl: nextTarget === 'api' ? 'https://example.test/api.php' : 'https://example.test', viewport: 'desktop',
+    name: '', projectId, target: nextTarget, baseUrl: nextTarget === 'api' ? 'https://example.test/api.php' : 'https://example.test', viewport: 'desktop',
     steps: nextTarget === 'api' ? [{ id: 'api-step-1', kind: 'apiRequest', instruction: '', request: { action: '', method: 'POST', safety: 'readonly', payload: {}, expectedStatus: 1, expectedJson: [], extract: {} } }] : [{ id: 'step-1', kind: 'action', instruction: '' }]
   });
 }
 
-export async function loadEditor(id) {
+export async function loadEditor(id, expectedProjectId = '') {
   const response = await fetch(`/api/cases/${encodeURIComponent(id)}`);
   if (response.status === 404) {
     location.hash = '#/assets';
@@ -212,12 +244,114 @@ export async function loadEditor(id) {
     return;
   }
   if (!response.ok) throw new Error('无法读取测试用例');
-  applyCase(await response.json());
+  const testCase = await response.json();
+  if (expectedProjectId && testCase.projectId !== expectedProjectId) {
+    location.hash = projectCaseRoute(testCase.projectId, testCase.id);
+    throw new Error('该用例不属于当前项目');
+  }
+  activeProjectId = testCase.projectId;
+  await populateProjectSelect(testCase.projectId);
+  applyCase(testCase);
+  return testCase;
+}
+
+async function loadProjects() {
+  const response = await fetch('/api/projects');
+  if (!response.ok) throw new Error('无法读取测试项目');
+  const projects = await response.json();
+  const container = $('#projectList');
+  container.innerHTML = '';
+  if (!projects.length) {
+    container.innerHTML = '<p class="empty-state">还没有测试项目。</p>';
+    return;
+  }
+  projects.forEach((project) => {
+    const card = document.createElement('article');
+    card.className = 'project-card';
+    const copy = document.createElement('div');
+    const name = document.createElement('b');
+    name.textContent = project.name;
+    const meta = document.createElement('small');
+    meta.textContent = `${project.caseCount} 个用例 · Web UI ${project.webCaseCount} · 接口 ${project.apiCaseCount}`;
+    copy.append(name, meta);
+    const actions = document.createElement('div');
+    actions.className = 'project-actions';
+    const open = document.createElement('a');
+    open.className = 'case-open'; open.title = '进入项目'; open.href = projectAssetsRoute(project.id); open.innerHTML = '<i data-lucide="arrow-right"></i>';
+    const rename = document.createElement('button');
+    rename.className = 'case-open'; rename.type = 'button'; rename.title = '重命名项目'; rename.innerHTML = '<i data-lucide="pencil"></i>';
+    rename.addEventListener('click', () => renameProject(project));
+    const remove = document.createElement('button');
+    remove.className = 'case-open'; remove.type = 'button'; remove.title = '删除空项目'; remove.innerHTML = '<i data-lucide="trash-2"></i>';
+    remove.addEventListener('click', () => deleteProject(project));
+    actions.append(open, rename, remove);
+    card.append(copy, actions);
+    container.appendChild(card);
+  });
+  lucide.createIcons();
+}
+
+async function loadProjectContext() {
+  const response = await fetch('/api/projects');
+  if (!response.ok) throw new Error('无法读取测试项目');
+  const project = (await response.json()).find((item) => item.id === activeProjectId);
+  if (!project) {
+    location.hash = '#/assets';
+    throw new Error('测试项目不存在或已删除');
+  }
+  activeProjectName = project.name;
+  $('#activeProjectName').textContent = project.name;
+  $('#activeProjectMeta').textContent = `${project.caseCount} 个用例 · Web UI ${project.webCaseCount} · 接口 ${project.apiCaseCount}`;
+  $('#newWebCaseLink').href = `${projectAssetsRoute(project.id)}/new-web`;
+  $('#newApiCaseLink').href = `${projectAssetsRoute(project.id)}/new-api`;
+  if (/\/assets\/[^/]+$/.test(location.hash)) updateEditorBreadcrumb();
+  else $('#breadcrumb').innerHTML = `测试资产 <i data-lucide="chevron-right"></i> <span>${project.name} · 用例库</span>`;
+  lucide.createIcons();
+  return project;
+}
+
+async function populateProjectSelect(selectedProjectId) {
+  const response = await fetch('/api/projects');
+  if (!response.ok) throw new Error('无法读取测试项目');
+  const select = $('#caseProjectId');
+  select.innerHTML = '';
+  (await response.json()).forEach((project) => {
+    const option = document.createElement('option');
+    option.value = project.id;
+    option.textContent = project.name;
+    select.appendChild(option);
+  });
+  select.value = selectedProjectId;
+}
+
+async function createProject(event) {
+  event.preventDefault();
+  const input = $('#projectName');
+  const response = await fetch('/api/projects', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: input.value }) });
+  if (!response.ok) throw new Error((await response.json()).error || '创建测试项目失败');
+  const project = await response.json();
+  input.value = '';
+  location.hash = projectAssetsRoute(project.id);
+}
+
+async function renameProject(project) {
+  const name = window.prompt('项目名称', project.name);
+  if (name === null || name.trim() === project.name) return;
+  const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
+  if (!response.ok) throw new Error((await response.json()).error || '重命名测试项目失败');
+  await loadProjects();
+}
+
+async function deleteProject(project) {
+  if (!window.confirm(`删除项目“${project.name}”？仅允许删除空项目。`)) return;
+  const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error((await response.json()).error || '删除测试项目失败');
+  await loadProjects();
 }
 
 async function loadSavedCases() {
   const query = $('#assetSearch').value.trim();
-  const response = await fetch(`/api/cases?q=${encodeURIComponent(query)}`);
+  const response = await fetch(`/api/cases?q=${encodeURIComponent(query)}&projectId=${encodeURIComponent(activeProjectId || '')}`);
   if (!response.ok) throw new Error('无法读取已保存用例');
   savedCases = await response.json();
   const selectedTarget = $('#assetTargetFilter').value;
@@ -265,7 +399,7 @@ async function loadSavedCases() {
     edit.type = 'button';
     edit.title = '编辑用例';
     edit.innerHTML = '<i data-lucide="pencil"></i>';
-    edit.addEventListener('click', () => { location.hash = `#/assets/${encodeURIComponent(testCase.id)}`; });
+    edit.addEventListener('click', () => { location.hash = projectCaseRoute(activeProjectId, testCase.id); });
     actions.appendChild(edit);
     item.append(selectCell, nameCell, environment, stepCount, actions);
     container.appendChild(item);
@@ -398,6 +532,7 @@ export async function saveCase() {
   if (!response.ok) throw new Error((await response.json()).error || '保存失败');
   const saved = await response.json();
   editingCaseId = saved.id;
+  activeProjectId = saved.projectId;
   $('#editorTitle').textContent = `编辑用例 · ${saved.name}`;
   $('#deleteCase').hidden = false;
   return saved;
@@ -412,7 +547,7 @@ export async function deleteEditor() {
     if (!response.ok && response.status !== 404) throw new Error('删除测试用例失败');
     selectedCaseIds.delete(editingCaseId);
     showToast('测试用例已删除');
-    location.hash = '#/assets';
+    location.hash = projectAssetsRoute(activeProjectId);
   } finally {
     button.disabled = false;
   }
@@ -458,14 +593,19 @@ function renderRun(run) {
 }
 
 $('#saveBtn').addEventListener('click', async () => {
-  try { const saved = await saveCase(); showToast(`${saved.target === 'api' ? '接口' : 'Web UI'} 用例已保存`); }
+  try {
+    const saved = await saveCase();
+    showToast(`${saved.target === 'api' ? '接口' : 'Web UI'} 用例已保存`);
+    if (location.hash !== projectCaseRoute(saved.projectId, saved.id)) location.hash = projectCaseRoute(saved.projectId, saved.id);
+  }
   catch (error) { showToast(error.message, true); }
 });
 
+$('#projectCreateForm').addEventListener('submit', (event) => createProject(event).catch((error) => showToast(error.message, true)));
 $('#refreshCases').addEventListener('click', () => loadSavedCases().catch((error) => showToast(error.message, true)));
 $('#runBatch').addEventListener('click', createBatch);
 $('#debugApiCase').addEventListener('click', () => debugApiCase().catch((error) => showToast(error.message, true)));
-$('#cancelEdit').addEventListener('click', () => { location.hash = '#/assets'; });
+$('#cancelEdit').addEventListener('click', () => { location.hash = activeProjectId ? projectAssetsRoute(activeProjectId) : '#/assets'; });
 $('#deleteCase').addEventListener('click', () => deleteEditor().catch((error) => showToast(error.message, true)));
 $('#assetSearch').addEventListener('input', () => loadSavedCases().catch((error) => showToast(error.message, true)));
 $('#assetTargetFilter').addEventListener('change', () => { selectedCaseIds.clear(); loadSavedCases().catch((error) => showToast(error.message, true)); });

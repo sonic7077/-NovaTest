@@ -69,8 +69,14 @@
       </aside>
     </section>
 
+    <section class="assets panel route-view" id="projects" data-route-view="projects-list">
+      <div class="panel-head"><div><h2>测试项目</h2><p>以项目为一级目录，分别维护 Web UI 与接口自动化用例。</p></div></div>
+      <form class="project-create" id="projectCreateForm"><label>项目名称<input id="projectName" required maxlength="80" placeholder="例如：社区 CMS" /></label><button class="run-button" id="createProject" type="submit"><i data-lucide="folder-plus"></i>创建项目</button></form>
+      <div class="project-list" id="projectList"><p class="empty-state">正在读取测试项目...</p></div>
+    </section>
+
     <section class="assets panel route-view" id="assets" data-route-view="assets-list">
-      <div class="panel-head"><div><h2>测试资产</h2><p>按类型管理 Web UI 与接口测试用例，并按选择顺序批量执行。</p></div><div class="heading-actions"><a class="secondary-button" href="#/assets/new-web"><i data-lucide="monitor"></i>新建 Web UI</a><a class="run-button" href="#/assets/new-api"><i data-lucide="braces"></i>新建接口用例</a></div></div>
+      <div class="panel-head"><div><a class="back-link" href="#/assets"><i data-lucide="arrow-left"></i>全部项目</a><h2 id="activeProjectName">测试资产</h2><p id="activeProjectMeta">按类型管理 Web UI 与接口测试用例，并按选择顺序批量执行。</p></div><div class="heading-actions"><a class="secondary-button" id="newWebCaseLink" href="#/assets"><i data-lucide="monitor"></i>新建 Web UI</a><a class="run-button" id="newApiCaseLink" href="#/assets"><i data-lucide="braces"></i>新建接口用例</a></div></div>
       <div class="asset-toolbar"><label class="asset-search"><i data-lucide="search"></i><input id="assetSearch" type="search" placeholder="搜索用例名称" /></label><select id="assetTargetFilter" aria-label="用例类型"><option value="all">全部类型</option><option value="web">Web UI</option><option value="api">接口测试</option></select><button class="icon-button" id="refreshCases" title="刷新用例"><i data-lucide="refresh-cw"></i></button></div>
       <div class="asset-selection"><span id="selectedCaseCount">已选择 0 个用例</span><button class="run-button" id="runBatch" disabled><i data-lucide="list-play"></i>批量执行</button></div>
       <div class="assets-table-wrap"><table class="assets-table"><thead><tr><th scope="col">选择</th><th scope="col">用例</th><th scope="col">执行环境</th><th scope="col">步骤</th><th scope="col">操作</th></tr></thead><tbody id="caseList"><tr><td colspan="5" class="empty-state">正在读取测试资产...</td></tr></tbody></table></div>
@@ -85,9 +91,10 @@
     <section class="workspace-grid route-view" data-route-view="asset-editor">
       <article class="case-editor panel">
         <div class="panel-head"><div><h2>用例编排</h2><p>将步骤拖动排序，执行器会根据平台自动选择适配器。</p></div><button class="icon-button" title="更多设置"><i data-lucide="settings-2"></i></button></div>
-        <div class="case-meta">
-          <label>用例名称<input value="订单提交 · 全链路验证" /></label>
-          <label>优先级<select><option>P0 · 核心链路</option><option>P1 · 重要功能</option><option>P2 · 常规验证</option></select></label>
+         <div class="case-meta">
+           <label>用例名称<input value="订单提交 · 全链路验证" /></label>
+           <label>所属项目<select id="caseProjectId"></select></label>
+           <label>优先级<select><option>P0 · 核心链路</option><option>P1 · 重要功能</option><option>P2 · 常规验证</option></select></label>
           <label>测试地址<input id="baseUrl" value="https://example.test" /></label>
           <label>环境<select><option>Staging</option><option>Production</option><option>Development</option></select></label>
         </div>
