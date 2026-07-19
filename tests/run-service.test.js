@@ -114,4 +114,34 @@ describe('RunService', () => {
     expect(selected).toBe(true);
     expect(run.status).toBe('passed');
   });
+
+  it('publishes queued, running, step and terminal snapshots', async () => {
+    const updates = [];
+    const service = new RunService({ execute: async () => ({}) });
+    const queued = service.createQueuedRun(testCase);
+
+    expect(queued).toMatchObject({ status: 'queued', startedAt: null, steps: [{ id: 's1', status: 'queued', attempts: 0 }] });
+
+    await service.start(testCase, {
+      run: queued,
+      onUpdate: (run) => updates.push(structuredClone(run))
+    });
+
+    expect(updates.map((run) => run.status)).toEqual(['running', 'running', 'running', 'passed']);
+    expect(updates[1].steps[0]).toMatchObject({ status: 'running', attempts: 1 });
+    expect(updates.at(-1)).toMatchObject({ status: 'passed', finishedAt: expect.any(String) });
+  });
+
+  it('publishes retry and failed terminal snapshots', async () => {
+    const updates = [];
+    const service = new RunService({ execute: async () => { throw new Error('页面未就绪'); } });
+
+    await service.start(testCase, {
+      run: service.createQueuedRun(testCase),
+      onUpdate: (run) => updates.push(structuredClone(run))
+    });
+
+    expect(updates.some((run) => run.steps[0].logs.some((log) => log.message.includes('retrying once')))).toBe(true);
+    expect(updates.at(-1)).toMatchObject({ status: 'failed', steps: [{ status: 'failed', attempts: 2 }] });
+  });
 });

@@ -10,17 +10,30 @@ export class RunService {
     this.runner = runner;
   }
 
-  async start(testCase, { apiSession } = {}) {
-    const runner = this.runner[testCase.target] || this.runner;
-    const run = {
+  createQueuedRun(testCase, { batchId, batchPosition } = {}) {
+    return {
       id: crypto.randomUUID(),
       caseId: testCase.id,
-      status: 'running',
-      startedAt: new Date().toISOString(),
+      caseName: testCase.name,
+      projectId: testCase.projectId,
+      target: testCase.target,
+      batchId,
+      batchPosition,
+      status: 'queued',
+      startedAt: null,
       finishedAt: null,
       variables: {},
-      steps: []
+      steps: testCase.steps.map((step) => ({ id: step.id, status: 'queued', attempts: 0, logs: [], screenshots: [] }))
     };
+  }
+
+  async start(testCase, { apiSession, run: queuedRun, onUpdate } = {}) {
+    const runner = this.runner[testCase.target] || this.runner;
+    const run = queuedRun || this.createQueuedRun(testCase);
+    const publish = () => onUpdate?.(structuredClone(run));
+    run.status = 'running';
+    run.startedAt = new Date().toISOString();
+    publish();
     const executionContext = {
       ...run,
       testCase,
@@ -30,12 +43,14 @@ export class RunService {
     };
 
     for (const step of testCase.steps) {
-      const stepRun = { id: step.id, status: 'running', attempts: 0, logs: [], screenshots: [] };
-      run.steps.push(stepRun);
+      const stepRun = run.steps.find((item) => item.id === step.id) || { id: step.id, status: 'queued', attempts: 0, logs: [], screenshots: [] };
+      if (!run.steps.includes(stepRun)) run.steps.push(stepRun);
+      stepRun.status = 'running';
 
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         stepRun.attempts = attempt;
         executionContext.attempt = attempt;
+        publish();
         try {
           const resolvedStep = { ...step, instruction: interpolate(step.instruction, run.variables) };
           const evidence = await runner.execute(resolvedStep, executionContext);
@@ -43,6 +58,7 @@ export class RunService {
           const { screenshots = [], ...stepEvidence } = evidence;
           Object.assign(stepRun, stepEvidence, { status: 'passed' });
           stepRun.screenshots.push(...screenshots);
+          publish();
           break;
         } catch (error) {
           stepRun.error = error.message;
@@ -50,19 +66,23 @@ export class RunService {
           if (error.evidence) stepRun.screenshots.push(error.evidence);
           if (error.evidenceWarning) stepRun.logs.push({ level: 'warn', message: error.evidenceWarning });
           if (attempt === 1) stepRun.logs.push({ level: 'warn', message: `${error.message}; retrying once` });
+          publish();
         }
       }
 
       if (stepRun.status !== 'passed') {
         stepRun.status = 'failed';
+        publish();
         run.status = 'failed';
         run.finishedAt = new Date().toISOString();
+        publish();
         return run;
       }
     }
 
     run.status = 'passed';
     run.finishedAt = new Date().toISOString();
+    publish();
     return run;
   }
 }
