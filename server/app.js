@@ -181,6 +181,13 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
   });
 
   app.get('/api/executions', (req, res) => res.json(store.listExecutions({ projectId: req.query.projectId || '', target: req.query.target || '', status: req.query.status || '' })));
+  app.get('/api/executions/:id', (req, res) => {
+    const batch = store.getBatch(req.params.id);
+    if (batch) return res.json({ kind: 'batch', task: batch, runs: batch.runIds.map((id) => store.getRun(id)).filter(Boolean) });
+    const run = store.getRun(req.params.id);
+    if (run) return res.json({ kind: 'run', task: run, runs: [run] });
+    return res.status(404).json({ error: 'execution not found' });
+  });
   app.get('/api/dashboard', (req, res) => res.json(store.getDashboard({ range: req.query.range || '7d' })));
   app.get('/api/reports', (req, res) => res.json(store.listReports({ projectId: req.query.projectId || '', target: req.query.target || '', status: req.query.status || '', range: req.query.range || '7d' })));
 

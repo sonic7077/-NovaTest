@@ -213,6 +213,19 @@ describe('execution API', () => {
     });
   });
 
+  it('returns selected execution runs and ordered step snapshots', async () => {
+    const store = createMemoryStore();
+    store.saveCase(webCase);
+    store.saveRun({ id: 'run-1', caseId: webCase.id, caseName: webCase.name, projectId: 'default-project', target: 'web', status: 'failed', startedAt: '2026-07-19T10:00:00.000Z', finishedAt: '2026-07-19T10:00:10.000Z', variables: {}, steps: [{ id: 's1', status: 'failed', attempts: 2, error: '页面未就绪', logs: [] }] });
+    store.saveBatch({ id: 'batch-1', projectId: 'default-project', target: 'web', name: '回归任务', caseIds: [webCase.id], status: 'failed', runIds: ['run-1'], startedAt: '2026-07-19T10:00:00.000Z', finishedAt: '2026-07-19T10:00:10.000Z' });
+    const app = createApp({ runner: {}, store });
+
+    await request(app).get('/api/executions/batch-1').expect(200).expect(({ body }) => {
+      expect(body).toMatchObject({ kind: 'batch', task: { id: 'batch-1', status: 'failed' }, runs: [{ id: 'run-1', steps: [{ id: 's1', status: 'failed', error: '页面未就绪' }] }] });
+    });
+    await request(app).get('/api/executions/missing').expect(404);
+  });
+
   it('rejects empty, duplicate, and unknown batch selections', async () => {
     const app = createApp({ runner: {}, store: createMemoryStore() });
     const created = await request(app).post('/api/cases').send(webCase).expect(201);
