@@ -51,6 +51,11 @@ describe('test console stylesheet', () => {
     expect(html).not.toContain('id="runLog"');
     expect(script).toContain('function startExecutionPolling()');
     expect(script).toContain('async function loadReports()');
+    expect(script).toContain('function getExecutionConclusion(');
+    expect(script).toContain('async function loadExecutionDetail(');
+    expect(script).toContain('function renderExecutionDetail(');
+    expect(stylesheet).toContain('.execution-conclusion');
+    expect(stylesheet).toContain('.execution-timeline');
     expect(script).toContain('function renderRoute()');
     expect(script).toContain('async function loadEditor');
     expect(script).toContain('async function deleteEditor');

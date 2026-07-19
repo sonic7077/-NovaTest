@@ -682,6 +682,81 @@ function renderQualityList(container, items, label, withReport = false) {
   lucide.createIcons();
 }
 
+function getExecutionConclusion(detail) {
+  const steps = detail.runs.flatMap((run) => run.steps || []);
+  const firstFailure = steps.find((step) => step.status === 'failed');
+  const retryCount = steps.reduce((count, step) => count + Math.max(0, (step.attempts || 0) - 1), 0);
+  if (detail.task.status === 'failed') return { tone: 'failed', icon: 'circle-x', title: '执行失败', description: firstFailure?.error || '存在未通过步骤', firstFailure, retryCount };
+  if (['queued', 'running'].includes(detail.task.status)) return { tone: 'running', icon: 'loader-circle', title: detail.task.status === 'queued' ? '等待执行' : '正在执行', description: '执行进度会自动刷新', firstFailure: null, retryCount };
+  if (retryCount) return { tone: 'attention', icon: 'triangle-alert', title: '执行完成，需关注', description: `共发生 ${retryCount} 次重试`, firstFailure: null, retryCount };
+  return { tone: 'passed', icon: 'circle-check-big', title: '执行通过', description: '所有已执行步骤均通过', firstFailure: null, retryCount: 0 };
+}
+
+function executionReportUrl(detail) {
+  if (!['passed', 'failed'].includes(detail.task.status)) return '';
+  return detail.kind === 'batch' ? `/api/batches/${encodeURIComponent(detail.task.id)}/report` : `/api/runs/${encodeURIComponent(detail.task.id)}/report`;
+}
+
+function formatExecutionDuration(startedAt, finishedAt) {
+  if (!startedAt) return '尚未开始';
+  const milliseconds = new Date(finishedAt || Date.now()) - new Date(startedAt);
+  return `${Math.max(0, Math.round(milliseconds / 1000))} 秒`;
+}
+
+async function loadExecutionDetail(id) {
+  const response = await fetch(`/api/executions/${encodeURIComponent(id)}`);
+  if (response.status === 404) { selectedExecutionId = null; return; }
+  if (!response.ok) throw new Error('无法读取执行详情');
+  renderExecutionDetail(await response.json());
+}
+
+function renderExecutionDetail(detail) {
+  const container = $('#executionDetail');
+  const conclusion = getExecutionConclusion(detail);
+  const steps = detail.runs.flatMap((run) => (run.steps || []).map((step) => ({ ...step, caseName: run.caseName })));
+  const completedSteps = steps.filter((step) => ['passed', 'failed'].includes(step.status)).length;
+  const passedSteps = steps.filter((step) => step.status === 'passed').length;
+  const totalCases = detail.runs.length || detail.task.caseIds?.length || 1;
+  const completedCases = detail.runs.filter((run) => ['passed', 'failed'].includes(run.status)).length;
+  const percent = steps.length ? Math.round(completedSteps / steps.length * 100) : 0;
+  container.innerHTML = '';
+
+  const summary = document.createElement('section');
+  summary.className = `execution-conclusion ${conclusion.tone}`;
+  const conclusionIcon = document.createElement('span'); conclusionIcon.className = 'execution-conclusion-icon'; conclusionIcon.innerHTML = `<i data-lucide="${conclusion.icon}"></i>`;
+  const conclusionCopy = document.createElement('div'); const conclusionTitle = document.createElement('strong'); const conclusionDescription = document.createElement('p');
+  conclusionTitle.textContent = conclusion.title; conclusionDescription.textContent = conclusion.description; conclusionCopy.append(conclusionTitle, conclusionDescription);
+  const conclusionState = document.createElement('span'); conclusionState.className = 'execution-state'; conclusionState.textContent = detail.task.target === 'api' ? '接口测试' : 'Web UI';
+  summary.append(conclusionIcon, conclusionCopy, conclusionState);
+  const progress = document.createElement('section');
+  progress.className = 'execution-progress-summary';
+  progress.innerHTML = `<div class="execution-progress-ring" style="--progress:${percent}%"><b>${percent}%</b><span>步骤完成</span></div><div class="execution-stat"><b>${completedCases}/${totalCases}</b><span>完成用例</span></div><div class="execution-stat"><b>${passedSteps}/${steps.length}</b><span>通过步骤</span></div><div class="execution-stat"><b>${formatExecutionDuration(detail.task.startedAt, detail.task.finishedAt)}</b><span>执行耗时</span></div>`;
+  const timeline = document.createElement('section');
+  timeline.className = 'execution-timeline';
+  const heading = document.createElement('h3'); heading.textContent = '执行过程'; timeline.append(heading);
+  if (!steps.length) { const empty = document.createElement('p'); empty.className = 'empty-state'; empty.textContent = '任务等待执行，步骤将在开始后显示。'; timeline.append(empty); }
+  steps.forEach((step) => {
+    const item = document.createElement('article'); item.className = `timeline-step ${step.status}`;
+    const icon = document.createElement('span'); icon.className = 'timeline-icon'; icon.innerHTML = `<i data-lucide="${step.status === 'passed' ? 'check' : step.status === 'failed' ? 'x' : step.status === 'running' ? 'loader-circle' : 'clock-3'}"></i>`;
+    const copy = document.createElement('div');
+    const title = document.createElement('b'); title.textContent = `${step.caseName || '测试用例'} · ${step.api?.action || step.id}`;
+    const meta = document.createElement('small');
+    const evidence = step.api ? `HTTP ${step.api.httpStatus ?? '--'} · ${step.api.durationMs ?? '--'}ms` : (step.screenshots?.length ? `${step.screenshots.length} 张截图证据` : '无附加证据');
+    meta.textContent = `${step.status.toUpperCase()} · 尝试 ${step.attempts || 0} 次 · ${evidence}`;
+    copy.append(title, meta);
+    if (step.error) { const error = document.createElement('p'); error.textContent = step.error; copy.append(error); }
+    item.append(icon, copy); timeline.append(item);
+  });
+  container.append(summary, progress, timeline);
+  const reportUrl = executionReportUrl(detail);
+  if (reportUrl) {
+    const actions = document.createElement('div'); actions.className = 'execution-detail-actions';
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'run-button'; button.innerHTML = '<i data-lucide="file-text"></i>查看测试报告'; button.onclick = () => window.open(reportUrl, '_blank', 'noopener');
+    actions.append(button); container.append(actions);
+  }
+  lucide.createIcons();
+}
+
 async function loadExecutions() {
   const query = new URLSearchParams();
   if ($('#executionStatus').value) query.set('status', $('#executionStatus').value);
@@ -702,7 +777,7 @@ async function loadExecutions() {
   const detail = $('#executionDetail');
   if (!task) { detail.textContent = '暂无选中的执行任务'; return; }
   $('#executionDetailTitle').textContent = task.name;
-  detail.innerHTML = `<div class="progress"><span style="width:${task.totalSteps ? Math.round(task.completedSteps / task.totalSteps * 100) : 0}%"></span></div><p>${task.completedCases}/${task.totalCases} 个用例，${task.completedSteps}/${task.totalSteps} 个步骤</p><p>当前：${task.currentCaseName || '等待执行'}</p>`;
+  await loadExecutionDetail(task.id);
   if (['queued', 'running'].includes(task.status)) startExecutionPolling(); else if (!tasks.some((item) => ['queued', 'running'].includes(item.status))) stopExecutionPolling();
 }
 

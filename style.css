@@ -245,6 +245,28 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
 .execution-item.selected { color: #1b7650; background: #edf7f0; border-color: #9fceb1; }
 .execution-filters { display: flex; gap: 8px; margin-bottom: 14px; }
 .execution-filters select { height: 36px; padding: 0 8px; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 5px; font: inherit; }
+.execution-conclusion { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 2px 0 16px; border-bottom: 1px solid var(--line); }
+.execution-conclusion-icon { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 6px; }
+.execution-conclusion-icon svg { width: 20px; }
+.execution-conclusion strong, .execution-conclusion p { display: block; }
+.execution-conclusion strong { font-size: 15px; }
+.execution-conclusion p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+.execution-state { padding: 4px 6px; border-radius: 4px; font: 600 9px "DM Mono", monospace; }
+.execution-conclusion.passed { color: #178457; }.execution-conclusion.passed .execution-conclusion-icon, .execution-conclusion.passed .execution-state { background: #e8f8ef; }
+.execution-conclusion.failed { color: #bd3f3f; }.execution-conclusion.failed .execution-conclusion-icon, .execution-conclusion.failed .execution-state { background: #ffebeb; }
+.execution-conclusion.attention { color: #805b13; }.execution-conclusion.attention .execution-conclusion-icon, .execution-conclusion.attention .execution-state { background: #fff4d9; }
+.execution-conclusion.running { color: #28795b; }.execution-conclusion.running .execution-conclusion-icon, .execution-conclusion.running .execution-state { background: #e8f5ee; }
+.execution-conclusion.running .execution-conclusion-icon svg, .timeline-step.running .timeline-icon svg { animation: execution-spin 1.1s linear infinite; }
+.execution-progress-summary { display: grid; grid-template-columns: 92px repeat(3, minmax(0, 1fr)); gap: 10px; align-items: center; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.execution-progress-ring { display: grid; width: 76px; height: 76px; place-content: center; text-align: center; border: 7px solid #e2eee7; border-top-color: #259465; border-radius: 50%; transform: rotate(calc(var(--progress) * 1.8deg)); }
+.execution-progress-ring b, .execution-progress-ring span { transform: rotate(calc(var(--progress) * -1.8deg)); }.execution-progress-ring b { font: 700 13px "DM Mono", monospace; }.execution-progress-ring span { color: var(--muted); font-size: 8px; }
+.execution-stat { display: grid; gap: 3px; }.execution-stat b { color: #263c32; font: 700 14px "DM Mono", monospace; }.execution-stat span { color: var(--muted); font-size: 10px; }
+.execution-timeline { display: grid; gap: 10px; margin-top: 17px; }.execution-timeline h3 { margin: 0; font-size: 12px; }
+.timeline-step { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 9px; align-items: start; padding: 9px 0; border-bottom: 1px solid #edf1ef; }.timeline-step:last-child { border-bottom: 0; }
+.timeline-icon { display: grid; width: 21px; height: 21px; place-items: center; color: #7a8a82; background: #edf2ef; border-radius: 50%; }.timeline-icon svg { width: 13px; }.timeline-step.passed .timeline-icon { color: #178457; background: #e8f8ef; }.timeline-step.failed .timeline-icon { color: #bd3f3f; background: #ffebeb; }.timeline-step.running .timeline-icon { color: #28795b; background: #e8f5ee; }
+.timeline-step b, .timeline-step small { display: block; }.timeline-step b { color: #33473d; font-size: 11px; }.timeline-step small { margin-top: 3px; color: var(--muted); font: 10px "DM Mono", monospace; }.timeline-step p { margin: 5px 0 0; color: #b74444; font-size: 11px; }
+.execution-detail-actions { display: flex; justify-content: flex-end; padding-top: 15px; margin-top: 8px; border-top: 1px solid var(--line); }
+@keyframes execution-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 1050px) {
   .right-rail { grid-template-columns: 1fr 1fr; }
@@ -271,6 +293,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
   .assets { margin-right: 20px; margin-left: 20px; }
   .dashboard-targets { margin-right: 20px; margin-left: 20px; }
   .execution-layout { margin-right: 20px; margin-left: 20px; }
+  .execution-progress-summary { grid-template-columns: 80px 1fr 1fr; }.execution-stat:last-child { grid-column: 2 / -1; }
   .api-grid { grid-template-columns: 1fr; }
   .case-list { grid-template-columns: 1fr; }
   .project-create { align-items: stretch; flex-direction: column; }
