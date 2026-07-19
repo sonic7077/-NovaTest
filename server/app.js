@@ -6,8 +6,7 @@ import { basename, join } from 'node:path';
 import multer from 'multer';
 import { validateWebCase } from './domain/case.js';
 import { renderBatchReport, renderReport } from './services/report-service.js';
-import { BatchService } from './services/batch-service.js';
-import { RunService } from './services/run-service.js';
+import { ExecutionService } from './services/execution-service.js';
 
 export function createMemoryStore() {
   const cases = new Map();
@@ -19,6 +18,44 @@ export function createMemoryStore() {
       const projectCases = [...cases.values()].filter((testCase) => testCase.projectId === project.id);
       return { ...project, caseCount: projectCases.length, webCaseCount: projectCases.filter((testCase) => testCase.target === 'web').length, apiCaseCount: projectCases.filter((testCase) => testCase.target === 'api').length };
     });
+  }
+  function matches(item, { projectId = '', target = '', status = '' } = {}) {
+    return (!projectId || item.projectId === projectId) && (!target || item.target === target) && (!status || item.status === status);
+  }
+  function rangeStart(range = '7d', now = Date.now()) {
+    const date = new Date(now);
+    return new Date(date.getTime() - (range === '30d' ? 30 : range === 'today' ? 1 : 7) * 86400000).toISOString();
+  }
+  function listExecutions(filters = {}) {
+    const batchItems = [...batches.values()].filter((batch) => matches(batch, filters)).map((batch) => {
+      const batchRuns = batch.runIds.map((id) => runs.get(id)).filter(Boolean);
+      const steps = batchRuns.flatMap((run) => run.steps || []);
+      return { ...batch, kind: 'batch', projectName: projects.get(batch.projectId)?.name, totalCases: batch.caseIds.length, completedCases: batchRuns.filter((run) => ['passed', 'failed'].includes(run.status)).length, totalSteps: steps.length, completedSteps: steps.filter((step) => ['passed', 'failed'].includes(step.status)).length, currentCaseName: batchRuns.find((run) => ['queued', 'running'].includes(run.status))?.caseName };
+    });
+    const runItems = [...runs.values()].filter((run) => !run.batchId && matches(run, filters)).map((run) => ({ ...run, kind: 'run', name: run.caseName, projectName: projects.get(run.projectId)?.name, totalCases: 1, completedCases: ['passed', 'failed'].includes(run.status) ? 1 : 0, totalSteps: run.steps.length, completedSteps: run.steps.filter((step) => ['passed', 'failed'].includes(step.status)).length, currentCaseName: run.caseName }));
+    return [...batchItems, ...runItems].sort((first, second) => String(second.finishedAt || second.startedAt || '').localeCompare(String(first.finishedAt || first.startedAt || '')));
+  }
+  function listReports(filters = {}) {
+    const start = rangeStart(filters.range, filters.now);
+    const batchItems = [...batches.values()].filter((batch) => ['passed', 'failed'].includes(batch.status) && batch.finishedAt >= start && matches(batch, filters)).map((batch) => {
+      const batchRuns = batch.runIds.map((id) => runs.get(id)).filter(Boolean);
+      return { ...batch, kind: 'batch', projectName: projects.get(batch.projectId)?.name, passedCases: batchRuns.filter((run) => run.status === 'passed').length, failedCases: batchRuns.filter((run) => run.status === 'failed').length, reportUrl: `/api/batches/${batch.id}/report` };
+    });
+    const runItems = [...runs.values()].filter((run) => !run.batchId && ['passed', 'failed'].includes(run.status) && run.finishedAt >= start && matches(run, filters)).map((run) => ({ ...run, kind: 'run', name: run.caseName, projectName: projects.get(run.projectId)?.name, passedCases: run.status === 'passed' ? 1 : 0, failedCases: run.status === 'failed' ? 1 : 0, reportUrl: `/api/runs/${run.id}/report` }));
+    return [...batchItems, ...runItems].sort((first, second) => String(second.finishedAt).localeCompare(String(first.finishedAt)));
+  }
+  function getDashboard({ range = '7d', now } = {}) {
+    const start = rangeStart(range, now);
+    const complete = [...runs.values()].filter((run) => ['passed', 'failed'].includes(run.status) && run.finishedAt >= start);
+    const passedRuns = complete.filter((run) => run.status === 'passed').length;
+    const byTarget = ['web', 'api'].map((target) => ({ target, completedRuns: complete.filter((run) => run.target === target).length, passedRuns: complete.filter((run) => run.target === target && run.status === 'passed').length, failedRuns: complete.filter((run) => run.target === target && run.status === 'failed').length })).filter((item) => item.completedRuns);
+    return { completedRuns: complete.length, passedRuns, failedRuns: complete.length - passedRuns, passRate: complete.length ? Number(((passedRuns / complete.length) * 100).toFixed(1)) : 0, averageDurationMs: complete.length ? Math.round(complete.reduce((total, run) => total + (new Date(run.finishedAt) - new Date(run.startedAt)), 0) / complete.length) : 0, automatedCaseCount: cases.size, daily: [], targets: byTarget, recentFailures: complete.filter((run) => run.status === 'failed').flatMap((run) => run.steps.filter((step) => step.status === 'failed').map((step) => ({ runId: run.id, caseName: run.caseName, projectName: projects.get(run.projectId)?.name, target: run.target, finishedAt: run.finishedAt, error: step.error }))), recentReports: listReports({ range, now }).slice(0, 8) };
+  }
+  function failInterruptedExecutions(message) {
+    let count = 0;
+    for (const run of runs.values()) if (['queued', 'running'].includes(run.status)) { run.status = 'failed'; run.finishedAt = new Date().toISOString(); run.steps.filter((step) => ['queued', 'running'].includes(step.status)).forEach((step) => { step.status = 'failed'; step.error ||= message; }); count += 1; }
+    for (const batch of batches.values()) if (['queued', 'running'].includes(batch.status)) { batch.status = 'failed'; batch.finishedAt = new Date().toISOString(); count += 1; }
+    return count;
   }
   return {
     saveCase(testCase) { const saved = { ...testCase, id: testCase.id || crypto.randomUUID(), projectId: testCase.projectId || 'default-project' }; cases.set(saved.id, saved); return saved; },
@@ -45,16 +82,20 @@ export function createMemoryStore() {
     deleteCase(id) { return cases.delete(id); },
     saveBatch(batch) { const saved = { ...batch, projectId: batch.projectId || 'default-project' }; batches.set(saved.id, saved); return saved; },
     getBatch(id) { return batches.get(id); },
-    listBatches(projectId = '') { return [...batches.values()].filter((batch) => !projectId || batch.projectId === projectId); }
+    listBatches(projectId = '') { return [...batches.values()].filter((batch) => !projectId || batch.projectId === projectId); },
+    listExecutions,
+    getDashboard,
+    listReports,
+    failInterruptedExecutions
   };
 }
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
-export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, cmsSeedCases = [] }) {
+export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, cmsSeedCases = [], executionSchedule } = {}) {
   const app = express();
-  const runService = new RunService(runner);
-  const batchService = new BatchService({ runner, store });
+  store.failInterruptedExecutions?.('服务重启导致任务中断');
+  const executionService = new ExecutionService({ runner, store, ...(executionSchedule ? { schedule: executionSchedule } : {}) });
   cmsSeedCases.forEach((testCase) => {
     if (!store.getCase(testCase.id)) store.saveCase(testCase);
   });
@@ -123,7 +164,7 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     return store.deleteCase(req.params.id) ? res.status(204).end() : res.status(404).json({ error: 'test case not found' });
   });
 
-  app.post('/api/batches', async (req, res) => {
+  app.post('/api/batches', (req, res) => {
     const { caseIds } = req.body;
     if (!Array.isArray(caseIds) || caseIds.length === 0) return res.status(400).json({ error: 'select at least one test case' });
     if (new Set(caseIds).size !== caseIds.length) return res.status(400).json({ error: 'select unique test cases' });
@@ -136,8 +177,12 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     const name = typeof req.body.name === 'string' && req.body.name.trim()
       ? req.body.name.trim()
       : `批量执行 ${new Date().toLocaleString('zh-CN')}`;
-    return res.status(202).json(await batchService.start({ name, projectId: cases[0].projectId, caseIds, cases }));
+    return res.status(202).json(executionService.queueBatch({ name, projectId: cases[0].projectId, target: cases[0].target, caseIds, cases }));
   });
+
+  app.get('/api/executions', (req, res) => res.json(store.listExecutions({ projectId: req.query.projectId || '', target: req.query.target || '', status: req.query.status || '' })));
+  app.get('/api/dashboard', (req, res) => res.json(store.getDashboard({ range: req.query.range || '7d' })));
+  app.get('/api/reports', (req, res) => res.json(store.listReports({ projectId: req.query.projectId || '', target: req.query.target || '', status: req.query.status || '', range: req.query.range || '7d' })));
 
   app.get('/api/batches', (req, res) => res.json(store.listBatches(req.query.projectId || '').reverse()));
 
@@ -154,12 +199,10 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     return res.type('html').send(renderBatchReport(batch, runs));
   });
 
-  app.post('/api/cases/:id/runs', async (req, res) => {
+  app.post('/api/cases/:id/runs', (req, res) => {
     const testCase = store.getCase(req.params.id);
     if (!testCase) return res.status(404).json({ error: 'test case not found' });
-    const run = { ...await runService.start(testCase), caseName: testCase.name };
-    store.saveRun(run);
-    return res.status(202).json(run);
+    return res.status(202).json(executionService.queueRun(testCase));
   });
 
   app.get('/api/runs/:id', (req, res) => {

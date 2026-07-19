@@ -25,6 +25,15 @@ const apiCase = {
   steps: [{ id: 'api-1', kind: 'apiRequest', instruction: '查询帖子', request: { action: 'list_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }]
 };
 
+async function waitForTerminal(app, path) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const response = await request(app).get(path).expect(200);
+    if (['passed', 'failed'].includes(response.body.status)) return response.body;
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
+  throw new Error(`execution did not finish: ${path}`);
+}
+
 describe('execution API', () => {
   it('manages projects and only returns the selected project cases', async () => {
     const app = createApp({ runner: {}, store: createMemoryStore() });
@@ -62,10 +71,9 @@ describe('execution API', () => {
     const created = await request(app).post('/api/cases').send(webCase).expect(201);
     const run = await request(app).post(`/api/cases/${created.body.id}/runs`).expect(202);
 
-    await request(app)
-      .get(`/api/runs/${run.body.id}`)
-      .expect(200)
-      .expect((response) => expect(response.body.status).toBe('passed'));
+    expect(run.body).toMatchObject({ status: 'queued', startedAt: null, finishedAt: null });
+
+    await expect(waitForTerminal(app, `/api/runs/${run.body.id}`)).resolves.toMatchObject({ status: 'passed' });
     await request(app)
       .get(`/api/runs/${run.body.id}/report`)
       .expect(200)
@@ -110,6 +118,7 @@ describe('execution API', () => {
     const created = (await request(app).post('/api/cases').send(webCase).expect(201)).body;
     const run = await request(app).post(`/api/cases/${created.id}/runs`).expect(202);
 
+    await waitForTerminal(app, `/api/runs/${run.body.id}`);
     await request(app).delete(`/api/cases/${created.id}`).expect(204);
     await request(app).get(`/api/runs/${run.body.id}/report`).expect(200).expect((response) => {
       expect(response.text).toContain('首页验证');
@@ -129,8 +138,9 @@ describe('execution API', () => {
       .send({ name: '冒烟回归', caseIds: [first.id, second.id] })
       .expect(202);
 
-    expect(batch.body).toMatchObject({ name: '冒烟回归', caseIds: [first.id, second.id], status: 'passed' });
-    expect(batch.body.runIds).toHaveLength(2);
+    expect(batch.body).toMatchObject({ name: '冒烟回归', caseIds: [first.id, second.id], status: 'queued', runIds: [] });
+    const completed = await waitForTerminal(app, `/api/batches/${batch.body.id}`);
+    expect(completed.runIds).toHaveLength(2);
 
     await request(app)
       .get('/api/batches')
@@ -151,6 +161,8 @@ describe('execution API', () => {
     const first = (await request(app).post('/api/cases').send(webCase).expect(201)).body;
     const second = (await request(app).post('/api/cases').send({ ...webCase, name: '详情验证' }).expect(201)).body;
     const batch = (await request(app).post('/api/batches').send({ name: '项目回归', caseIds: [first.id, second.id] }).expect(202)).body;
+
+    await waitForTerminal(app, `/api/batches/${batch.id}`);
 
     await request(app)
       .get(`/api/batches/${batch.id}/report`)
@@ -177,6 +189,27 @@ describe('execution API', () => {
     await request(app).get(`/api/batches?projectId=${firstProject.id}`).expect(200).expect(({ body }) => {
       expect(body).toMatchObject([{ id: firstBatch.id, projectId: firstProject.id }]);
       expect(body).toHaveLength(1);
+    });
+  });
+
+  it('lists persisted execution, dashboard, and report summaries', async () => {
+    const store = createMemoryStore();
+    store.saveCase(webCase);
+    store.saveRun({
+      id: 'failed-run', caseId: webCase.id, caseName: webCase.name, projectId: 'default-project', target: 'web', status: 'failed',
+      startedAt: '2026-07-19T10:00:00.000Z', finishedAt: '2026-07-19T10:00:10.000Z', variables: {},
+      steps: [{ id: 's1', status: 'failed', attempts: 2, error: '页面未就绪', logs: [] }]
+    });
+    const app = createApp({ runner: {}, store });
+
+    await request(app).get('/api/executions?projectId=default-project&target=web').expect(200).expect(({ body }) => {
+      expect(body).toMatchObject([{ id: 'failed-run', kind: 'run', completedSteps: 1, totalSteps: 1 }]);
+    });
+    await request(app).get('/api/dashboard?range=30d').expect(200).expect(({ body }) => {
+      expect(body).toMatchObject({ completedRuns: 1, failedRuns: 1, automatedCaseCount: 1 });
+    });
+    await request(app).get('/api/reports?projectId=default-project&status=failed&range=30d').expect(200).expect(({ body }) => {
+      expect(body).toMatchObject([{ id: 'failed-run', reportUrl: '/api/runs/failed-run/report' }]);
     });
   });
 
