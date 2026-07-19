@@ -282,6 +282,38 @@ describe('SQLite store', () => {
     }
   });
 
+  it('persists execution snapshots and aggregates terminal quality data', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
+    const databasePath = join(directory, 'novatest.db');
+    const now = '2026-07-19T12:00:00.000Z';
+
+    try {
+      const store = createSqliteStore({ databasePath });
+      store.saveCase(webCase);
+      const projectId = store.listProjects()[0].id;
+      store.saveRun({
+        id: 'running-run', caseId: webCase.id, caseName: webCase.name, projectId, target: 'web', status: 'running', startedAt: '2026-07-19T11:58:00.000Z', finishedAt: null, variables: {},
+        steps: [{ id: 'step-1', status: 'passed', attempts: 1, logs: [] }, { id: 'step-2', status: 'queued', attempts: 0, logs: [] }]
+      });
+      store.saveRun({ id: 'passed-run', caseId: webCase.id, caseName: webCase.name, projectId, target: 'web', status: 'passed', startedAt: '2026-07-18T10:00:00.000Z', finishedAt: '2026-07-18T10:01:00.000Z', variables: {}, steps: [] });
+      store.saveRun({ id: 'failed-run', caseId: webCase.id, caseName: '接口配置', projectId, target: 'api', status: 'failed', startedAt: '2026-07-19T10:00:00.000Z', finishedAt: '2026-07-19T10:00:30.000Z', variables: {}, steps: [{ id: 'config', status: 'failed', attempts: 2, error: 'status mismatch', logs: [] }] });
+      store.saveBatch({ id: 'batch-1', projectId, target: 'web', name: 'Web 回归', caseIds: [webCase.id], status: 'running', runIds: ['running-run'], startedAt: '2026-07-19T11:58:00.000Z', finishedAt: null });
+
+      const reloaded = createSqliteStore({ databasePath });
+      expect(reloaded.getRun('running-run')).toMatchObject({ projectId, target: 'web', steps: [{ status: 'passed' }, { status: 'queued' }] });
+      expect(reloaded.getBatch('batch-1')).toMatchObject({ projectId, target: 'web' });
+      expect(reloaded.listExecutions({ projectId }).find((execution) => execution.id === 'batch-1')).toMatchObject({ id: 'batch-1', totalCases: 1, completedSteps: 1, totalSteps: 2, status: 'running' });
+      expect(reloaded.getDashboard({ range: '7d', now })).toMatchObject({ completedRuns: 2, passedRuns: 1, failedRuns: 1, automatedCaseCount: 1 });
+      expect(reloaded.listReports({ projectId, range: '7d', now }).map((report) => report.id)).toEqual(['failed-run', 'passed-run']);
+
+      expect(reloaded.failInterruptedExecutions('服务重启导致任务中断')).toBe(2);
+      expect(reloaded.getRun('running-run')).toMatchObject({ status: 'failed', finishedAt: expect.any(String) });
+      expect(reloaded.getBatch('batch-1')).toMatchObject({ status: 'failed', finishedAt: expect.any(String) });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('filters active cases by name', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
     const databasePath = join(directory, 'novatest.db');
