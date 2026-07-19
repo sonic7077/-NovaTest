@@ -10,6 +10,10 @@ let savedCases = [];
 let editingCaseId = null;
 let activeProjectId = null;
 let activeProjectName = '';
+let dashboardRange = '7d';
+let executionPollId;
+let currentRouteView = 'dashboard';
+let selectedExecutionId = null;
 const selectedCaseIds = new Set();
 
 function updateEditorBreadcrumb() {
@@ -19,14 +23,20 @@ function updateEditorBreadcrumb() {
 function renderRoute() {
   const route = location.hash || '#/dashboard';
   const projectRoute = /^#\/projects\/([^/]+)\/assets(?:\/([^/]+))?$/.exec(route);
-  const view = route === '#/dashboard' ? 'dashboard' : (route === '#/assets' ? 'projects-list' : (projectRoute ? (projectRoute[2] ? 'asset-editor' : 'assets-list') : 'asset-editor'));
+  const view = route === '#/dashboard' ? 'dashboard' : (route === '#/executions' || route.startsWith('#/executions?') ? 'executions' : (route === '#/reports' ? 'reports' : (route === '#/assets' ? 'projects-list' : (projectRoute ? (projectRoute[2] ? 'asset-editor' : 'assets-list') : 'asset-editor'))));
+  currentRouteView = view;
+  if (view !== 'executions') stopExecutionPolling();
   document.querySelectorAll('.route-view').forEach((element) => { element.hidden = element.dataset.routeView !== view; });
-  document.querySelectorAll('.nav-item[href^="#/"]').forEach((link) => link.classList.toggle('active', link.getAttribute('href') === (view === 'dashboard' ? '#/dashboard' : '#/assets')));
+  document.querySelectorAll('.nav-item[href^="#/"]').forEach((link) => link.classList.toggle('active', link.getAttribute('href') === (view === 'dashboard' ? '#/dashboard' : view === 'executions' ? '#/executions' : view === 'reports' ? '#/reports' : '#/assets')));
   if (view === 'dashboard') $('#breadcrumb').innerHTML = '工作台 <i data-lucide="chevron-right"></i> <span>执行概览</span>';
   else if (view === 'projects-list') $('#breadcrumb').innerHTML = '测试资产 <i data-lucide="chevron-right"></i> <span>项目目录</span>';
+  else if (view === 'executions') $('#breadcrumb').innerHTML = '执行中心 <i data-lucide="chevron-right"></i> <span>任务队列</span>';
+  else if (view === 'reports') $('#breadcrumb').innerHTML = '质量报告 <i data-lucide="chevron-right"></i> <span>报告历史</span>';
   else updateEditorBreadcrumb();
   lucide.createIcons();
   if (view === 'dashboard') loadDashboard();
+  if (view === 'executions') loadExecutions().catch((error) => showToast(error.message, true));
+  if (view === 'reports') loadReports().catch((error) => showToast(error.message, true));
   if (view === 'projects-list') loadProjects().catch((error) => showToast(error.message, true));
   if (projectRoute) {
     const [, encodedProjectId, action] = projectRoute;
@@ -524,10 +534,8 @@ async function runSavedCase(testCase) {
   const response = await fetch(`/api/cases/${encodeURIComponent(testCase.id)}/runs`, { method: 'POST' });
   if (!response.ok) throw new Error((await response.json()).error || '执行测试用例失败');
   const run = await response.json();
-  location.hash = '#/dashboard';
-  renderRun(run);
-  await loadBatchHistory(testCase.projectId);
-  showToast(run.status === 'passed' ? '测试用例执行完成' : '测试用例执行失败', run.status !== 'passed');
+  location.hash = `#/executions?focus=${encodeURIComponent(run.id)}`;
+  showToast('测试用例已提交执行中心');
 }
 
 async function createBatch() {
@@ -545,18 +553,11 @@ async function createBatch() {
     });
     if (!response.ok) throw new Error((await response.json()).error || '批量执行失败');
     const batch = await response.json();
-    const detail = await fetch(`/api/batches/${encodeURIComponent(batch.id)}`);
-    if (!detail.ok) throw new Error('无法读取批量执行结果');
-    const completedBatch = await detail.json();
-    const latestRun = completedBatch.runs.at(-1);
-    if (latestRun) {
-      location.hash = '#/dashboard';
-      renderRun(latestRun);
-    }
+    location.hash = `#/executions?focus=${encodeURIComponent(batch.id)}`;
     selectedCaseIds.clear();
     await loadSavedCases();
     await loadBatchHistory();
-    showToast('批量执行完成');
+    showToast('批量任务已提交执行中心');
   } catch (error) {
     showToast(error.message, true);
   } finally {
@@ -577,8 +578,20 @@ async function loadRunnerStatus() {
   $('#runState').dataset.cmsReady = String(cmsRunner.ready);
 }
 
-function loadDashboard() {
-  loadRunnerStatus().catch((error) => showToast(error.message, true));
+async function loadDashboard() {
+  const response = await fetch(`/api/dashboard?range=${dashboardRange}`);
+  if (!response.ok) throw new Error('无法读取质量统计');
+  const data = await response.json();
+  $('#dashboardCompletedRuns').textContent = data.completedRuns;
+  $('#dashboardPassRate').textContent = data.completedRuns ? `${data.passRate.toFixed(1)}%` : '--';
+  $('#dashboardAverageDuration').textContent = data.averageDurationMs ? `${(data.averageDurationMs / 1000).toFixed(1)}s` : '--';
+  $('#dashboardCaseCount').textContent = data.automatedCaseCount;
+  const trend = $('#dashboardTrend');
+  trend.textContent = data.daily.length ? data.daily.map((item) => `${item.date}: ${item.passed} 通过 / ${item.failed} 失败`).join('\n') : '所选时间范围内暂无已完成执行记录';
+  const targets = $('#dashboardTargetBreakdown');
+  targets.textContent = data.targets.length ? data.targets.map((item) => `${item.target === 'api' ? '接口测试' : 'Web UI'} · ${item.completedRuns} 次 · ${item.passedRuns} 通过`).join('\n') : '所选时间范围内暂无已完成执行记录';
+  renderQualityList($('#dashboardFailures'), data.recentFailures, (item) => `${item.caseName} · ${item.error || '执行失败'}`);
+  renderQualityList($('#dashboardReports'), data.recentReports, (item) => `${item.name} · ${item.status.toUpperCase()}`, true);
 }
 
 export async function saveCase() {
@@ -618,10 +631,8 @@ async function debugApiCase() {
   const response = await fetch(`/api/cases/${encodeURIComponent(saved.id)}/runs`, { method: 'POST' });
   if (!response.ok) throw new Error((await response.json()).error || '接口调试失败');
   const run = await response.json();
-  location.hash = '#/dashboard';
-  renderRun(run);
-  await loadBatchHistory();
-  showToast(run.status === 'passed' ? '接口调试完成' : '接口调试失败', run.status !== 'passed');
+  location.hash = `#/executions?focus=${encodeURIComponent(run.id)}`;
+  showToast('接口调试已提交执行中心');
 }
 
 function addLog(message, state = '') {
@@ -651,6 +662,67 @@ function renderRun(run) {
   $('#reportPreview .report-score b').textContent = run.status.toUpperCase();
 }
 
+function renderQualityList(container, items, label, withReport = false) {
+  container.innerHTML = '';
+  if (!items.length) { container.textContent = '暂无记录'; return; }
+  items.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'quality-row';
+    const text = document.createElement('span');
+    text.textContent = label(item);
+    row.append(text);
+    if (withReport && item.reportUrl) {
+      const button = document.createElement('button');
+      button.className = 'icon-button'; button.title = '查看报告'; button.innerHTML = '<i data-lucide="arrow-up-right"></i>';
+      button.onclick = () => window.open(item.reportUrl, '_blank', 'noopener');
+      row.append(button);
+    }
+    container.append(row);
+  });
+  lucide.createIcons();
+}
+
+async function loadExecutions() {
+  const query = new URLSearchParams();
+  if ($('#executionStatus').value) query.set('status', $('#executionStatus').value);
+  if ($('#executionTarget').value) query.set('target', $('#executionTarget').value);
+  const response = await fetch(`/api/executions?${query}`);
+  if (!response.ok) throw new Error('无法读取执行任务');
+  const tasks = await response.json();
+  selectedExecutionId ||= new URLSearchParams(location.hash.split('?')[1] || '').get('focus') || tasks[0]?.id;
+  const list = $('#executionList'); list.innerHTML = '';
+  tasks.forEach((task) => {
+    const row = document.createElement('button'); row.className = `execution-item ${task.id === selectedExecutionId ? 'selected' : ''}`; row.type = 'button';
+    row.textContent = `${task.name} · ${task.status.toUpperCase()} · ${task.completedSteps}/${task.totalSteps} 步`;
+    row.onclick = () => { selectedExecutionId = task.id; loadExecutions(); };
+    list.append(row);
+  });
+  if (!tasks.length) list.textContent = '暂无执行任务';
+  const task = tasks.find((item) => item.id === selectedExecutionId) || tasks[0];
+  const detail = $('#executionDetail');
+  if (!task) { detail.textContent = '暂无选中的执行任务'; return; }
+  $('#executionDetailTitle').textContent = task.name;
+  detail.innerHTML = `<div class="progress"><span style="width:${task.totalSteps ? Math.round(task.completedSteps / task.totalSteps * 100) : 0}%"></span></div><p>${task.completedCases}/${task.totalCases} 个用例，${task.completedSteps}/${task.totalSteps} 个步骤</p><p>当前：${task.currentCaseName || '等待执行'}</p>`;
+  if (['queued', 'running'].includes(task.status)) startExecutionPolling(); else if (!tasks.some((item) => ['queued', 'running'].includes(item.status))) stopExecutionPolling();
+}
+
+function startExecutionPolling() {
+  if (executionPollId) return;
+  executionPollId = window.setInterval(() => { if (document.hidden || currentRouteView !== 'executions') stopExecutionPolling(); else loadExecutions().catch((error) => showToast(error.message, true)); }, 1500);
+}
+
+function stopExecutionPolling() { if (executionPollId) window.clearInterval(executionPollId); executionPollId = undefined; }
+
+async function loadReports() {
+  const query = new URLSearchParams({ range: $('#reportRange').value });
+  if ($('#reportStatus').value) query.set('status', $('#reportStatus').value);
+  if ($('#reportTarget').value) query.set('target', $('#reportTarget').value);
+  const response = await fetch(`/api/reports?${query}`);
+  if (!response.ok) throw new Error('无法读取质量报告');
+  const reports = await response.json();
+  renderQualityList($('#reportList'), reports, (report) => `${report.name} · ${report.status.toUpperCase()} · ${report.passedCases} 通过 / ${report.failedCases} 失败`, true);
+}
+
 $('#saveBtn').addEventListener('click', async () => {
   try {
     const saved = await saveCase();
@@ -670,4 +742,8 @@ $('#cancelEdit').addEventListener('click', () => { location.hash = activeProject
 $('#deleteCase').addEventListener('click', () => deleteEditor().catch((error) => showToast(error.message, true)));
 $('#assetSearch').addEventListener('input', () => loadSavedCases().catch((error) => showToast(error.message, true)));
 $('#assetTargetFilter').addEventListener('change', () => { selectedCaseIds.clear(); loadSavedCases().catch((error) => showToast(error.message, true)); });
+document.querySelectorAll('[data-dashboard-range]').forEach((button) => button.addEventListener('click', () => { dashboardRange = button.dataset.dashboardRange; document.querySelectorAll('[data-dashboard-range]').forEach((item) => item.classList.toggle('selected', item === button)); loadDashboard().catch((error) => showToast(error.message, true)); }));
+$('#executionStatus').addEventListener('change', () => loadExecutions().catch((error) => showToast(error.message, true)));
+$('#executionTarget').addEventListener('change', () => loadExecutions().catch((error) => showToast(error.message, true)));
+['#reportStatus', '#reportTarget', '#reportRange'].forEach((selector) => $(selector).addEventListener('change', () => loadReports().catch((error) => showToast(error.message, true))));
 renderRoute();

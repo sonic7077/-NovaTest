@@ -41,7 +41,16 @@ describe('test console stylesheet', () => {
     expect(html).toContain('id="debugApiCase"');
     expect(html).toContain('id="apiRequestPreview"');
     expect(html).toContain('id="batchHistoryList"');
-    expect(html).toContain('data-dashboard-target="api"');
+    expect(html).toContain('data-dashboard-range="7d"');
+    expect(html).toContain('href="#/executions"');
+    expect(html).toContain('href="#/reports"');
+    expect(html).toContain('data-route-view="executions"');
+    expect(html).toContain('data-route-view="reports"');
+    expect(html).toContain('id="dashboardTrend"');
+    expect(html).toContain('id="dashboardTargetBreakdown"');
+    expect(html).not.toContain('id="runLog"');
+    expect(script).toContain('function startExecutionPolling()');
+    expect(script).toContain('async function loadReports()');
     expect(script).toContain('function renderRoute()');
     expect(script).toContain('async function loadEditor');
     expect(script).toContain('async function deleteEditor');

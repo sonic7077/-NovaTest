@@ -15,8 +15,8 @@
     <nav>
       <a class="nav-item active" href="#/dashboard"><i data-lucide="layout-dashboard"></i>工作台</a>
       <a class="nav-item" href="#/assets"><i data-lucide="folder-kanban"></i>测试资产 <b id="caseCount">0</b></a>
-      <a class="nav-item" href="#"><i data-lucide="monitor-play"></i>执行中心</a>
-      <a class="nav-item" href="#"><i data-lucide="chart-no-axes-combined"></i>质量报告</a>
+      <a class="nav-item" href="#/executions"><i data-lucide="monitor-play"></i>执行中心</a>
+      <a class="nav-item" href="#/reports"><i data-lucide="chart-no-axes-combined"></i>质量报告</a>
       <a class="nav-item" href="#"><i data-lucide="bot"></i>AI 模型配置</a>
     </nav>
     <div class="sidebar-bottom">
@@ -33,41 +33,33 @@
     </header>
 
     <section class="page-heading route-view" data-route-view="dashboard">
-      <div><p class="eyebrow">AUTOMATION EXECUTION OVERVIEW</p><h1>测试工作台</h1><p class="subtitle">查看 Web UI 与接口自动化执行状态、过程和最近测试报告。</p></div>
+      <div><p class="eyebrow">QUALITY OVERVIEW</p><h1>测试工作台</h1><p class="subtitle">基于已完成的 Web UI 与接口自动化运行，观察质量趋势与风险。</p></div>
       <div class="heading-actions"><a class="run-button" href="#/assets"><i data-lucide="folder-kanban"></i>进入测试资产</a></div>
     </section>
 
     <section class="metrics route-view" data-route-view="dashboard">
-      <div class="metric"><div><span>最近通过率</span><strong>96.4%</strong></div><div class="trend up"><i data-lucide="trending-up"></i>2.1%</div></div>
-      <div class="metric"><div><span>平均执行耗时</span><strong>02:38</strong></div><div class="trend neutral"><i data-lucide="minus"></i>稳定</div></div>
-      <div class="metric"><div><span>今日执行</span><strong>186</strong></div><div class="trend up"><i data-lucide="trending-up"></i>18</div></div>
-      <div class="metric coverage"><div><span>覆盖目标</span><strong>3 <em>/ 3</em></strong></div><div class="coverage-dots"><b></b><b></b><b></b></div></div>
+      <div class="metric"><div><span>完成运行</span><strong id="dashboardCompletedRuns">--</strong></div></div>
+      <div class="metric"><div><span>通过率</span><strong id="dashboardPassRate">--</strong></div></div>
+      <div class="metric"><div><span>平均执行耗时</span><strong id="dashboardAverageDuration">--</strong></div></div>
+      <div class="metric coverage"><div><span>自动化用例</span><strong id="dashboardCaseCount">--</strong></div></div>
     </section>
 
-    <section class="dashboard-targets route-view" data-route-view="dashboard" role="tablist" aria-label="执行类型">
-      <button class="target-tab selected" data-dashboard-target="web" type="button"><i data-lucide="monitor"></i>Web UI 执行</button>
-      <button class="target-tab" data-dashboard-target="api" type="button"><i data-lucide="braces"></i>接口执行</button>
+    <section class="dashboard-targets route-view" data-route-view="dashboard" role="tablist" aria-label="统计范围">
+      <button class="target-tab" data-dashboard-range="today" type="button">今日</button><button class="target-tab selected" data-dashboard-range="7d" type="button">最近 7 天</button><button class="target-tab" data-dashboard-range="30d" type="button">最近 30 天</button>
     </section>
 
-    <section class="dashboard-grid route-view" data-route-view="dashboard">
-      <aside class="right-rail">
-        <article class="panel execution-panel">
-          <div class="panel-head"><div><h2>执行状态</h2><p id="runState">等待运行</p></div><span class="waiting-pill" id="statePill">READY</span></div>
-          <div class="progress-wrap"><div class="progress-label"><span id="progressCopy">尚未开始</span><span id="progressPct">0%</span></div><div class="progress"><span id="progressBar"></span></div></div>
-          <div class="run-log" id="runLog"><div class="log-line dim"><time>--:--:--</time><span>执行日志将在这里实时展示</span></div></div>
-        </article>
-        <article class="panel runtime-panel">
-          <div class="panel-head"><div><h2>执行策略</h2><p>由 AI 理解页面并完成定位</p></div><i data-lucide="sparkles" class="spark"></i></div>
-          <div class="strategy-row"><span class="strategy-icon"><i data-lucide="brain-circuit"></i></span><div><b>视觉模型</b><small id="modelStatusText">正在检查模型连接...</small></div><span class="online" id="modelStatusBadge">检查中</span></div>
-          <div class="strategy-row"><span class="strategy-icon"><i data-lucide="route"></i></span><div><b>失败重试</b><small>元素定位失败时重新规划</small></div><label class="toggle"><input type="checkbox" checked><span></span></label></div>
-          <div class="strategy-row"><span class="strategy-icon"><i data-lucide="camera"></i></span><div><b>过程留痕</b><small>截图、模型推理与接口响应</small></div><label class="toggle"><input type="checkbox" checked><span></span></label></div>
-        </article>
-        <article class="report-preview" id="reportPreview">
-          <div class="report-top"><span class="report-icon"><i data-lucide="file-check-2"></i></span><div><b>上次测试报告</b><small>执行完成后可在此打开</small></div><button class="icon-button" title="查看报告"><i data-lucide="arrow-up-right"></i></button></div>
-          <div class="report-score"><strong>--</strong><span>等待执行</span><b>READY</b></div>
-        </article>
-      </aside>
+    <section class="dashboard-grid quality-grid route-view" data-route-view="dashboard">
+      <article class="panel"><div class="panel-head"><div><h2>执行趋势</h2><p>已完成运行的通过与失败分布</p></div></div><div id="dashboardTrend" class="chart-empty">正在读取统计数据...</div></article>
+      <article class="panel"><div class="panel-head"><div><h2>执行类型</h2><p>Web UI 与接口测试</p></div></div><div id="dashboardTargetBreakdown" class="chart-empty">正在读取统计数据...</div></article>
+      <article class="panel"><div class="panel-head"><div><h2>最近失败</h2></div></div><div id="dashboardFailures" class="quality-list"></div></article>
+      <article class="panel"><div class="panel-head"><div><h2>最近报告</h2></div></div><div id="dashboardReports" class="quality-list"></div></article>
     </section>
+
+    <section class="page-heading route-view" data-route-view="executions"><div><p class="eyebrow">LIVE EXECUTIONS</p><h1>执行中心</h1><p class="subtitle">实时查看已提交任务的用例、步骤、重试和报告。</p></div></section>
+    <section class="execution-layout route-view" data-route-view="executions"><article class="panel"><div class="execution-filters"><select id="executionStatus"><option value="">全部状态</option><option value="queued">排队中</option><option value="running">执行中</option><option value="passed">通过</option><option value="failed">失败</option></select><select id="executionTarget"><option value="">全部类型</option><option value="web">Web UI</option><option value="api">接口测试</option></select></div><div id="executionList" class="quality-list"></div></article><article class="panel"><div class="panel-head"><div><h2>执行详情</h2><p id="executionDetailTitle">选择一个任务查看步骤进度</p></div></div><div id="executionDetail" class="chart-empty">暂无选中的执行任务</div></article></section>
+
+    <section class="page-heading route-view" data-route-view="reports"><div><p class="eyebrow">QUALITY REPORTS</p><h1>质量报告</h1><p class="subtitle">查看已完成的单条与批量测试报告。</p></div></section>
+    <section class="assets panel route-view" data-route-view="reports"><div class="execution-filters"><select id="reportStatus"><option value="">全部状态</option><option value="passed">通过</option><option value="failed">失败</option></select><select id="reportTarget"><option value="">全部类型</option><option value="web">Web UI</option><option value="api">接口测试</option></select><select id="reportRange"><option value="today">今日</option><option value="7d" selected>最近 7 天</option><option value="30d">最近 30 天</option></select></div><div id="reportList" class="quality-list"></div></section>
 
     <section class="assets panel route-view" id="projects" data-route-view="projects-list">
       <div class="panel-head"><div><h2>测试项目</h2><p>以项目为一级目录，分别维护 Web UI 与接口自动化用例。</p></div></div>

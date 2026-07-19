@@ -234,6 +234,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     if (!batchColumns.includes('target')) db.exec('ALTER TABLE test_batches ADD COLUMN target TEXT');
     db.exec('UPDATE test_runs SET project_id = (SELECT project_id FROM test_cases WHERE test_cases.id = test_runs.case_id) WHERE project_id IS NULL');
     db.exec('UPDATE test_runs SET target = (SELECT target FROM test_cases WHERE test_cases.id = test_runs.case_id) WHERE target IS NULL');
+    db.exec("UPDATE test_batches SET target = (SELECT target FROM test_runs WHERE test_runs.batch_id = test_batches.id AND target IS NOT NULL ORDER BY batch_position LIMIT 1) WHERE target IS NULL");
     db.exec('CREATE INDEX IF NOT EXISTS test_runs_dashboard_idx ON test_runs(finished_at, project_id, target, status)');
     if (db.prepare('PRAGMA user_version').get().user_version < 9) db.exec('PRAGMA user_version = 9');
   }

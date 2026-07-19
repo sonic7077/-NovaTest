@@ -235,12 +235,23 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
 .batch-reports { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 7px; }
 .batch-reports a { padding: 5px 7px; color: #276d50; text-decoration: none; background: #edf6f0; border-radius: 4px; font-size: 10px; font-weight: 700; }
 .batch-reports a:hover { background: #dff0e6; }
+.quality-grid { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); }
+.quality-grid .panel { min-height: 220px; }
+.chart-empty { display: grid; min-height: 150px; place-items: center; white-space: pre-line; color: var(--muted); font-size: 12px; text-align: center; }
+.quality-list { display: grid; gap: 8px; margin-top: 14px; }
+.quality-row, .execution-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px; color: #41534b; background: #f8fbf9; border: 1px solid #e1e9e5; border-radius: 6px; font-size: 11px; text-align: left; }
+.execution-layout { display: grid; grid-template-columns: minmax(300px, .9fr) minmax(0, 1.4fr); gap: 18px; margin: 0 42px 38px; }
+.execution-item { width: 100%; cursor: pointer; }
+.execution-item.selected { color: #1b7650; background: #edf7f0; border-color: #9fceb1; }
+.execution-filters { display: flex; gap: 8px; margin-bottom: 14px; }
+.execution-filters select { height: 36px; padding: 0 8px; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 5px; font: inherit; }
 
 @media (max-width: 1050px) {
   .right-rail { grid-template-columns: 1fr 1fr; }
   .report-preview { grid-column: span 2; }
   .case-list { grid-template-columns: repeat(2, 1fr); }
   .project-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .execution-layout, .quality-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 760px) {
@@ -259,6 +270,7 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
   .report-preview { grid-column: auto; }
   .assets { margin-right: 20px; margin-left: 20px; }
   .dashboard-targets { margin-right: 20px; margin-left: 20px; }
+  .execution-layout { margin-right: 20px; margin-left: 20px; }
   .api-grid { grid-template-columns: 1fr; }
   .case-list { grid-template-columns: 1fr; }
   .project-create { align-items: stretch; flex-direction: column; }
