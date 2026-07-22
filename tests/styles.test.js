@@ -52,6 +52,12 @@ describe('test console stylesheet', () => {
     expect(script).toContain('async function loadProjectFilters()');
     expect(script).toContain("$('#executionProject')");
     expect(script).toContain("$('#reportProject')");
+    expect(script).toContain("query.set('projectId', $('#executionProject').value)");
+    expect(script).toContain("query.set('projectId', $('#reportProject').value)");
+    expect(script).toContain('selectedExecutionId = tasks[0]?.id || null');
+    expect(script).toContain("$('#executionProject').addEventListener('change'");
+    expect(script).toContain("$('#reportProject').addEventListener('change'");
+    expect(script).toContain("fetch('/api/projects')");
     expect(html).toContain('id="dashboardTrend"');
     expect(html).toContain('id="dashboardTargetBreakdown"');
     expect(html).toContain('class="dashboard-chart chart-empty"');

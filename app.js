@@ -35,8 +35,8 @@ function renderRoute() {
   else updateEditorBreadcrumb();
   lucide.createIcons();
   if (view === 'dashboard') loadDashboard();
-  if (view === 'executions') loadExecutions().catch((error) => showToast(error.message, true));
-  if (view === 'reports') loadReports().catch((error) => showToast(error.message, true));
+  if (view === 'executions') loadProjectFilters().then(() => loadExecutions()).catch((error) => showToast(error.message, true));
+  if (view === 'reports') loadProjectFilters().then(() => loadReports()).catch((error) => showToast(error.message, true));
   if (view === 'projects-list') loadProjects().catch((error) => showToast(error.message, true));
   if (projectRoute) {
     const [, encodedProjectId, action] = projectRoute;
@@ -922,12 +922,17 @@ function renderExecutionDetail(detail) {
 
 async function loadExecutions() {
   const query = new URLSearchParams();
+  if ($('#executionProject').value) query.set('projectId', $('#executionProject').value);
   if ($('#executionStatus').value) query.set('status', $('#executionStatus').value);
   if ($('#executionTarget').value) query.set('target', $('#executionTarget').value);
   const response = await fetch(`/api/executions?${query}`);
   if (!response.ok) throw new Error('无法读取执行任务');
   const tasks = await response.json();
-  selectedExecutionId ||= new URLSearchParams(location.hash.split('?')[1] || '').get('focus') || tasks[0]?.id;
+  const requestedExecutionId = new URLSearchParams(location.hash.split('?')[1] || '').get('focus');
+  if (!tasks.some((task) => task.id === selectedExecutionId)) {
+    selectedExecutionId = tasks.some((task) => task.id === requestedExecutionId) ? requestedExecutionId : null;
+    if (!selectedExecutionId) selectedExecutionId = tasks[0]?.id || null;
+  }
   const list = $('#executionList'); list.innerHTML = '';
   tasks.forEach((task) => {
     const row = document.createElement('button'); row.className = `execution-item ${task.id === selectedExecutionId ? 'selected' : ''}`; row.type = 'button';
@@ -951,8 +956,27 @@ function startExecutionPolling() {
 
 function stopExecutionPolling() { if (executionPollId) window.clearInterval(executionPollId); executionPollId = undefined; }
 
+async function loadProjectFilters() {
+  const response = await fetch('/api/projects');
+  if (!response.ok) throw new Error('无法读取测试项目');
+  const projects = await response.json();
+  ['#executionProject', '#reportProject'].forEach((selector) => {
+    const select = $(selector);
+    const selected = select.value;
+    select.innerHTML = '<option value="">全部项目</option>';
+    projects.forEach((project) => {
+      const option = document.createElement('option');
+      option.value = project.id;
+      option.textContent = project.name;
+      select.append(option);
+    });
+    select.value = projects.some((project) => project.id === selected) ? selected : '';
+  });
+}
+
 async function loadReports() {
   const query = new URLSearchParams({ range: $('#reportRange').value });
+  if ($('#reportProject').value) query.set('projectId', $('#reportProject').value);
   if ($('#reportStatus').value) query.set('status', $('#reportStatus').value);
   if ($('#reportTarget').value) query.set('target', $('#reportTarget').value);
   const response = await fetch(`/api/reports?${query}`);
@@ -981,7 +1005,9 @@ $('#deleteCase').addEventListener('click', () => deleteEditor().catch((error) =>
 $('#assetSearch').addEventListener('input', () => loadSavedCases().catch((error) => showToast(error.message, true)));
 $('#assetTargetFilter').addEventListener('change', () => { selectedCaseIds.clear(); loadSavedCases().catch((error) => showToast(error.message, true)); });
 document.querySelectorAll('[data-dashboard-range]').forEach((button) => button.addEventListener('click', () => { dashboardRange = button.dataset.dashboardRange; document.querySelectorAll('[data-dashboard-range]').forEach((item) => item.classList.toggle('selected', item === button)); loadDashboard().catch((error) => showToast(error.message, true)); }));
+$('#executionProject').addEventListener('change', () => { selectedExecutionId = null; loadExecutions().catch((error) => showToast(error.message, true)); });
 $('#executionStatus').addEventListener('change', () => loadExecutions().catch((error) => showToast(error.message, true)));
 $('#executionTarget').addEventListener('change', () => loadExecutions().catch((error) => showToast(error.message, true)));
+$('#reportProject').addEventListener('change', () => loadReports().catch((error) => showToast(error.message, true)));
 ['#reportStatus', '#reportTarget', '#reportRange'].forEach((selector) => $(selector).addEventListener('change', () => loadReports().catch((error) => showToast(error.message, true))));
 renderRoute();
