@@ -236,8 +236,38 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
 .batch-reports a { padding: 5px 7px; color: #276d50; text-decoration: none; background: #edf6f0; border-radius: 4px; font-size: 10px; font-weight: 700; }
 .batch-reports a:hover { background: #dff0e6; }
 .quality-grid { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); }
-.quality-grid .panel { min-height: 220px; }
+.quality-grid .panel { min-height: 220px; padding: 20px; }
 .chart-empty { display: grid; min-height: 150px; place-items: center; white-space: pre-line; color: var(--muted); font-size: 12px; text-align: center; }
+.dashboard-chart { min-height: 170px; }
+.dashboard-chart-content { display: grid; grid-template-columns: minmax(230px, .9fr) minmax(0, 1.1fr); gap: 18px; align-items: center; min-height: 170px; padding: 18px 0 2px; }
+.dashboard-trend-summary { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; align-items: center; }
+.dashboard-donut-wrap { position: relative; display: grid; width: 120px; height: 120px; place-items: center; }
+.dashboard-donut { width: 120px; height: 120px; overflow: visible; transform: rotate(-90deg); }
+.dashboard-donut-track, .dashboard-donut-segment { fill: none; stroke-width: 5; }
+.dashboard-donut-track { stroke: #edf1ef; }
+.dashboard-donut-segment { stroke-linecap: butt; }
+.dashboard-donut-segment.pass { stroke: #238f60; }
+.dashboard-donut-segment.fail { stroke: #d15c5c; }
+.dashboard-donut-segment.web { stroke: #1a7fb5; }
+.dashboard-donut-segment.api { stroke: #d88927; }
+.dashboard-donut-segment { transition: stroke-dasharray .45s ease, stroke-dashoffset .45s ease; }
+.dashboard-donut-center { position: absolute; display: grid; place-items: center; text-align: center; pointer-events: none; }
+.dashboard-donut-center b { color: #263c32; font: 700 17px "DM Mono", monospace; }
+.dashboard-donut-center small, .dashboard-legend { color: var(--muted); font-size: 10px; }
+.dashboard-legend { display: grid; gap: 7px; min-width: 0; }
+.dashboard-legend-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dashboard-legend-row strong { color: #3a5044; font: 600 10px "DM Mono", monospace; white-space: nowrap; }
+.dashboard-legend-label { display: inline-flex; min-width: 0; align-items: center; gap: 6px; }
+.dashboard-legend-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; }
+.dashboard-legend-dot.pass { background: #238f60; }.dashboard-legend-dot.fail { background: #d15c5c; }.dashboard-legend-dot.total { background: #a5b2ac; }.dashboard-legend-dot.web { background: #1a7fb5; }.dashboard-legend-dot.api { background: #d88927; }
+.dashboard-daily-scroll { min-width: 0; overflow-x: auto; padding-bottom: 4px; }
+.dashboard-daily-bars { display: flex; align-items: end; min-width: 252px; height: 128px; gap: 8px; border-bottom: 1px solid #e8eeea; }
+.dashboard-daily-bar { display: grid; flex: 1; min-width: 22px; height: 100%; grid-template-rows: 1fr auto; gap: 6px; justify-items: center; color: var(--muted); font-size: 9px; }
+.dashboard-daily-bar-stack { display: flex; width: 100%; height: 100%; align-items: end; flex-direction: column-reverse; justify-content: end; background: #f0f4f2; border-radius: 3px 3px 0 0; overflow: hidden; }
+.dashboard-daily-bar-fill { width: 100%; }
+.dashboard-daily-bar-fill { transition: height .45s ease; }
+.dashboard-daily-bar-fill.pass { background: #3aa877; }.dashboard-daily-bar-fill.fail { background: #d96b6b; }
+.dashboard-target-chart { grid-template-columns: 132px minmax(0, 1fr); }
 .quality-list { display: grid; gap: 8px; margin-top: 14px; }
 .quality-row, .execution-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px; color: #41534b; background: #f8fbf9; border: 1px solid #e1e9e5; border-radius: 6px; font-size: 11px; text-align: left; }
 .execution-layout { display: grid; grid-template-columns: minmax(300px, .9fr) minmax(0, 1.4fr); gap: 18px; margin: 0 42px 38px; }
@@ -306,4 +336,8 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
   .asset-toolbar select { grid-column: 1 / -1; width: 100%; }
   .heading-actions { width: 100%; }
   .heading-actions button { flex: 1; }
+  .dashboard-chart-content, .dashboard-target-chart { grid-template-columns: 1fr; justify-items: center; }
+  .dashboard-trend-summary { justify-items: center; }
+  .dashboard-chart-content > .dashboard-daily-scroll, .dashboard-chart-content > .dashboard-legend { width: 100%; }
+  .dashboard-trend-summary .dashboard-legend { width: 100%; }
 }

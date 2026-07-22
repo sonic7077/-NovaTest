@@ -578,6 +578,171 @@ async function loadRunnerStatus() {
   $('#runState').dataset.cmsReady = String(cmsRunner.ready);
 }
 
+const dashboardEmptyMessage = '所选时间范围内暂无已完成执行记录';
+
+function nonNegativeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function dashboardPercent(value, total) {
+  if (!total) return '--';
+  return `${((value / total) * 100).toFixed(1)}%`;
+}
+
+function dashboardElement(tagName, className, text) {
+  const element = document.createElement(tagName);
+  if (className) element.className = className;
+  if (text !== undefined) element.textContent = text;
+  return element;
+}
+
+function createDashboardDonut({ label, total, segments }) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const safeTotal = nonNegativeNumber(total);
+  const ariaLabel = `${label}：${safeTotal} 次完成运行`;
+  svg.classList.add('dashboard-donut');
+  svg.setAttribute('viewBox', '0 0 42 42');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', ariaLabel);
+
+  const track = document.createElementNS(svg.namespaceURI, 'circle');
+  track.setAttribute('class', 'dashboard-donut-track');
+  track.setAttribute('cx', '21');
+  track.setAttribute('cy', '21');
+  track.setAttribute('r', '15.9155');
+  svg.append(track);
+
+  let offset = 25;
+  segments.filter((segment) => nonNegativeNumber(segment.value) > 0).forEach((segment) => {
+    const value = nonNegativeNumber(segment.value);
+    const percentage = safeTotal ? Math.min(100, (value / safeTotal) * 100) : 0;
+    const circle = document.createElementNS(svg.namespaceURI, 'circle');
+    circle.setAttribute('class', `dashboard-donut-segment ${segment.tone}`);
+    circle.setAttribute('cx', '21');
+    circle.setAttribute('cy', '21');
+    circle.setAttribute('r', '15.9155');
+    const dasharray = `${percentage} ${100 - percentage}`;
+    const dashoffset = String(offset);
+    circle.setAttribute('stroke-dasharray', '0 100');
+    circle.setAttribute('stroke-dashoffset', dashoffset);
+    window.requestAnimationFrame(() => {
+      circle.setAttribute('stroke-dasharray', dasharray);
+    });
+    offset -= percentage;
+    svg.append(circle);
+  });
+  return svg;
+}
+
+function createDashboardDonutWrap(donut, value, label) {
+  const wrapper = dashboardElement('div', 'dashboard-donut-wrap');
+  const center = dashboardElement('div', 'dashboard-donut-center');
+  const number = dashboardElement('b', '', value);
+  const caption = dashboardElement('small', '', label);
+  center.append(number, caption);
+  wrapper.append(donut, center);
+  return wrapper;
+}
+
+function createDashboardLegend(entries) {
+  const legend = dashboardElement('div', 'dashboard-legend');
+  entries.forEach((entry) => {
+    const row = dashboardElement('div', 'dashboard-legend-row');
+    const label = dashboardElement('span', 'dashboard-legend-label');
+    const dot = dashboardElement('i', `dashboard-legend-dot ${entry.tone}`);
+    label.append(dot, document.createTextNode(entry.label));
+    row.append(label, dashboardElement('strong', '', entry.value));
+    legend.append(row);
+  });
+  return legend;
+}
+
+function setDashboardEmpty(container) {
+  container.classList.add('chart-empty');
+  container.textContent = dashboardEmptyMessage;
+}
+
+function renderDashboardTrend(data) {
+  const container = $('#dashboardTrend');
+  const completedRuns = nonNegativeNumber(data?.completedRuns);
+  const passedRuns = Math.min(completedRuns, nonNegativeNumber(data?.passedRuns));
+  const failedRuns = Math.min(Math.max(completedRuns - passedRuns, 0), nonNegativeNumber(data?.failedRuns));
+  const daily = (Array.isArray(data?.daily) ? data.daily : []).map((item) => ({
+    date: String(item?.date || ''),
+    passed: nonNegativeNumber(item?.passed),
+    failed: nonNegativeNumber(item?.failed)
+  })).filter((item) => item.date);
+  if (!completedRuns || !daily.length) { setDashboardEmpty(container); return; }
+
+  const maxDailyTotal = Math.max(...daily.map((item) => item.passed + item.failed), 1);
+  container.classList.remove('chart-empty');
+  container.innerHTML = '';
+  const content = dashboardElement('div', 'dashboard-chart-content dashboard-trend-chart');
+  const donut = createDashboardDonut({
+    label: '执行质量', total: completedRuns,
+    segments: [{ tone: 'pass', value: passedRuns }, { tone: 'fail', value: failedRuns }]
+  });
+  const summary = dashboardElement('div', 'dashboard-trend-summary');
+  summary.append(
+    createDashboardDonutWrap(donut, dashboardPercent(passedRuns, completedRuns), '总体通过率'),
+    createDashboardLegend([
+      { tone: 'pass', label: '通过', value: `${passedRuns} 次` },
+      { tone: 'fail', label: '失败', value: `${failedRuns} 次` },
+      { tone: 'total', label: '完成运行', value: `${completedRuns} 次` }
+    ])
+  );
+
+  const scroll = dashboardElement('div', 'dashboard-daily-scroll');
+  const bars = dashboardElement('div', 'dashboard-daily-bars');
+  daily.forEach((item) => {
+    const bar = dashboardElement('div', 'dashboard-daily-bar');
+    const stack = dashboardElement('div', 'dashboard-daily-bar-stack');
+    const passed = dashboardElement('span', 'dashboard-daily-bar-fill pass');
+    const failed = dashboardElement('span', 'dashboard-daily-bar-fill fail');
+    passed.style.height = `${(item.passed / maxDailyTotal) * 100}%`;
+    failed.style.height = `${(item.failed / maxDailyTotal) * 100}%`;
+    stack.setAttribute('aria-label', `${item.date}：${item.passed} 通过，${item.failed} 失败`);
+    stack.append(passed, failed);
+    bar.append(stack, dashboardElement('span', '', item.date.slice(5).replace('-', '/')));
+    bars.append(bar);
+  });
+  scroll.append(bars);
+  content.append(summary, scroll);
+  container.append(content);
+}
+
+function renderDashboardTargetBreakdown(data) {
+  const container = $('#dashboardTargetBreakdown');
+  const targets = (Array.isArray(data?.targets) ? data.targets : [])
+    .filter((item) => item?.target === 'web' || item?.target === 'api')
+    .map((item) => ({
+      target: item.target,
+      completedRuns: nonNegativeNumber(item.completedRuns),
+      passedRuns: Math.min(nonNegativeNumber(item.completedRuns), nonNegativeNumber(item.passedRuns))
+    })).filter((item) => item.completedRuns > 0);
+  const total = targets.reduce((sum, item) => sum + item.completedRuns, 0);
+  if (!total) { setDashboardEmpty(container); return; }
+
+  const chartEntries = targets.map((item) => ({
+    tone: item.target,
+    label: item.target === 'web' ? 'Web UI' : '接口测试',
+    value: item.completedRuns,
+    passedRuns: item.passedRuns
+  }));
+  container.classList.remove('chart-empty');
+  container.innerHTML = '';
+  const content = dashboardElement('div', 'dashboard-chart-content dashboard-target-chart');
+  const donut = createDashboardDonut({ label: '执行类型', total, segments: chartEntries });
+  const legend = createDashboardLegend(chartEntries.map((entry) => ({
+    tone: entry.tone,
+    label: entry.label,
+    value: `${entry.completedRuns ?? entry.value} 次 · ${dashboardPercent(entry.passedRuns, entry.value)} 通过`
+  })));
+  content.append(createDashboardDonutWrap(donut, `${total}`, '完成运行'), legend);
+  container.append(content);
+}
+
 async function loadDashboard() {
   const response = await fetch(`/api/dashboard?range=${dashboardRange}`);
   if (!response.ok) throw new Error('无法读取质量统计');
@@ -586,10 +751,8 @@ async function loadDashboard() {
   $('#dashboardPassRate').textContent = data.completedRuns ? `${data.passRate.toFixed(1)}%` : '--';
   $('#dashboardAverageDuration').textContent = data.averageDurationMs ? `${(data.averageDurationMs / 1000).toFixed(1)}s` : '--';
   $('#dashboardCaseCount').textContent = data.automatedCaseCount;
-  const trend = $('#dashboardTrend');
-  trend.textContent = data.daily.length ? data.daily.map((item) => `${item.date}: ${item.passed} 通过 / ${item.failed} 失败`).join('\n') : '所选时间范围内暂无已完成执行记录';
-  const targets = $('#dashboardTargetBreakdown');
-  targets.textContent = data.targets.length ? data.targets.map((item) => `${item.target === 'api' ? '接口测试' : 'Web UI'} · ${item.completedRuns} 次 · ${item.passedRuns} 通过`).join('\n') : '所选时间范围内暂无已完成执行记录';
+  renderDashboardTrend(data);
+  renderDashboardTargetBreakdown(data);
   renderQualityList($('#dashboardFailures'), data.recentFailures, (item) => `${item.caseName} · ${item.error || '执行失败'}`);
   renderQualityList($('#dashboardReports'), data.recentReports, (item) => `${item.name} · ${item.status.toUpperCase()}`, true);
 }
