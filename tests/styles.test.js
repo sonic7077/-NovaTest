@@ -46,6 +46,12 @@ describe('test console stylesheet', () => {
     expect(html).toContain('href="#/reports"');
     expect(html).toContain('data-route-view="executions"');
     expect(html).toContain('data-route-view="reports"');
+    expect(html).toContain('id="executionProject"');
+    expect(html).toContain('id="reportProject"');
+    expect(html).toContain('<option value="">全部项目</option>');
+    expect(script).toContain('async function loadProjectFilters()');
+    expect(script).toContain("$('#executionProject')");
+    expect(script).toContain("$('#reportProject')");
     expect(html).toContain('id="dashboardTrend"');
     expect(html).toContain('id="dashboardTargetBreakdown"');
     expect(html).toContain('class="dashboard-chart chart-empty"');
