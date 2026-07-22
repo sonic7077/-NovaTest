@@ -48,6 +48,14 @@ describe('test console stylesheet', () => {
     expect(html).toContain('data-route-view="reports"');
     expect(html).toContain('id="dashboardTrend"');
     expect(html).toContain('id="dashboardTargetBreakdown"');
+    expect(html).toContain('class="dashboard-chart chart-empty"');
+    expect(script).toContain('function renderDashboardTrend(');
+    expect(script).toContain('function renderDashboardTargetBreakdown(');
+    expect(script).toContain('function createDashboardDonut(');
+    expect(script).toContain("svg.setAttribute('role', 'img')");
+    expect(stylesheet).toContain('.dashboard-chart');
+    expect(stylesheet).toContain('.dashboard-donut');
+    expect(stylesheet).toContain('.dashboard-daily-bars');
     expect(html).not.toContain('id="runLog"');
     expect(script).toContain('function startExecutionPolling()');
     expect(script).toContain('async function loadReports()');
