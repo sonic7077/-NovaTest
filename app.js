@@ -14,7 +14,68 @@ let dashboardRange = '7d';
 let executionPollId;
 let currentRouteView = 'dashboard';
 let selectedExecutionId = null;
+let currentUser = null;
 const selectedCaseIds = new Set();
+
+function setApplicationVisible(visible) {
+  document.querySelector('.sidebar').hidden = !visible;
+  document.querySelector('main').hidden = !visible;
+  $('#loginScreen').hidden = visible;
+}
+
+function renderCurrentUser() {
+  if (!currentUser) return;
+  $('#currentUserName').textContent = currentUser.displayName;
+  $('#currentUserTitle').textContent = currentUser.jobTitle;
+  $('#currentUserAvatar').textContent = (currentUser.displayName || currentUser.username).slice(0, 2).toUpperCase();
+  $('#profileUsername').value = currentUser.username;
+  $('#profileDisplayName').value = currentUser.displayName;
+  $('#profileJobTitle').value = currentUser.jobTitle;
+  $('#profileEmail').value = currentUser.email || '';
+}
+
+async function restoreSession() {
+  const response = await fetch('/api/auth/session');
+  if (!response.ok) { currentUser = null; setApplicationVisible(false); return; }
+  currentUser = (await response.json()).user;
+  setApplicationVisible(true);
+  renderCurrentUser();
+  renderRoute();
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: $('#loginUsername').value, password: $('#loginPassword').value }) });
+  if (!response.ok) { $('#loginError').textContent = '账号或密码错误，请重新输入。'; $('#loginError').hidden = false; return; }
+  currentUser = (await response.json()).user;
+  $('#loginError').hidden = true;
+  $('#loginPassword').value = '';
+  setApplicationVisible(true);
+  renderCurrentUser();
+  renderRoute();
+}
+
+async function saveProfile(event) {
+  event.preventDefault();
+  const response = await fetch('/api/auth/profile', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ displayName: $('#profileDisplayName').value, jobTitle: $('#profileJobTitle').value, email: $('#profileEmail').value }) });
+  if (!response.ok) throw new Error((await response.json()).error || '保存失败');
+  currentUser = (await response.json()).user;
+  renderCurrentUser();
+  showToast('个人信息已保存');
+}
+
+async function changePassword(event) {
+  event.preventDefault();
+  const response = await fetch('/api/auth/password', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ currentPassword: $('#currentPassword').value, newPassword: $('#newPassword').value }) });
+  if (!response.ok) throw new Error((await response.json()).error || '密码修改失败');
+  $('#currentPassword').value = ''; $('#newPassword').value = '';
+  currentUser = null; setApplicationVisible(false);
+}
+
+async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  currentUser = null; setApplicationVisible(false);
+}
 
 function updateEditorBreadcrumb() {
   $('#breadcrumb').innerHTML = `测试资产 <i data-lucide="chevron-right"></i> <span>${activeProjectName || '项目'} · ${target === 'api' ? '接口用例编排' : 'Web UI 用例编排'}</span>`;
@@ -23,7 +84,7 @@ function updateEditorBreadcrumb() {
 function renderRoute() {
   const route = location.hash || '#/dashboard';
   const projectRoute = /^#\/projects\/([^/]+)\/assets(?:\/([^/]+))?$/.exec(route);
-  const view = route === '#/dashboard' ? 'dashboard' : (route === '#/executions' || route.startsWith('#/executions?') ? 'executions' : (route === '#/reports' ? 'reports' : (route === '#/assets' ? 'projects-list' : (projectRoute ? (projectRoute[2] ? 'asset-editor' : 'assets-list') : 'asset-editor'))));
+  const view = route === '#/dashboard' ? 'dashboard' : (route === '#/profile' ? 'profile' : (route === '#/executions' || route.startsWith('#/executions?') ? 'executions' : (route === '#/reports' ? 'reports' : (route === '#/assets' ? 'projects-list' : (projectRoute ? (projectRoute[2] ? 'asset-editor' : 'assets-list') : 'asset-editor')))));
   currentRouteView = view;
   if (view !== 'executions') stopExecutionPolling();
   document.querySelectorAll('.route-view').forEach((element) => { element.hidden = element.dataset.routeView !== view; });
@@ -32,6 +93,7 @@ function renderRoute() {
   else if (view === 'projects-list') $('#breadcrumb').innerHTML = '测试资产 <i data-lucide="chevron-right"></i> <span>项目目录</span>';
   else if (view === 'executions') $('#breadcrumb').innerHTML = '执行中心 <i data-lucide="chevron-right"></i> <span>任务队列</span>';
   else if (view === 'reports') $('#breadcrumb').innerHTML = '质量报告 <i data-lucide="chevron-right"></i> <span>报告历史</span>';
+  else if (view === 'profile') $('#breadcrumb').innerHTML = '个人信息 <i data-lucide="chevron-right"></i> <span>账户设置</span>';
   else updateEditorBreadcrumb();
   lucide.createIcons();
   if (view === 'dashboard') loadDashboard();
@@ -1010,4 +1072,11 @@ $('#executionStatus').addEventListener('change', () => loadExecutions().catch((e
 $('#executionTarget').addEventListener('change', () => loadExecutions().catch((error) => showToast(error.message, true)));
 $('#reportProject').addEventListener('change', () => loadReports().catch((error) => showToast(error.message, true)));
 ['#reportStatus', '#reportTarget', '#reportRange'].forEach((selector) => $(selector).addEventListener('change', () => loadReports().catch((error) => showToast(error.message, true))));
-renderRoute();
+$('#loginForm').addEventListener('submit', (event) => handleLogin(event).catch(() => { $('#loginError').textContent = '登录失败，请稍后重试。'; $('#loginError').hidden = false; }));
+$('#profileForm').addEventListener('submit', (event) => saveProfile(event).catch((error) => showToast(error.message, true)));
+$('#passwordForm').addEventListener('submit', (event) => changePassword(event).catch((error) => showToast(error.message, true)));
+$('#logoutButton').addEventListener('click', () => logout().catch((error) => showToast(error.message, true)));
+$('#currentUserButton').addEventListener('click', () => { location.hash = '#/profile'; });
+window.addEventListener('hashchange', () => { if (currentUser) renderRoute(); });
+setApplicationVisible(false);
+restoreSession().catch(() => setApplicationVisible(false));

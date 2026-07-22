@@ -18,6 +18,21 @@ const webCase = {
 };
 
 describe('SQLite store', () => {
+  it('initializes one persistent administrator and saves its profile', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-auth-store-'));
+    const databasePath = join(directory, 'novatest.db');
+    const store = createSqliteStore({ databasePath });
+
+    const first = store.ensureDefaultAdmin({ hash: 'first-hash', salt: 'first-salt' });
+    const second = store.ensureDefaultAdmin({ hash: 'second-hash', salt: 'second-salt' });
+    expect(first).toMatchObject({ username: 'admin', displayName: 'admin', jobTitle: '平台管理员', email: '' });
+    expect(second.id).toBe(first.id);
+    expect(second.passwordHash).toBe('first-hash');
+
+    const updated = store.saveUser({ ...first, displayName: '先锋营管理员', jobTitle: '质量负责人', email: 'admin@example.test' });
+    expect(updated).toMatchObject({ displayName: '先锋营管理员', jobTitle: '质量负责人', email: 'admin@example.test' });
+    expect(store.getUserByUsername('ADMIN')).toMatchObject({ id: first.id, displayName: '先锋营管理员' });
+  });
   it('assigns legacy cases to the default project and scopes case queries by project', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
     const databasePath = join(directory, 'novatest.db');

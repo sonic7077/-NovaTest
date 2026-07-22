@@ -7,11 +7,13 @@ import multer from 'multer';
 import { validateWebCase } from './domain/case.js';
 import { renderBatchReport, renderReport } from './services/report-service.js';
 import { ExecutionService } from './services/execution-service.js';
+import { hashPasswordSync, publicUser, validatePasswordChange, validateProfile, verifyPassword } from './services/auth-service.js';
 
 export function createMemoryStore() {
   const cases = new Map();
   const runs = new Map();
   const batches = new Map();
+  const users = new Map();
   const projects = new Map([['default-project', { id: 'default-project', name: '默认项目', createdAt: '1970-01-01T00:00:00.000Z', updatedAt: '1970-01-01T00:00:00.000Z' }]]);
   function listProjects() {
     return [...projects.values()].map((project) => {
@@ -57,6 +59,14 @@ export function createMemoryStore() {
     for (const batch of batches.values()) if (['queued', 'running'].includes(batch.status)) { batch.status = 'failed'; batch.finishedAt = new Date().toISOString(); count += 1; }
     return count;
   }
+  function getUserByUsername(username) { return [...users.values()].find((user) => user.username.toLowerCase() === String(username).toLowerCase()); }
+  function saveUser(user) {
+    const timestamp = new Date().toISOString();
+    const saved = { ...user, id: user.id || crypto.randomUUID(), email: user.email || '', createdAt: user.createdAt || timestamp, updatedAt: timestamp };
+    users.set(saved.id, saved);
+    return saved;
+  }
+  function ensureDefaultAdmin({ hash, salt }) { return getUserByUsername('admin') || saveUser({ username: 'admin', passwordHash: hash, passwordSalt: salt, displayName: 'admin', jobTitle: '平台管理员', email: '' }); }
   return {
     saveCase(testCase) { const saved = { ...testCase, id: testCase.id || crypto.randomUUID(), projectId: testCase.projectId || 'default-project' }; cases.set(saved.id, saved); return saved; },
     getCase(id) { return cases.get(id); },
@@ -86,14 +96,20 @@ export function createMemoryStore() {
     listExecutions,
     getDashboard,
     listReports,
+    getUserByUsername,
+    getUser(id) { return users.get(id); },
+    saveUser,
+    ensureDefaultAdmin,
     failInterruptedExecutions
   };
 }
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
-export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, cmsSeedCases = [], executionSchedule } = {}) {
+export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, cmsSeedCases = [], executionSchedule, authRequired = false } = {}) {
   const app = express();
+  const sessions = new Map();
+  if (authRequired) store.ensureDefaultAdmin(hashPasswordSync('admin123'));
   store.failInterruptedExecutions?.('服务重启导致任务中断');
   const executionService = new ExecutionService({ runner, store, ...(executionSchedule ? { schedule: executionSchedule } : {}) });
   cmsSeedCases.forEach((testCase) => {
@@ -103,6 +119,60 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
   app.get('/api/health', (_req, res) => res.json({ webRunner: runnerStatus, cmsRunner: cmsRunnerStatus }));
+
+  function currentUser(req) {
+    const sessionId = String(req.headers.cookie || '').split(';').map((part) => part.trim()).find((part) => part.startsWith('novatest_session='))?.slice('novatest_session='.length);
+    const userId = sessionId && sessions.get(sessionId);
+    return userId ? store.getUser(userId) : undefined;
+  }
+
+  function clearSession(res) {
+    res.clearCookie('novatest_session', { httpOnly: true, sameSite: 'lax', path: '/' });
+  }
+
+  app.post('/api/auth/login', async (req, res) => {
+    const user = store.getUserByUsername(req.body?.username || '');
+    if (!user || !await verifyPassword(req.body?.password || '', { hash: user.passwordHash, salt: user.passwordSalt })) return res.status(401).json({ error: '用户名或密码错误' });
+    const sessionId = crypto.randomUUID();
+    sessions.set(sessionId, user.id);
+    res.cookie('novatest_session', sessionId, { httpOnly: true, sameSite: 'lax', path: '/' });
+    return res.json({ user: publicUser(user) });
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    const sessionId = String(req.headers.cookie || '').split(';').map((part) => part.trim()).find((part) => part.startsWith('novatest_session='))?.slice('novatest_session='.length);
+    if (sessionId) sessions.delete(sessionId);
+    clearSession(res);
+    return res.status(204).end();
+  });
+
+  app.get('/api/auth/session', (req, res) => {
+    const user = currentUser(req);
+    return user ? res.json({ user: publicUser(user) }) : res.status(401).json({ error: '请先登录' });
+  });
+
+  app.put('/api/auth/profile', (req, res) => {
+    const user = currentUser(req);
+    if (!user) return res.status(401).json({ error: '请先登录' });
+    try { return res.json({ user: publicUser(store.saveUser({ ...user, ...validateProfile(req.body) })) }); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
+  });
+
+  app.put('/api/auth/password', async (req, res) => {
+    const user = currentUser(req);
+    if (!user) return res.status(401).json({ error: '请先登录' });
+    try {
+      const { currentPassword, newPassword } = validatePasswordChange(req.body);
+      if (!await verifyPassword(currentPassword, { hash: user.passwordHash, salt: user.passwordSalt })) return res.status(401).json({ error: '当前密码错误' });
+      const next = hashPasswordSync(newPassword);
+      store.saveUser({ ...user, passwordHash: next.hash, passwordSalt: next.salt });
+      [...sessions.entries()].filter(([, userId]) => userId === user.id).forEach(([sessionId]) => sessions.delete(sessionId));
+      clearSession(res);
+      return res.status(204).end();
+    } catch (error) { return res.status(400).json({ error: error.message }); }
+  });
+
+  if (authRequired) app.use('/api', (req, res, next) => currentUser(req) ? next() : res.status(401).json({ error: '请先登录' }));
 
   app.get('/api/projects', (_req, res) => res.json(store.listProjects()));
 

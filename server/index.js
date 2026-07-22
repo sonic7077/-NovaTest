@@ -49,7 +49,7 @@ async function main() {
   const runner = { web: webRunner, api: apiRunner };
   const port = Number(process.env.PORT || 4173);
   const store = createSqliteStore({ databasePath: 'data/novatest.db', legacyJsonPath: 'data/store.json' });
-  createApp({ runner, store, runnerStatus, cmsRunnerStatus, cmsSeedCases: cmsConfig.baseUrl ? cmsWhitebagCases({ baseUrl: cmsConfig.baseUrl }) : [] }).listen(port, '127.0.0.1', () => console.log(`NovaTest is running at http://127.0.0.1:${port}`));
+  createApp({ runner, store, authRequired: true, runnerStatus, cmsRunnerStatus, cmsSeedCases: cmsConfig.baseUrl ? cmsWhitebagCases({ baseUrl: cmsConfig.baseUrl }) : [] }).listen(port, '127.0.0.1', () => console.log(`先锋营自动化测试平台运行于 http://127.0.0.1:${port}`));
 }
 
 main();

@@ -35,6 +35,17 @@ async function waitForTerminal(app, path) {
 }
 
 describe('execution API', () => {
+  it('protects platform APIs and supports login, profile updates, password changes and logout', async () => {
+    const app = createApp({ runner: {}, store: createMemoryStore(), authRequired: true });
+    const agent = request.agent(app);
+
+    await request(app).get('/api/projects').expect(401).expect({ error: '请先登录' });
+    await agent.post('/api/auth/login').send({ username: 'admin', password: 'admin123' }).expect(200).expect(({ body }) => expect(body.user).toMatchObject({ username: 'admin', displayName: 'admin' }));
+    await agent.put('/api/auth/profile').send({ displayName: '先锋营管理员', jobTitle: '质量负责人', email: 'admin@example.test' }).expect(200).expect(({ body }) => expect(body.user).toMatchObject({ displayName: '先锋营管理员' }));
+    await agent.put('/api/auth/password').send({ currentPassword: 'admin123', newPassword: 'admin1234' }).expect(204);
+    await agent.get('/api/projects').expect(401);
+    await request(app).post('/api/auth/login').send({ username: 'admin', password: 'admin1234' }).expect(200);
+  });
   it('manages projects and only returns the selected project cases', async () => {
     const app = createApp({ runner: {}, store: createMemoryStore() });
     const project = (await request(app).post('/api/projects').send({ name: '社区 CMS' }).expect(201)).body;
@@ -287,7 +298,7 @@ describe('execution API', () => {
     const app = createApp({ runner: {}, store: createMemoryStore() });
 
     await request(app).get('/').expect(200).expect('content-type', /html/).expect((response) => {
-      expect(response.text).toContain('NovaTest');
+      expect(response.text).toContain('先锋营自动化测试平台');
     });
   });
 

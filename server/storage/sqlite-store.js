@@ -241,6 +241,60 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   migrateExecutionSnapshotSchema();
 
+  function migrateUserSchema() {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        password_hash TEXT NOT NULL,
+        password_salt TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        job_title TEXT NOT NULL,
+        email TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    if (db.prepare('PRAGMA user_version').get().user_version < 10) db.exec('PRAGMA user_version = 10');
+  }
+
+  migrateUserSchema();
+
+  function hydrateUser(row) {
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      username: row.username,
+      passwordHash: row.passwordHash,
+      passwordSalt: row.passwordSalt,
+      displayName: row.displayName,
+      jobTitle: row.jobTitle,
+      email: row.email,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    };
+  }
+
+  function getUserByUsername(username) {
+    return hydrateUser(db.prepare(`SELECT id, username, password_hash AS passwordHash, password_salt AS passwordSalt, display_name AS displayName, job_title AS jobTitle, email, created_at AS createdAt, updated_at AS updatedAt FROM users WHERE username = ?`).get(username));
+  }
+
+  function getUser(id) {
+    return hydrateUser(db.prepare(`SELECT id, username, password_hash AS passwordHash, password_salt AS passwordSalt, display_name AS displayName, job_title AS jobTitle, email, created_at AS createdAt, updated_at AS updatedAt FROM users WHERE id = ?`).get(id));
+  }
+
+  function saveUser(user) {
+    const timestamp = new Date().toISOString();
+    const saved = { ...user, id: user.id || crypto.randomUUID(), email: user.email || '', createdAt: user.createdAt || timestamp, updatedAt: timestamp };
+    db.prepare(`INSERT INTO users (id, username, password_hash, password_salt, display_name, job_title, email, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET password_hash = excluded.password_hash, password_salt = excluded.password_salt, display_name = excluded.display_name, job_title = excluded.job_title, email = excluded.email, updated_at = excluded.updated_at`).run(saved.id, saved.username, saved.passwordHash, saved.passwordSalt, saved.displayName, saved.jobTitle, saved.email, saved.createdAt, saved.updatedAt);
+    return getUser(saved.id);
+  }
+
+  function ensureDefaultAdmin({ hash, salt }) {
+    const existing = getUserByUsername('admin');
+    return existing || saveUser({ username: 'admin', passwordHash: hash, passwordSalt: salt, displayName: 'admin', jobTitle: '平台管理员', email: '' });
+  }
+
   const selectCase = db.prepare(`
     SELECT id, project_id AS projectId, name, target, base_url AS baseUrl, viewport
     FROM test_cases
@@ -661,6 +715,10 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     listExecutions,
     getDashboard,
     listReports,
+    getUserByUsername,
+    getUser,
+    saveUser,
+    ensureDefaultAdmin,
     failInterruptedExecutions
   };
 }
