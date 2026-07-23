@@ -67,6 +67,7 @@ describe('test console stylesheet', () => {
     expect(html).not.toContain('当前空间');
     expect(html).not.toContain('NovaTest');
     expect(stylesheet).toContain('.login-screen');
+    expect(stylesheet).toContain('.login-screen[hidden] { display: none; }');
     expect(stylesheet).toContain('.profile-grid');
     expect(script).toContain('async function restoreSession()');
     expect(script).toContain("fetch('/api/auth/session')");
