@@ -1,3 +1,5 @@
 node_modules/
 data/
 .env
+# 测试环境实际配置（含密钥），只提交 example
+deploy/test.env

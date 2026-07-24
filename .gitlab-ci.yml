@@ -1,0 +1,110 @@
+# auto_test CI
+#   check  —— MR 时跑单元测试
+#   deploy —— 推送到 main 分支自动部署到测试机 187（方舟模式：
+#             GitLab Runner SSH 到目标机 -> 目标机本地 git pull + docker compose --build）
+stages: [check, deploy]
+
+node:check:
+  stage: check
+  image: node:22
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - when: never
+  variables:
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+  script:
+    - npm ci --no-audit --no-fund
+    - npx vitest run
+
+deploy:test:
+  stage: deploy
+  tags:
+    - shell
+    - deploy
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  variables:
+    GIT_STRATEGY: none
+    DEPLOY_HOST: "187.124.210.227"
+    DEPLOY_USER: "root"
+    DEPLOY_PATH: "/opt/auto_test"
+    DEPLOY_DOMAIN: "autotest.chenmoyuan.tech"
+    CERT_EMAIL: "admin@chenmoyuan.tech"
+  script:
+    - |
+      set -e
+      DEPLOY_HOST="${DEPLOY_HOST:-${TEST_SERVER_HOST:-187.124.210.227}}"
+      DEPLOY_USER="${DEPLOY_USER:-root}"
+      DEPLOY_PATH="${DEPLOY_PATH:-/opt/auto_test}"
+      DEPLOY_BRANCH="${CI_COMMIT_REF_NAME:-main}"
+      DEPLOY_REPOSITORY_URL="${DEPLOY_REPOSITORY_URL:-${CI_REPOSITORY_URL}}"
+      DEPLOY_DOMAIN="${DEPLOY_DOMAIN:-autotest.chenmoyuan.tech}"
+      CERT_EMAIL="${CERT_EMAIL:-admin@${DEPLOY_DOMAIN}}"
+
+      if [ -z "${DEPLOY_REPOSITORY_URL}" ]; then
+        echo "missing deploy repository url: set DEPLOY_REPOSITORY_URL or run in CI"
+        exit 1
+      fi
+
+      ssh -o StrictHostKeyChecking=no "${DEPLOY_USER}@${DEPLOY_HOST}" \
+        bash -s -- "${DEPLOY_PATH}" "${DEPLOY_BRANCH}" "${DEPLOY_REPOSITORY_URL}" "${DEPLOY_DOMAIN}" "${CERT_EMAIL}" <<'REMOTE'
+      set -e
+      DEPLOY_PATH="$1"
+      DEPLOY_BRANCH="$2"
+      DEPLOY_REPOSITORY_URL="$3"
+      DEPLOY_DOMAIN="$4"
+      CERT_EMAIL="$5"
+
+      # 1) 拉取代码
+      if [ ! -d "${DEPLOY_PATH}/.git" ]; then
+        mkdir -p "$(dirname "${DEPLOY_PATH}")"
+        rm -rf "${DEPLOY_PATH}"
+        git clone --branch "${DEPLOY_BRANCH}" "${DEPLOY_REPOSITORY_URL}" "${DEPLOY_PATH}"
+      fi
+      cd "${DEPLOY_PATH}"
+      git remote set-url origin "${DEPLOY_REPOSITORY_URL}"
+      git fetch origin "${DEPLOY_BRANCH}"
+      git checkout "${DEPLOY_BRANCH}"
+      git reset --hard "origin/${DEPLOY_BRANCH}"
+
+      # 2) 首次生成 test.env（已存在则保留，不覆盖）
+      if [ ! -f deploy/test.env ]; then
+        cp deploy/test.env.example deploy/test.env
+        echo "created deploy/test.env from example"
+      fi
+
+      # 3) 从源码构建并启动容器
+      docker compose -f docker-compose.deploy.yml --env-file deploy/test.env up -d --build
+
+      # 4) host nginx 站点 + 证书
+      APP_PORT="$(grep -E '^AT_APP_PORT=' deploy/test.env | cut -d= -f2)"
+      APP_PORT="${APP_PORT:-18084}"
+      CONF="/etc/nginx/sites-available/${DEPLOY_DOMAIN}"
+      mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+
+      render_final() {
+        sed -e "s|__DOMAIN__|${DEPLOY_DOMAIN}|g" \
+            -e "s|__APP_PORT__|${APP_PORT}|g" \
+            nginx/test.conf.template > "${CONF}"
+        ln -sf "${CONF}" "/etc/nginx/sites-enabled/${DEPLOY_DOMAIN}"
+      }
+
+      if [ -d "/etc/letsencrypt/live/${DEPLOY_DOMAIN}" ]; then
+        # 证书已存在，直接落地最终配置
+        render_final
+        nginx -t && systemctl reload nginx
+      else
+        # 首次：先起一个 HTTP-only 站点让 certbot --nginx 完成 http-01 校验
+        printf 'server {\n    listen 80;\n    server_name %s;\n    location / {\n        proxy_pass http://127.0.0.1:%s;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n    }\n}\n' "${DEPLOY_DOMAIN}" "${APP_PORT}" > "${CONF}"
+        ln -sf "${CONF}" "/etc/nginx/sites-enabled/${DEPLOY_DOMAIN}"
+        nginx -t && systemctl reload nginx
+        certbot --nginx -d "${DEPLOY_DOMAIN}" --non-interactive --agree-tos -m "${CERT_EMAIL}" --redirect
+        # 证书就绪后落地最终配置（覆盖 certbot 的临时改动）
+        render_final
+        nginx -t && systemctl reload nginx
+      fi
+
+      # 5) 健康校验
+      sleep 5
+      curl -k -fsS "https://${DEPLOY_DOMAIN}/api/health" && echo "  <- health OK"
+      REMOTE
