@@ -4,17 +4,40 @@
 #             GitLab Runner SSH 到目标机 -> 目标机本地 git pull + docker compose --build）
 stages: [check, deploy]
 
+# 本 GitLab 只有 shell 执行器 runner（runner 容器内无 node/docker，image: 会被忽略），
+# 因此单测委托给测试机 187 上的 node:22 容器执行（与 deploy 同一条 SSH 通道）。
 node:check:
   stage: check
-  image: node:22
+  tags:
+    - shell
+    - deploy
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - when: never
   variables:
-    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    GIT_STRATEGY: none
+    CHECK_HOST: "187.124.210.227"
+    CHECK_USER: "root"
   script:
-    - npm ci --no-audit --no-fund
-    - npx vitest run
+    - |
+      set -e
+      ssh -o StrictHostKeyChecking=no "${CHECK_USER}@${CHECK_HOST}" \
+        bash -s -- "${CI_REPOSITORY_URL}" "refs/merge-requests/${CI_MERGE_REQUEST_IID}/head" "${CI_JOB_ID}" <<'REMOTE'
+      set -e
+      REPO_URL="$1"
+      CHECK_REF="$2"
+      JOB_ID="$3"
+      DIR="/tmp/auto_test-check-${JOB_ID}"
+      trap 'rm -rf "${DIR}"' EXIT
+      rm -rf "${DIR}"
+      git init -q "${DIR}"
+      cd "${DIR}"
+      git fetch -q --depth 1 "${REPO_URL}" "${CHECK_REF}"
+      git checkout -q FETCH_HEAD
+      docker run --rm -v "${DIR}:/app" -w /app \
+        -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+        node:22 bash -c "npm ci --no-audit --no-fund && npx vitest run"
+      REMOTE
 
 deploy:test:
   stage: deploy
