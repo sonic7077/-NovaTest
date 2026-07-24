@@ -112,19 +112,29 @@ deploy:test:
         ln -sf "${CONF}" "/etc/nginx/sites-enabled/${DEPLOY_DOMAIN}"
       }
 
+      # 187 上 nginx 偶尔被手动拉起（systemd 单元 failed 但进程在跑），
+      # 此时 systemctl reload 会报 not active，改为直接给 master 发 reload 信号
+      reload_nginx() {
+        if systemctl is-active --quiet nginx; then
+          systemctl reload nginx
+        else
+          nginx -s reload
+        fi
+      }
+
       if [ -d "/etc/letsencrypt/live/${DEPLOY_DOMAIN}" ]; then
         # 证书已存在，直接落地最终配置
         render_final
-        nginx -t && systemctl reload nginx
+        nginx -t && reload_nginx
       else
         # 首次：先起一个 HTTP-only 站点让 certbot --nginx 完成 http-01 校验
         printf 'server {\n    listen 80;\n    server_name %s;\n    location / {\n        proxy_pass http://127.0.0.1:%s;\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n    }\n}\n' "${DEPLOY_DOMAIN}" "${APP_PORT}" > "${CONF}"
         ln -sf "${CONF}" "/etc/nginx/sites-enabled/${DEPLOY_DOMAIN}"
-        nginx -t && systemctl reload nginx
+        nginx -t && reload_nginx
         certbot --nginx -d "${DEPLOY_DOMAIN}" --non-interactive --agree-tos -m "${CERT_EMAIL}" --redirect
         # 证书就绪后落地最终配置（覆盖 certbot 的临时改动）
         render_final
-        nginx -t && systemctl reload nginx
+        nginx -t && reload_nginx
       fi
 
       # 5) 健康校验
