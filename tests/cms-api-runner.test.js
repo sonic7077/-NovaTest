@@ -61,6 +61,29 @@ describe('CMS API runner', () => {
     expect(payloads[1]).not.toHaveProperty('secret');
   });
 
+  it('sends an explicit invalid token without logging in or creating a session token', async () => {
+    const actions = [];
+    let submittedPayload;
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, username: 'synthetic-user', password: 'synthetic-password', googleSecret, oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url, options) => {
+        actions.push(new URL(url).pathname.split('/').at(-1));
+        submittedPayload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
+        return { ok: true, status: 200, json: async () => encryptedResponse({ status: 0, msg: 'token invalid' }) };
+      }
+    });
+    const context = { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {}, apiSession: {} };
+    const result = await runner.execute({ id: 'invalid-token', request: {
+      action: 'list_post', method: 'POST', payload: { token: 'invalid-token' },
+      expectedStatus: 0, safety: 'readonly', auth: 'none'
+    } }, context);
+
+    expect(actions).toEqual(['list_post']);
+    expect(submittedPayload.token).toBe('invalid-token');
+    expect(context.apiSession).toEqual({});
+    expect(result.api.businessStatus).toBe(0);
+  });
+
   it('decrypts an unmarked encrypted business response and preserves its data object', async () => {
     const runner = new CmsApiRunner({
       config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
@@ -209,6 +232,59 @@ describe('CMS API runner', () => {
       id: 'post-detail',
       request: { action: 'list_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly', expectedJson: [{ path: '$.page.id', equals: 'post-99' }] }
     }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} })).rejects.toThrow('JSON assertion failed: $.page.id');
+  });
+
+  it('asserts that a decrypted list response contains required fields', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword') ? 'token-1' : { list: [], total: 0 })
+      })
+    });
+
+    await expect(runner.execute({
+      id: 'posts',
+      request: { action: 'list_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly', expectedJson: [{ path: '$.list', exists: true }, { path: '$.total', exists: true }] }
+    }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} })).resolves.toBeDefined();
+  });
+
+  it('fails a list assertion when a required field is absent', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword') ? 'token-1' : { list: [] })
+      })
+    });
+
+    await expect(runner.execute({
+      id: 'posts',
+      request: { action: 'list_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly', expectedJson: [{ path: '$.total', exists: true }] }
+    }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} })).rejects.toThrow('JSON assertion failed: $.total');
+  });
+
+  it('attaches redacted API evidence when a JSON assertion fails', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword') ? 'token-1' : { data: { list: [] }, token: 'secret-token' })
+      })
+    });
+
+    const error = await runner.execute({
+      id: 'posts',
+      request: { action: 'list_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly', expectedJson: [{ path: '$.data.total', exists: true }] }
+    }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} }).catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      message: 'JSON assertion failed: $.data.total',
+      api: { action: 'list_post', request: { token: '********' }, response: { data: { list: [] }, token: '********' } }
+    });
   });
 
   it('sends configured CMS public client parameters with each request', async () => {

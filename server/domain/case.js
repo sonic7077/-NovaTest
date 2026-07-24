@@ -15,7 +15,8 @@ export function validateWebCase(input) {
     }
     if (input.target === 'api') {
       const request = step.request;
-      if (step.kind !== 'apiRequest' || !request?.action?.trim() || request.method !== 'POST' || !['readonly', 'mutating'].includes(request.safety)) throw new Error('invalid API request');
+      const validAuth = request?.auth === undefined || request.auth === 'session' || request.auth === 'none';
+      if (step.kind !== 'apiRequest' || !request?.action?.trim() || request.method !== 'POST' || !['readonly', 'mutating'].includes(request.safety) || !validAuth) throw new Error('invalid API request');
     }
     if (input.target === 'web' && step.kind === 'apiRequest') throw new Error('invalid step');
     (step.visualChecks || []).forEach((visualCheck) => {

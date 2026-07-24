@@ -11,8 +11,11 @@ function jsonPathValue(value, path) {
 }
 
 function assertJson(data, expectedJson = []) {
-  expectedJson.forEach(({ path, equals }) => {
-    if (jsonPathValue(data, path) !== equals) throw new Error(`JSON assertion failed: ${path}`);
+  expectedJson.forEach((expectation) => {
+    const { path, exists, equals } = expectation;
+    const value = jsonPathValue(data, path);
+    if (exists !== undefined && Boolean(value !== undefined) !== exists) throw new Error(`JSON assertion failed: ${path}`);
+    if (Object.hasOwn(expectation, 'equals') && value !== equals) throw new Error(`JSON assertion failed: ${path}`);
   });
 }
 
@@ -127,10 +130,19 @@ export class CmsApiRunner {
       return { variables: {}, api: session.loginApi };
     }
 
-    await this.authenticate(context.testCase.baseUrl, session);
-    const payload = this.clientPayload({ token: session.token, ...interpolate(request.payload || {}, context.variables) });
+    const skipSession = request.auth === 'none';
+    const payload = this.clientPayload(interpolate(request.payload || {}, context.variables));
+    if (!skipSession) {
+      await this.authenticate(context.testCase.baseUrl, session);
+      payload.token = session.token;
+    }
     const result = await this.request(request.action, payload, context.testCase.baseUrl, request.expectedStatus);
-    assertJson(result.data, request.expectedJson);
+    try {
+      assertJson(result.data, request.expectedJson);
+    } catch (error) {
+      error.api = result.api;
+      throw error;
+    }
     return { variables: extractVariables(result.data, request.extract), api: result.api };
   }
 }
