@@ -10,6 +10,7 @@ describe('Ark community API cases', () => {
     expect(cases.every((testCase) => testCase.projectId === 'ark-project' && testCase.target === 'api')).toBe(true);
     expect(cases.flatMap((testCase) => testCase.steps).every((step) => step.request.method === 'POST' && step.request.safety === 'readonly')).toBe(true);
     expect(cases.find((testCase) => testCase.name === '帖子状态筛选查询').steps.map((step) => step.request.payload.status)).toEqual([10, 0, 1, 2, 3]);
+    expect(cases.filter((testCase) => testCase.name !== '无效登录态拦截').flatMap((testCase) => testCase.steps).every((step) => step.request.expectedJson?.map((assertion) => assertion.path).join(',') === '$.data.list,$.data.total')).toBe(true);
     expect(cases.find((testCase) => testCase.name === '无效登录态拦截').steps[0].request).toMatchObject({
       action: 'list_post', expectedStatus: 0, auth: 'none', payload: { token: 'invalid-token' }
     });

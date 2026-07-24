@@ -1,6 +1,6 @@
 const listAssertions = [
-  { path: '$.list', exists: true },
-  { path: '$.total', exists: true }
+  { path: '$.data.list', exists: true },
+  { path: '$.data.total', exists: true }
 ];
 
 function apiStep(id, instruction, action, payload) {

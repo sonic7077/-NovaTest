@@ -137,7 +137,12 @@ export class CmsApiRunner {
       payload.token = session.token;
     }
     const result = await this.request(request.action, payload, context.testCase.baseUrl, request.expectedStatus);
-    assertJson(result.data, request.expectedJson);
+    try {
+      assertJson(result.data, request.expectedJson);
+    } catch (error) {
+      error.api = result.api;
+      throw error;
+    }
     return { variables: extractVariables(result.data, request.extract), api: result.api };
   }
 }

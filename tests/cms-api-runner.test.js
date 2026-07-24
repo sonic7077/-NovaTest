@@ -266,6 +266,27 @@ describe('CMS API runner', () => {
     }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} })).rejects.toThrow('JSON assertion failed: $.total');
   });
 
+  it('attaches redacted API evidence when a JSON assertion fails', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword') ? 'token-1' : { data: { list: [] }, token: 'secret-token' })
+      })
+    });
+
+    const error = await runner.execute({
+      id: 'posts',
+      request: { action: 'list_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly', expectedJson: [{ path: '$.data.total', exists: true }] }
+    }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} }).catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      message: 'JSON assertion failed: $.data.total',
+      api: { action: 'list_post', request: { token: '********' }, response: { data: { list: [] }, token: '********' } }
+    });
+  });
+
   it('sends configured CMS public client parameters with each request', async () => {
     let submittedPayload;
     const runner = new CmsApiRunner({
