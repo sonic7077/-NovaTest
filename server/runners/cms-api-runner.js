@@ -127,8 +127,12 @@ export class CmsApiRunner {
       return { variables: {}, api: session.loginApi };
     }
 
-    await this.authenticate(context.testCase.baseUrl, session);
-    const payload = this.clientPayload({ token: session.token, ...interpolate(request.payload || {}, context.variables) });
+    const skipSession = request.auth === 'none';
+    const payload = this.clientPayload(interpolate(request.payload || {}, context.variables));
+    if (!skipSession) {
+      await this.authenticate(context.testCase.baseUrl, session);
+      payload.token = session.token;
+    }
     const result = await this.request(request.action, payload, context.testCase.baseUrl, request.expectedStatus);
     assertJson(result.data, request.expectedJson);
     return { variables: extractVariables(result.data, request.extract), api: result.api };

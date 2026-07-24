@@ -61,6 +61,29 @@ describe('CMS API runner', () => {
     expect(payloads[1]).not.toHaveProperty('secret');
   });
 
+  it('sends an explicit invalid token without logging in or creating a session token', async () => {
+    const actions = [];
+    let submittedPayload;
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, username: 'synthetic-user', password: 'synthetic-password', googleSecret, oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url, options) => {
+        actions.push(new URL(url).pathname.split('/').at(-1));
+        submittedPayload = JSON.parse(decryptPayload(new URLSearchParams(options.body).get('data'), cryptoConfig));
+        return { ok: true, status: 200, json: async () => encryptedResponse({ status: 0, msg: 'token invalid' }) };
+      }
+    });
+    const context = { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {}, apiSession: {} };
+    const result = await runner.execute({ id: 'invalid-token', request: {
+      action: 'list_post', method: 'POST', payload: { token: 'invalid-token' },
+      expectedStatus: 0, safety: 'readonly', auth: 'none'
+    } }, context);
+
+    expect(actions).toEqual(['list_post']);
+    expect(submittedPayload.token).toBe('invalid-token');
+    expect(context.apiSession).toEqual({});
+    expect(result.api.businessStatus).toBe(0);
+  });
+
   it('decrypts an unmarked encrypted business response and preserves its data object', async () => {
     const runner = new CmsApiRunner({
       config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
