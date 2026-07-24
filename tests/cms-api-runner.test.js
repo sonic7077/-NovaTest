@@ -234,6 +234,38 @@ describe('CMS API runner', () => {
     }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} })).rejects.toThrow('JSON assertion failed: $.page.id');
   });
 
+  it('asserts that a decrypted list response contains required fields', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword') ? 'token-1' : { list: [], total: 0 })
+      })
+    });
+
+    await expect(runner.execute({
+      id: 'posts',
+      request: { action: 'list_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly', expectedJson: [{ path: '$.list', exists: true }, { path: '$.total', exists: true }] }
+    }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} })).resolves.toBeDefined();
+  });
+
+  it('fails a list assertion when a required field is absent', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password', oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword') ? 'token-1' : { list: [] })
+      })
+    });
+
+    await expect(runner.execute({
+      id: 'posts',
+      request: { action: 'list_post', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly', expectedJson: [{ path: '$.total', exists: true }] }
+    }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} })).rejects.toThrow('JSON assertion failed: $.total');
+  });
+
   it('sends configured CMS public client parameters with each request', async () => {
     let submittedPayload;
     const runner = new CmsApiRunner({

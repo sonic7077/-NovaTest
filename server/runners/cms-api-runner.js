@@ -11,8 +11,11 @@ function jsonPathValue(value, path) {
 }
 
 function assertJson(data, expectedJson = []) {
-  expectedJson.forEach(({ path, equals }) => {
-    if (jsonPathValue(data, path) !== equals) throw new Error(`JSON assertion failed: ${path}`);
+  expectedJson.forEach((expectation) => {
+    const { path, exists, equals } = expectation;
+    const value = jsonPathValue(data, path);
+    if (exists !== undefined && Boolean(value !== undefined) !== exists) throw new Error(`JSON assertion failed: ${path}`);
+    if (Object.hasOwn(expectation, 'equals') && value !== equals) throw new Error(`JSON assertion failed: ${path}`);
   });
 }
 
