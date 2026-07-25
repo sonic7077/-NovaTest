@@ -218,6 +218,69 @@ describe('CMS API runner', () => {
     expect(result.api.response.token).toBe('********');
   });
 
+  it('selects and reserves an unused ID from a decrypted pending-record list', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password' },
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword')
+          ? 'token-1'
+          : { data: { list: [{ id: 'member-1' }, { id: 'member-2' }] } })
+      })
+    });
+    const context = {
+      testCase: { baseUrl: 'https://example.test/api.php' }, variables: {}, apiSession: {},
+      selectedApiIds: new Set(['member-1'])
+    };
+
+    const result = await runner.execute({ id: 'pending-members', request: {
+      action: 'list_member_update_log', method: 'POST', payload: { status: 0 }, expectedStatus: 1, safety: 'readonly',
+      select: { listPath: '$.data.list', variable: 'memberLogId', idPath: '$.id' }
+    } }, context);
+
+    expect(result.variables).toEqual({ memberLogId: 'member-2' });
+    expect(context.selectedApiIds).toEqual(new Set(['member-1', 'member-2']));
+  });
+
+  it('reports a precondition outcome with API evidence when no pending record can be selected', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password' },
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword') ? 'token-1' : { data: { list: [] } })
+      })
+    });
+
+    const error = await runner.execute({ id: 'pending-members', request: {
+      action: 'list_member_update_log', method: 'POST', payload: { status: 0 }, expectedStatus: 1, safety: 'readonly',
+      select: { listPath: '$.data.list', variable: 'memberLogId', idPath: '$.id' }
+    } }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {}, apiSession: {}, selectedApiIds: new Set() }).catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      code: 'PRECONDITION_UNAVAILABLE',
+      message: expect.stringContaining('前置数据不足'),
+      api: { action: 'list_member_update_log', response: { data: { list: [] } } }
+    });
+  });
+
+  it('compares a decrypted JSON field against an extracted business variable', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, googleSecret, username: 'admin', password: 'password' },
+      fetchImpl: async (url) => ({
+        ok: true,
+        status: 200,
+        json: async () => encryptedResponse(new URL(url).pathname.endsWith('/loginByPassword') ? 'token-1' : { data: { id: 42 } })
+      })
+    });
+
+    await expect(runner.execute({ id: 'post-detail', request: {
+      action: 'detail_post', method: 'POST', payload: { id: '{{postId}}' }, expectedStatus: 1, safety: 'readonly',
+      expectedJson: [{ path: '$.data.id', equalsVariable: 'postId' }]
+    } }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: { postId: 42 }, apiSession: {} })).resolves.toBeDefined();
+  });
+
   it('fails an API step when a decrypted JSON assertion does not match', async () => {
     const runner = new CmsApiRunner({
       config: { ...cryptoConfig, googleSecret, oauthId: 'qa', oauthType: 'pc', version: '1.0.0' },

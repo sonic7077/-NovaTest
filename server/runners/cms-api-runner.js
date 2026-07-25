@@ -2,6 +2,15 @@ import { buildRequestBody, decryptPayload, redactBusinessSecrets, redactTranspor
 import { interpolate } from '../domain/case.js';
 import { generateTotp } from '../services/totp.js';
 
+export class PreconditionError extends Error {
+  constructor(message, api) {
+    super(message);
+    this.name = 'PreconditionError';
+    this.code = 'PRECONDITION_UNAVAILABLE';
+    this.api = api;
+  }
+}
+
 function jsonPathValue(value, path) {
   if (typeof path !== 'string' || !/^\$(?:\.[A-Za-z_$][\w$]*|\[\d+\])*$/.test(path)) throw new Error(`invalid JSON path: ${path}`);
   return path.slice(1).match(/\.[A-Za-z_$][\w$]*|\[\d+\]/g)?.reduce((current, segment) => {
@@ -10,17 +19,37 @@ function jsonPathValue(value, path) {
   }, value) ?? (path === '$' ? value : undefined);
 }
 
-function assertJson(data, expectedJson = []) {
+function assertJson(data, expectedJson = [], variables = {}) {
   expectedJson.forEach((expectation) => {
-    const { path, exists, equals } = expectation;
+    const { path, exists, equals, equalsVariable } = expectation;
     const value = jsonPathValue(data, path);
     if (exists !== undefined && Boolean(value !== undefined) !== exists) throw new Error(`JSON assertion failed: ${path}`);
     if (Object.hasOwn(expectation, 'equals') && value !== equals) throw new Error(`JSON assertion failed: ${path}`);
+    if (Object.hasOwn(expectation, 'equalsVariable')) {
+      if (!(equalsVariable in variables)) throw new Error(`missing assertion variable: ${equalsVariable}`);
+      if (value !== variables[equalsVariable]) throw new Error(`JSON assertion failed: ${path}`);
+    }
   });
 }
 
-function extractVariables(data, extract = {}) {
-  return Object.fromEntries(Object.entries(extract).map(([name, path]) => [name, jsonPathValue(data, path)]));
+function extractVariables(data, extract = {}, api) {
+  return Object.fromEntries(Object.entries(extract).map(([name, path]) => {
+    const value = jsonPathValue(data, path);
+    if (value === undefined) throw new PreconditionError(`前置数据不足：无法提取 ${name}`, api);
+    return [name, value];
+  }));
+}
+
+function selectListVariable(data, select, selectedApiIds, api) {
+  const list = jsonPathValue(data, select.listPath);
+  const candidate = Array.isArray(list) && list.find((item) => {
+    const id = jsonPathValue(item, select.idPath);
+    return id !== undefined && !selectedApiIds.has(String(id));
+  });
+  if (!candidate) throw new PreconditionError('前置数据不足：没有可用于本次审核的待处理记录', api);
+  const id = jsonPathValue(candidate, select.idPath);
+  selectedApiIds.add(String(id));
+  return { [select.variable]: id };
 }
 
 function parseEncryptedResponse(data, config) {
@@ -138,11 +167,14 @@ export class CmsApiRunner {
     }
     const result = await this.request(request.action, payload, context.testCase.baseUrl, request.expectedStatus);
     try {
-      assertJson(result.data, request.expectedJson);
+      const selectedVariables = request.select
+        ? selectListVariable(result.data, request.select, context.selectedApiIds ||= new Set(), result.api)
+        : {};
+      assertJson(result.data, request.expectedJson, { ...context.variables, ...selectedVariables });
+      return { variables: { ...extractVariables(result.data, request.extract, result.api), ...selectedVariables }, api: result.api };
     } catch (error) {
       error.api = result.api;
       throw error;
     }
-    return { variables: extractVariables(result.data, request.extract), api: result.api };
   }
 }

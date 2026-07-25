@@ -1,5 +1,28 @@
 const stepKinds = new Set(['action', 'assert', 'query', 'apiRequest']);
 const viewports = new Set(['desktop', 'mobile']);
+const jsonPathPattern = /^\$(?:\.[A-Za-z_$][\w$]*|\[\d+\])*$/;
+
+function validJsonPath(value) {
+  return typeof value === 'string' && jsonPathPattern.test(value);
+}
+
+function validExpectedJson(expectedJson) {
+  return expectedJson === undefined || (Array.isArray(expectedJson) && expectedJson.every((expectation) => {
+    if (!expectation || typeof expectation !== 'object' || !validJsonPath(expectation.path)) return false;
+    return !Object.hasOwn(expectation, 'equalsVariable') || (typeof expectation.equalsVariable === 'string' && expectation.equalsVariable.trim());
+  }));
+}
+
+function validExtract(extract) {
+  return extract === undefined || (extract && typeof extract === 'object' && !Array.isArray(extract)
+    && Object.entries(extract).every(([name, path]) => name.trim() && validJsonPath(path)));
+}
+
+function validSelection(select) {
+  return select === undefined || (select && typeof select === 'object'
+    && typeof select.variable === 'string' && select.variable.trim()
+    && validJsonPath(select.listPath) && validJsonPath(select.idPath));
+}
 
 export function validateWebCase(input) {
   if (!input || typeof input !== 'object') throw new Error('invalid web case');
@@ -16,7 +39,7 @@ export function validateWebCase(input) {
     if (input.target === 'api') {
       const request = step.request;
       const validAuth = request?.auth === undefined || request.auth === 'session' || request.auth === 'none';
-      if (step.kind !== 'apiRequest' || !request?.action?.trim() || request.method !== 'POST' || !['readonly', 'mutating'].includes(request.safety) || !validAuth) throw new Error('invalid API request');
+      if (step.kind !== 'apiRequest' || !request?.action?.trim() || request.method !== 'POST' || !['readonly', 'mutating'].includes(request.safety) || !validAuth || !validExpectedJson(request.expectedJson) || !validExtract(request.extract) || !validSelection(request.select)) throw new Error('invalid API request');
     }
     if (input.target === 'web' && step.kind === 'apiRequest') throw new Error('invalid step');
     (step.visualChecks || []).forEach((visualCheck) => {

@@ -67,4 +67,21 @@ describe('web test case', () => {
       } }]
     })).toThrow('invalid API request');
   });
+
+  it('accepts an API list selection and variable-based JSON assertion', () => {
+    const testCase = validateWebCase({
+      id: 'member-audit', projectId: 'project-1', name: '用户审核', target: 'api',
+      baseUrl: 'https://example.test/api.php', viewport: 'desktop',
+      steps: [{ id: 'pending-members', kind: 'apiRequest', instruction: '选择待审核记录', request: {
+        action: 'list_member_update_log', method: 'POST', payload: { status: 0 }, expectedStatus: 1, safety: 'readonly',
+        select: { listPath: '$.data.list', variable: 'memberLogId', idPath: '$.id' },
+        expectedJson: [{ path: '$.data.list[0].id', equalsVariable: 'memberLogId' }]
+      }}]
+    });
+
+    expect(testCase.steps[0].request.select.variable).toBe('memberLogId');
+    expect(() => validateWebCase({ ...testCase, steps: [{ ...testCase.steps[0], request: {
+      ...testCase.steps[0].request, select: { listPath: 'data.list', variable: '', idPath: '$.id' }
+    } }] })).toThrow('invalid API request');
+  });
 });
