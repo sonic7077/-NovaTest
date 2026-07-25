@@ -5,6 +5,7 @@ import { seedArkCommunityCases } from './seed/ark-community-cases.js';
 import { createProductionRunner } from './runners/production-runner.js';
 import { cmsWhitebagCases } from './seed/cms-whitebag-cases.js';
 import { createSqliteStore } from './storage/sqlite-store.js';
+import { withWujiMidsceneConfig } from './services/midscene-config.js';
 
 function requiredCmsConfig() {
   const fields = ['CMS_BASE_URL', 'CMS_AES_KEY', 'CMS_AES_IV', 'CMS_APP_KEY', 'CMS_USERNAME', 'CMS_PASSWORD', 'CMS_GOOGLE_SECRET', 'CMS_OAUTH_ID', 'CMS_OAUTH_TYPE', 'CMS_VERSION', 'CMS_BUNDLE_ID', 'CMS_LANGUAGE', 'CMS_VIA'];
@@ -30,6 +31,7 @@ function requiredCmsConfig() {
 }
 
 async function main() {
+  Object.assign(process.env, withWujiMidsceneConfig(process.env));
   let webRunner;
   let runnerStatus;
   try {
