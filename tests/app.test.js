@@ -92,6 +92,21 @@ describe('execution API', () => {
       .expect((response) => expect(response.text).toContain('首页验证'));
   });
 
+  it('records explicit mutation authorization for single and batch API runs', async () => {
+    const app = createApp({ runner: { api: { execute: async () => ({}) } }, store: createMemoryStore(), executionSchedule: () => {} });
+    const mutatingCase = {
+      ...apiCase,
+      name: '通过帖子审核',
+      steps: [{ id: 'approve', kind: 'apiRequest', instruction: '通过帖子', request: { action: 'pass_post', method: 'POST', payload: { id: [1] }, expectedStatus: 1, safety: 'mutating' } }]
+    };
+    const created = (await request(app).post('/api/cases').send(mutatingCase).expect(201)).body;
+
+    await request(app).post(`/api/cases/${created.id}/runs`).send({ allowMutations: true }).expect(202)
+      .expect(({ body }) => expect(body).toMatchObject({ allowMutations: true }));
+    await request(app).post('/api/batches').send({ caseIds: [created.id] }).expect(202)
+      .expect(({ body }) => expect(body).toMatchObject({ allowMutations: false }));
+  });
+
   it('rejects a malformed web case before creating a run', async () => {
     const app = createApp({ runner: {}, store: createMemoryStore() });
 

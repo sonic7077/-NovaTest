@@ -117,6 +117,7 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
   });
   app.use(express.json());
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+  const requestedMutationAuthorization = (value) => value === true;
 
   app.get('/api/health', (_req, res) => res.json({ webRunner: runnerStatus, cmsRunner: cmsRunnerStatus }));
 
@@ -247,7 +248,7 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     const name = typeof req.body.name === 'string' && req.body.name.trim()
       ? req.body.name.trim()
       : `批量执行 ${new Date().toLocaleString('zh-CN')}`;
-    return res.status(202).json(executionService.queueBatch({ name, projectId: cases[0].projectId, target: cases[0].target, caseIds, cases }));
+    return res.status(202).json(executionService.queueBatch({ name, projectId: cases[0].projectId, target: cases[0].target, caseIds, cases, allowMutations: requestedMutationAuthorization(req.body.allowMutations) }));
   });
 
   app.get('/api/executions', (req, res) => res.json(store.listExecutions({ projectId: req.query.projectId || '', target: req.query.target || '', status: req.query.status || '' })));
@@ -279,7 +280,7 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
   app.post('/api/cases/:id/runs', (req, res) => {
     const testCase = store.getCase(req.params.id);
     if (!testCase) return res.status(404).json({ error: 'test case not found' });
-    return res.status(202).json(executionService.queueRun(testCase));
+    return res.status(202).json(executionService.queueRun(testCase, { allowMutations: requestedMutationAuthorization(req.body?.allowMutations) }));
   });
 
   app.get('/api/runs/:id', (req, res) => {

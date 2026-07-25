@@ -111,6 +111,11 @@ describe('test console stylesheet', () => {
     expect(script).toContain('function renderApiStepNode(');
     expect(script).toContain('const projectRoute = /^#\\/projects\\/');
     expect(script).toContain('async function debugApiCase()');
+    expect(script).toContain('function requestMutationAuthorization(');
+    expect(script).toContain("step.request?.safety === 'mutating'");
+    expect(script).toContain('window.confirm(');
+    expect(script).toContain('data-field="select"');
+    expect(stylesheet).toContain('.batch-status.skipped');
     expect(script).toContain('async function loadBatchHistory(projectId = activeProjectId)');
     expect(script).toContain('`/api/batches?projectId=${encodeURIComponent(projectId)}`');
     expect(script).toContain('async function loadProjects()');

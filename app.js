@@ -214,7 +214,7 @@ function updateApiRequestPreview() {
   if (!first) return;
   const value = (field) => first.querySelector(`[data-field="${field}"]`)?.value || '';
   try {
-    $('#apiPreviewCode').textContent = JSON.stringify({ method: 'POST', action: value('action'), payload: parseJson(value('payload'), '请求 Body', {}), expectedStatus: Number(value('expectedStatus') || 1), expectedJson: parseJson(value('expectedJson'), 'JSON 断言', []), extract: parseJson(value('extract'), '变量提取', {}) }, null, 2);
+    $('#apiPreviewCode').textContent = JSON.stringify({ method: 'POST', action: value('action'), payload: parseJson(value('payload'), '请求 Body', {}), expectedStatus: Number(value('expectedStatus') || 1), expectedJson: parseJson(value('expectedJson'), 'JSON 断言', []), extract: parseJson(value('extract'), '变量提取', {}), select: parseJson(value('select'), '列表选择', undefined) }, null, 2);
   } catch (error) {
     $('#apiPreviewCode').textContent = error.message;
   }
@@ -246,7 +246,7 @@ function readApiCaseFromForm() {
     projectId: $('#caseProjectId').value, name: document.querySelector('.case-meta input').value.trim(), target: 'api', baseUrl: $('#baseUrl').value.trim(), viewport: 'desktop',
     steps: [...apiSteps.children].map((node, index) => ({
       id: `api-step-${index + 1}`, kind: 'apiRequest', instruction: node.querySelector('[data-field="instruction"]').value.trim() || '执行接口请求',
-      request: { action: node.querySelector('[data-field="action"]').value.trim(), method: 'POST', safety: node.querySelector('[data-field="safety"]').value, payload: parseJson(node.querySelector('[data-field="payload"]').value, '请求 Body', {}), expectedStatus: Number(node.querySelector('[data-field="expectedStatus"]').value || 1), expectedJson: parseJson(node.querySelector('[data-field="expectedJson"]').value, 'JSON 断言', []), extract: parseJson(node.querySelector('[data-field="extract"]').value, '变量提取', {}) }
+      request: { action: node.querySelector('[data-field="action"]').value.trim(), method: 'POST', safety: node.querySelector('[data-field="safety"]').value, payload: parseJson(node.querySelector('[data-field="payload"]').value, '请求 Body', {}), expectedStatus: Number(node.querySelector('[data-field="expectedStatus"]').value || 1), expectedJson: parseJson(node.querySelector('[data-field="expectedJson"]').value, 'JSON 断言', []), extract: parseJson(node.querySelector('[data-field="extract"]').value, '变量提取', {}), select: parseJson(node.querySelector('[data-field="select"]').value, '列表选择', undefined) }
     }))
   };
 }
@@ -255,7 +255,7 @@ function renderApiStepNode(step, index) {
   const request = step.request || {};
   const node = document.createElement('article');
   node.className = 'step api-request';
-  node.innerHTML = `<span class="step-number">${String(index + 1).padStart(2, '0')}</span><div class="step-content"><div class="step-type query"><i data-lucide="braces"></i>接口请求</div><label>步骤说明<input data-field="instruction"></label><div class="api-grid"><label>Action<input data-field="action" placeholder="list_post"></label><label>安全级别<select data-field="safety"><option value="readonly">只读</option><option value="mutating">写操作</option></select></label><label>预期业务状态<input data-field="expectedStatus" type="number" value="1"></label></div><label>JSON Body<textarea data-field="payload" placeholder='{"status":10}'></textarea></label><label>JSON 断言<textarea data-field="expectedJson" placeholder='[{"path":"$.total","equals":1}]'></textarea></label><label>变量提取<textarea data-field="extract" placeholder='{"postId":"$.list[0].id"}'></textarea></label></div>`;
+  node.innerHTML = `<span class="step-number">${String(index + 1).padStart(2, '0')}</span><div class="step-content"><div class="step-type query"><i data-lucide="braces"></i>接口请求</div><label>步骤说明<input data-field="instruction"></label><div class="api-grid"><label>Action<input data-field="action" placeholder="list_post"></label><label>安全级别<select data-field="safety"><option value="readonly">只读</option><option value="mutating">写操作</option></select></label><label>预期业务状态<input data-field="expectedStatus" type="number" value="1"></label></div><label>JSON Body<textarea data-field="payload" placeholder='{"status":10}'></textarea></label><label>JSON 断言<textarea data-field="expectedJson" placeholder='[{"path":"$.total","equals":1}]'></textarea></label><label>变量提取<textarea data-field="extract" placeholder='{"postId":"$.list[0].id"}'></textarea></label><label>选择列表项<textarea data-field="select" placeholder='{"listPath":"$.data.list","variable":"memberLogId","idPath":"$.id"}'></textarea></label></div>`;
   node.querySelector('[data-field="instruction"]').value = step.instruction || '';
   node.querySelector('[data-field="action"]').value = request.action || '';
   node.querySelector('[data-field="safety"]').value = request.safety || 'readonly';
@@ -263,6 +263,7 @@ function renderApiStepNode(step, index) {
   node.querySelector('[data-field="payload"]').value = JSON.stringify(request.payload || {}, null, 2);
   node.querySelector('[data-field="expectedJson"]').value = JSON.stringify(request.expectedJson || [], null, 2);
   node.querySelector('[data-field="extract"]').value = JSON.stringify(request.extract || {}, null, 2);
+  node.querySelector('[data-field="select"]').value = request.select ? JSON.stringify(request.select, null, 2) : '';
   return node;
 }
 
@@ -508,6 +509,12 @@ function selectedCasesInOrder() {
   return savedCases.filter((testCase) => selectedCaseIds.has(testCase.id)).map((testCase) => testCase.id);
 }
 
+function requestMutationAuthorization(testCases) {
+  const mutatingCases = testCases.filter((testCase) => testCase.steps.some((step) => step.request?.safety === 'mutating'));
+  if (!mutatingCases.length) return false;
+  return window.confirm(`将执行 ${mutatingCases.length} 条包含业务写入的用例，可能创建或变更测试环境数据。是否继续？`);
+}
+
 function toggleVisibleCases() {
   const visibleIds = savedCases.map(({ id }) => id);
   const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedCaseIds.has(id));
@@ -593,7 +600,11 @@ async function deleteSelectedCases() {
 }
 
 async function runSavedCase(testCase) {
-  const response = await fetch(`/api/cases/${encodeURIComponent(testCase.id)}/runs`, { method: 'POST' });
+  const allowMutations = requestMutationAuthorization([testCase]);
+  if (testCase.steps.some((step) => step.request?.safety === 'mutating') && !allowMutations) return;
+  const response = await fetch(`/api/cases/${encodeURIComponent(testCase.id)}/runs`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ allowMutations })
+  });
   if (!response.ok) throw new Error((await response.json()).error || '执行测试用例失败');
   const run = await response.json();
   location.hash = `#/executions?focus=${encodeURIComponent(run.id)}`;
@@ -603,15 +614,18 @@ async function runSavedCase(testCase) {
 async function createBatch() {
   const button = $('#runBatch');
   const caseIds = selectedCasesInOrder();
+  const selectedCases = savedCases.filter((testCase) => caseIds.includes(testCase.id));
   if (!caseIds.length || button.disabled) return;
   try {
+    const allowMutations = requestMutationAuthorization(selectedCases);
+    if (selectedCases.some((testCase) => testCase.steps.some((step) => step.request?.safety === 'mutating')) && !allowMutations) return;
     button.disabled = true;
     button.innerHTML = '<i data-lucide="loader-circle"></i>正在执行';
     lucide.createIcons();
     const response = await fetch('/api/batches', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ caseIds })
+      body: JSON.stringify({ caseIds, allowMutations })
     });
     if (!response.ok) throw new Error((await response.json()).error || '批量执行失败');
     const batch = await response.json();
@@ -853,7 +867,11 @@ export async function deleteEditor() {
 async function debugApiCase() {
   if (target !== 'api') return;
   const saved = await saveCase();
-  const response = await fetch(`/api/cases/${encodeURIComponent(saved.id)}/runs`, { method: 'POST' });
+  const allowMutations = requestMutationAuthorization([saved]);
+  if (saved.steps.some((step) => step.request?.safety === 'mutating') && !allowMutations) return;
+  const response = await fetch(`/api/cases/${encodeURIComponent(saved.id)}/runs`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ allowMutations })
+  });
   if (!response.ok) throw new Error((await response.json()).error || '接口调试失败');
   const run = await response.json();
   location.hash = `#/executions?focus=${encodeURIComponent(run.id)}`;
