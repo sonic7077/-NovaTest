@@ -144,4 +144,19 @@ describe('RunService', () => {
     expect(updates.some((run) => run.steps[0].logs.some((log) => log.message.includes('retrying once')))).toBe(true);
     expect(updates.at(-1)).toMatchObject({ status: 'failed', steps: [{ status: 'failed', attempts: 2 }] });
   });
+
+  it('marks unavailable prerequisite data as skipped without retrying', async () => {
+    let attempts = 0;
+    const runner = {
+      execute: async () => {
+        attempts += 1;
+        throw Object.assign(new Error('前置数据不足：没有待审核记录'), { code: 'PRECONDITION_UNAVAILABLE' });
+      }
+    };
+
+    const run = await new RunService(runner).start(testCase);
+
+    expect(attempts).toBe(1);
+    expect(run).toMatchObject({ status: 'skipped', steps: [{ status: 'skipped', attempts: 1, error: expect.stringContaining('前置数据不足') }] });
+  });
 });

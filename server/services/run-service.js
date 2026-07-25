@@ -10,7 +10,7 @@ export class RunService {
     this.runner = runner;
   }
 
-  createQueuedRun(testCase, { batchId, batchPosition } = {}) {
+  createQueuedRun(testCase, { batchId, batchPosition, allowMutations = false } = {}) {
     return {
       id: crypto.randomUUID(),
       caseId: testCase.id,
@@ -19,6 +19,7 @@ export class RunService {
       target: testCase.target,
       batchId,
       batchPosition,
+      allowMutations: Boolean(allowMutations),
       status: 'queued',
       startedAt: null,
       finishedAt: null,
@@ -27,7 +28,7 @@ export class RunService {
     };
   }
 
-  async start(testCase, { apiSession, run: queuedRun, onUpdate } = {}) {
+  async start(testCase, { apiSession, selectedApiIds, allowMutations, run: queuedRun, onUpdate } = {}) {
     const runner = this.runner[testCase.target] || this.runner;
     const run = queuedRun || this.createQueuedRun(testCase);
     const publish = () => onUpdate?.(structuredClone(run));
@@ -39,6 +40,8 @@ export class RunService {
       testCase,
       viewport: viewports[testCase.viewport],
       runId: run.id,
+      allowMutations: Boolean(allowMutations ?? run.allowMutations),
+      selectedApiIds,
       apiSession: apiSession || (testCase.target === 'api' && typeof runner.createSession === 'function' ? runner.createSession() : undefined)
     };
 
@@ -65,6 +68,13 @@ export class RunService {
           if (error.api) stepRun.api = error.api;
           if (error.evidence) stepRun.screenshots.push(error.evidence);
           if (error.evidenceWarning) stepRun.logs.push({ level: 'warn', message: error.evidenceWarning });
+          if (error.code === 'PRECONDITION_UNAVAILABLE') {
+            stepRun.status = 'skipped';
+            run.status = 'skipped';
+            run.finishedAt = new Date().toISOString();
+            publish();
+            return run;
+          }
           if (attempt === 1) stepRun.logs.push({ level: 'warn', message: `${error.message}; retrying once` });
           publish();
         }

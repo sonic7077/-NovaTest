@@ -22,14 +22,14 @@ export class ExecutionService {
     this.batchService = new BatchService({ runner, store });
   }
 
-  queueRun(testCase) {
-    const run = this.runService.createQueuedRun(testCase);
+  queueRun(testCase, { allowMutations = false } = {}) {
+    const run = this.runService.createQueuedRun(testCase, { allowMutations });
     this.store.saveRun(run);
     this.schedule(() => { void this.executeRun(testCase, run); });
     return run;
   }
 
-  queueBatch({ name, projectId, target, caseIds, cases }) {
+  queueBatch({ name, projectId, target, caseIds, cases, allowMutations = false }) {
     const batch = {
       id: crypto.randomUUID(),
       name,
@@ -39,7 +39,8 @@ export class ExecutionService {
       status: 'queued',
       runIds: [],
       startedAt: null,
-      finishedAt: null
+      finishedAt: null,
+      allowMutations: Boolean(allowMutations)
     };
     this.store.saveBatch(batch);
     this.schedule(() => { void this.executeBatch(batch, cases); });

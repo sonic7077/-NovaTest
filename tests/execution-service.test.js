@@ -48,4 +48,14 @@ describe('ExecutionService', () => {
     expect(api.createSession).toHaveBeenCalledTimes(1);
     expect(api.execute).toHaveBeenCalledTimes(2);
   });
+
+  it('persists requested mutation authorization before scheduling a run', () => {
+    const store = createMemoryStore();
+    const service = new ExecutionService({ runner: { execute: async () => ({}) }, store, schedule: () => {} });
+
+    const run = service.queueRun(webCase, { allowMutations: true });
+
+    expect(run).toMatchObject({ status: 'queued', allowMutations: true });
+    expect(store.getRun(run.id)).toMatchObject({ allowMutations: true });
+  });
 });

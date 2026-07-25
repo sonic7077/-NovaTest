@@ -7,7 +7,7 @@ export class BatchService {
     this.runService = new RunService(runner);
   }
 
-  async start({ name, projectId, caseIds, cases }) {
+  async start({ name, projectId, caseIds, cases, allowMutations = false }) {
     const batch = {
       id: crypto.randomUUID(),
       projectId,
@@ -17,7 +17,8 @@ export class BatchService {
       status: 'running',
       runIds: [],
       startedAt: new Date().toISOString(),
-      finishedAt: null
+      finishedAt: null,
+      allowMutations: Boolean(allowMutations)
     };
     this.store.saveBatch(batch);
     const apiRunner = this.runner.api;
@@ -25,22 +26,24 @@ export class BatchService {
       ? apiRunner.createSession()
       : undefined;
 
-    await this.execute({ batch, cases, apiSession });
+    await this.execute({ batch, cases, apiSession, selectedApiIds: new Set() });
 
     batch.status = batch.runIds.every((runId) => this.store.getRun(runId).status === 'passed') ? 'passed' : 'failed';
     batch.finishedAt = new Date().toISOString();
     return this.store.saveBatch(batch);
   }
 
-  async execute({ batch, cases, apiSession, onRunUpdate }) {
+  async execute({ batch, cases, apiSession, selectedApiIds = new Set(), onRunUpdate }) {
     for (const [batchPosition, testCase] of cases.entries()) {
-      const queuedRun = this.runService.createQueuedRun(testCase, { batchId: batch.id, batchPosition });
+      const queuedRun = this.runService.createQueuedRun(testCase, { batchId: batch.id, batchPosition, allowMutations: batch.allowMutations });
       this.store.saveRun(queuedRun);
       batch.runIds.push(queuedRun.id);
       this.store.saveBatch(batch);
 
       const run = await this.runService.start(testCase, {
         apiSession,
+        selectedApiIds,
+        allowMutations: batch.allowMutations,
         run: queuedRun,
         onUpdate: (update) => {
           this.store.saveRun(update);
