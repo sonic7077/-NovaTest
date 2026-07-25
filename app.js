@@ -551,7 +551,8 @@ function renderBatchHistory(batches) {
     const item = document.createElement('article');
     item.className = 'batch-item';
     const passed = batch.runs.filter((run) => run.status === 'passed').length;
-    const failed = batch.runs.length - passed;
+    const failed = batch.runs.filter((run) => run.status === 'failed').length;
+    const skipped = batch.runs.filter((run) => run.status === 'skipped').length;
     const title = document.createElement('div');
     const name = document.createElement('b');
     name.textContent = batch.name;
@@ -562,7 +563,7 @@ function renderBatchHistory(batches) {
     state.className = `batch-status ${batch.status}`;
     state.textContent = batch.status.toUpperCase();
     const summary = document.createElement('p');
-    summary.textContent = `${passed} 通过 · ${failed} 失败`;
+    summary.textContent = `${passed} 通过 · ${skipped} 前置不足 · ${failed} 失败`;
     const reports = document.createElement('div');
     reports.className = 'batch-reports';
     const report = document.createElement('a');
@@ -930,13 +931,14 @@ function getExecutionConclusion(detail) {
   const firstFailure = steps.find((step) => step.status === 'failed');
   const retryCount = steps.reduce((count, step) => count + Math.max(0, (step.attempts || 0) - 1), 0);
   if (detail.task.status === 'failed') return { tone: 'failed', icon: 'circle-x', title: '执行失败', description: firstFailure?.error || '存在未通过步骤', firstFailure, retryCount };
+  if (detail.task.status === 'skipped') return { tone: 'attention', icon: 'circle-pause', title: '前置数据不足', description: steps.find((step) => step.status === 'skipped')?.error || '没有可用于本次运行的业务数据', firstFailure: null, retryCount };
   if (['queued', 'running'].includes(detail.task.status)) return { tone: 'running', icon: 'loader-circle', title: detail.task.status === 'queued' ? '等待执行' : '正在执行', description: '执行进度会自动刷新', firstFailure: null, retryCount };
   if (retryCount) return { tone: 'attention', icon: 'triangle-alert', title: '执行完成，需关注', description: `共发生 ${retryCount} 次重试`, firstFailure: null, retryCount };
   return { tone: 'passed', icon: 'circle-check-big', title: '执行通过', description: '所有已执行步骤均通过', firstFailure: null, retryCount: 0 };
 }
 
 function executionReportUrl(detail) {
-  if (!['passed', 'failed'].includes(detail.task.status)) return '';
+  if (!['passed', 'failed', 'skipped'].includes(detail.task.status)) return '';
   return detail.kind === 'batch' ? `/api/batches/${encodeURIComponent(detail.task.id)}/report` : `/api/runs/${encodeURIComponent(detail.task.id)}/report`;
 }
 
@@ -957,10 +959,10 @@ function renderExecutionDetail(detail) {
   const container = $('#executionDetail');
   const conclusion = getExecutionConclusion(detail);
   const steps = detail.runs.flatMap((run) => (run.steps || []).map((step) => ({ ...step, caseName: run.caseName })));
-  const completedSteps = steps.filter((step) => ['passed', 'failed'].includes(step.status)).length;
+  const completedSteps = steps.filter((step) => ['passed', 'failed', 'skipped'].includes(step.status)).length;
   const passedSteps = steps.filter((step) => step.status === 'passed').length;
   const totalCases = detail.runs.length || detail.task.caseIds?.length || 1;
-  const completedCases = detail.runs.filter((run) => ['passed', 'failed'].includes(run.status)).length;
+  const completedCases = detail.runs.filter((run) => ['passed', 'failed', 'skipped'].includes(run.status)).length;
   const percent = steps.length ? Math.round(completedSteps / steps.length * 100) : 0;
   container.innerHTML = '';
 
@@ -980,7 +982,7 @@ function renderExecutionDetail(detail) {
   if (!steps.length) { const empty = document.createElement('p'); empty.className = 'empty-state'; empty.textContent = '任务等待执行，步骤将在开始后显示。'; timeline.append(empty); }
   steps.forEach((step) => {
     const item = document.createElement('article'); item.className = `timeline-step ${step.status}`;
-    const icon = document.createElement('span'); icon.className = 'timeline-icon'; icon.innerHTML = `<i data-lucide="${step.status === 'passed' ? 'check' : step.status === 'failed' ? 'x' : step.status === 'running' ? 'loader-circle' : 'clock-3'}"></i>`;
+    const icon = document.createElement('span'); icon.className = 'timeline-icon'; icon.innerHTML = `<i data-lucide="${step.status === 'passed' ? 'check' : step.status === 'failed' ? 'x' : step.status === 'skipped' ? 'circle-pause' : step.status === 'running' ? 'loader-circle' : 'clock-3'}"></i>`;
     const copy = document.createElement('div');
     const title = document.createElement('b'); title.textContent = `${step.caseName || '测试用例'} · ${step.api?.action || step.id}`;
     const meta = document.createElement('small');
@@ -1062,7 +1064,7 @@ async function loadReports() {
   const response = await fetch(`/api/reports?${query}`);
   if (!response.ok) throw new Error('无法读取质量报告');
   const reports = await response.json();
-  renderQualityList($('#reportList'), reports, (report) => `${report.name} · ${report.status.toUpperCase()} · ${report.passedCases} 通过 / ${report.failedCases} 失败`, true);
+  renderQualityList($('#reportList'), reports, (report) => `${report.name} · ${report.status === 'skipped' ? '前置数据不足' : report.status.toUpperCase()} · ${report.passedCases} 通过 / ${report.skippedCases || 0} 前置不足 / ${report.failedCases} 失败`, true);
 }
 
 $('#saveBtn').addEventListener('click', async () => {

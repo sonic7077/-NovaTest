@@ -32,18 +32,18 @@ export function createMemoryStore() {
     const batchItems = [...batches.values()].filter((batch) => matches(batch, filters)).map((batch) => {
       const batchRuns = batch.runIds.map((id) => runs.get(id)).filter(Boolean);
       const steps = batchRuns.flatMap((run) => run.steps || []);
-      return { ...batch, kind: 'batch', projectName: projects.get(batch.projectId)?.name, totalCases: batch.caseIds.length, completedCases: batchRuns.filter((run) => ['passed', 'failed'].includes(run.status)).length, totalSteps: steps.length, completedSteps: steps.filter((step) => ['passed', 'failed'].includes(step.status)).length, currentCaseName: batchRuns.find((run) => ['queued', 'running'].includes(run.status))?.caseName };
+      return { ...batch, kind: 'batch', projectName: projects.get(batch.projectId)?.name, totalCases: batch.caseIds.length, completedCases: batchRuns.filter((run) => ['passed', 'failed', 'skipped'].includes(run.status)).length, totalSteps: steps.length, completedSteps: steps.filter((step) => ['passed', 'failed', 'skipped'].includes(step.status)).length, currentCaseName: batchRuns.find((run) => ['queued', 'running'].includes(run.status))?.caseName };
     });
-    const runItems = [...runs.values()].filter((run) => !run.batchId && matches(run, filters)).map((run) => ({ ...run, kind: 'run', name: run.caseName, projectName: projects.get(run.projectId)?.name, totalCases: 1, completedCases: ['passed', 'failed'].includes(run.status) ? 1 : 0, totalSteps: run.steps.length, completedSteps: run.steps.filter((step) => ['passed', 'failed'].includes(step.status)).length, currentCaseName: run.caseName }));
+    const runItems = [...runs.values()].filter((run) => !run.batchId && matches(run, filters)).map((run) => ({ ...run, kind: 'run', name: run.caseName, projectName: projects.get(run.projectId)?.name, totalCases: 1, completedCases: ['passed', 'failed', 'skipped'].includes(run.status) ? 1 : 0, totalSteps: run.steps.length, completedSteps: run.steps.filter((step) => ['passed', 'failed', 'skipped'].includes(step.status)).length, currentCaseName: run.caseName }));
     return [...batchItems, ...runItems].sort((first, second) => String(second.finishedAt || second.startedAt || '').localeCompare(String(first.finishedAt || first.startedAt || '')));
   }
   function listReports(filters = {}) {
     const start = rangeStart(filters.range, filters.now);
-    const batchItems = [...batches.values()].filter((batch) => ['passed', 'failed'].includes(batch.status) && batch.finishedAt >= start && matches(batch, filters)).map((batch) => {
+    const batchItems = [...batches.values()].filter((batch) => ['passed', 'failed', 'skipped'].includes(batch.status) && batch.finishedAt >= start && matches(batch, filters)).map((batch) => {
       const batchRuns = batch.runIds.map((id) => runs.get(id)).filter(Boolean);
-      return { ...batch, kind: 'batch', projectName: projects.get(batch.projectId)?.name, passedCases: batchRuns.filter((run) => run.status === 'passed').length, failedCases: batchRuns.filter((run) => run.status === 'failed').length, reportUrl: `/api/batches/${batch.id}/report` };
+      return { ...batch, kind: 'batch', projectName: projects.get(batch.projectId)?.name, passedCases: batchRuns.filter((run) => run.status === 'passed').length, failedCases: batchRuns.filter((run) => run.status === 'failed').length, skippedCases: batchRuns.filter((run) => run.status === 'skipped').length, reportUrl: `/api/batches/${batch.id}/report` };
     });
-    const runItems = [...runs.values()].filter((run) => !run.batchId && ['passed', 'failed'].includes(run.status) && run.finishedAt >= start && matches(run, filters)).map((run) => ({ ...run, kind: 'run', name: run.caseName, projectName: projects.get(run.projectId)?.name, passedCases: run.status === 'passed' ? 1 : 0, failedCases: run.status === 'failed' ? 1 : 0, reportUrl: `/api/runs/${run.id}/report` }));
+    const runItems = [...runs.values()].filter((run) => !run.batchId && ['passed', 'failed', 'skipped'].includes(run.status) && run.finishedAt >= start && matches(run, filters)).map((run) => ({ ...run, kind: 'run', name: run.caseName, projectName: projects.get(run.projectId)?.name, passedCases: run.status === 'passed' ? 1 : 0, failedCases: run.status === 'failed' ? 1 : 0, skippedCases: run.status === 'skipped' ? 1 : 0, reportUrl: `/api/runs/${run.id}/report` }));
     return [...batchItems, ...runItems].sort((first, second) => String(second.finishedAt).localeCompare(String(first.finishedAt)));
   }
   function getDashboard({ range = '7d', now } = {}) {

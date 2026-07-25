@@ -22,7 +22,11 @@ function apiEvidenceMarkup(step) {
   return `<div class="api-evidence"><strong>${escapeHtml(api.action)} · HTTP ${escapeHtml(api.httpStatus)} · 业务状态 ${escapeHtml(api.businessStatus)} · ${escapeHtml(api.durationMs)}ms</strong><details><summary>请求摘要</summary><pre>${escapeHtml(JSON.stringify(request, null, 2))}</pre></details><details><summary>响应内容</summary><pre>${escapeHtml(JSON.stringify(response, null, 2))}</pre></details></div>`;
 }
 
-const reportStyles = 'body{font:14px system-ui;margin:40px;color:#17221f}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #d9e3dd;padding:10px;text-align:left;vertical-align:top}th{background:#eef6f1}.passed{color:#168657}.failed{color:#c74444}.evidence{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.evidence img{width:160px;max-height:110px;object-fit:cover;border:1px solid #d9e3dd}.run-section{margin-top:32px;padding-top:20px;border-top:1px solid #d9e3dd}.summary{display:flex;gap:18px;flex-wrap:wrap;color:#53645d}.summary strong{color:#17221f}';
+const reportStyles = 'body{font:14px system-ui;margin:40px;color:#17221f}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #d9e3dd;padding:10px;text-align:left;vertical-align:top}th{background:#eef6f1}.passed{color:#168657}.failed{color:#c74444}.skipped{color:#805b13}.evidence{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.evidence img{width:160px;max-height:110px;object-fit:cover;border:1px solid #d9e3dd}.run-section{margin-top:32px;padding-top:20px;border-top:1px solid #d9e3dd}.summary{display:flex;gap:18px;flex-wrap:wrap;color:#53645d}.summary strong{color:#17221f}';
+
+function statusLabel(status) {
+  return status === 'skipped' ? '前置数据不足' : String(status).toUpperCase();
+}
 
 export function formatLocalTime(value) {
   if (!value) return '-';
@@ -47,12 +51,13 @@ function documentMarkup(title, content) {
 }
 
 export function renderReport(run, caseName) {
-  return documentMarkup(caseName, `<h1>${escapeHtml(caseName)}</h1><p>运行状态：<strong class="${run.status}">${escapeHtml(run.status.toUpperCase())}</strong></p><p>开始：${escapeHtml(formatLocalTime(run.startedAt))}<br>结束：${escapeHtml(formatLocalTime(run.finishedAt))}</p><h2>步骤结果</h2>${runTable(run)}<h2>变量</h2><pre>${escapeHtml(JSON.stringify(run.variables, null, 2))}</pre>`);
+  return documentMarkup(caseName, `<h1>${escapeHtml(caseName)}</h1><p>运行状态：<strong class="${run.status}">${escapeHtml(statusLabel(run.status))}</strong></p><p>开始：${escapeHtml(formatLocalTime(run.startedAt))}<br>结束：${escapeHtml(formatLocalTime(run.finishedAt))}</p><h2>步骤结果</h2>${runTable(run)}<h2>变量</h2><pre>${escapeHtml(JSON.stringify(run.variables, null, 2))}</pre>`);
 }
 
 export function renderBatchReport(batch, runs) {
   const passed = runs.filter((run) => run.status === 'passed').length;
-  const failed = runs.length - passed;
-  const runSections = runs.map((run) => `<section class="run-section"><h2>${escapeHtml(run.caseName || run.caseId)}</h2><p>运行状态：<strong class="${run.status}">${escapeHtml(run.status.toUpperCase())}</strong></p><p>开始：${escapeHtml(formatLocalTime(run.startedAt))}<br>结束：${escapeHtml(formatLocalTime(run.finishedAt))}</p>${runTable(run)}</section>`).join('');
-  return documentMarkup(batch.name, `<h1>${escapeHtml(batch.name)}</h1><p>批量状态：<strong class="${batch.status}">${escapeHtml(batch.status.toUpperCase())}</strong></p><div class="summary"><span><strong>${runs.length}</strong> 个用例</span><span><strong>${passed}</strong> 通过 · <strong>${failed}</strong> 失败</span><span>开始：${escapeHtml(formatLocalTime(batch.startedAt))}</span><span>结束：${escapeHtml(formatLocalTime(batch.finishedAt))}</span></div>${runSections}`);
+  const failed = runs.filter((run) => run.status === 'failed').length;
+  const skipped = runs.filter((run) => run.status === 'skipped').length;
+  const runSections = runs.map((run) => `<section class="run-section"><h2>${escapeHtml(run.caseName || run.caseId)}</h2><p>运行状态：<strong class="${run.status}">${escapeHtml(statusLabel(run.status))}</strong></p><p>开始：${escapeHtml(formatLocalTime(run.startedAt))}<br>结束：${escapeHtml(formatLocalTime(run.finishedAt))}</p>${runTable(run)}</section>`).join('');
+  return documentMarkup(batch.name, `<h1>${escapeHtml(batch.name)}</h1><p>批量状态：<strong class="${batch.status}">${escapeHtml(statusLabel(batch.status))}</strong></p><div class="summary"><span><strong>${runs.length}</strong> 个用例</span><span><strong>${passed}</strong> 通过 · <strong>${skipped}</strong> 跳过 · <strong>${failed}</strong> 失败</span><span>开始：${escapeHtml(formatLocalTime(batch.startedAt))}</span><span>结束：${escapeHtml(formatLocalTime(batch.finishedAt))}</span></div>${runSections}`);
 }

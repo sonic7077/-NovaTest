@@ -397,12 +397,38 @@ describe('execution API', () => {
     );
 
     expect(report).toContain('查询回归');
-    expect(report).toContain('<strong>1</strong> 通过 · <strong>1</strong> 失败');
+    expect(report).toContain('<strong>1</strong> 通过 · <strong>0</strong> 跳过 · <strong>1</strong> 失败');
     expect(report).toContain('2026-07-18 13:40:00');
     expect(report).toContain('帖子列表查询');
     expect(report).toContain('评论列表查询');
     expect(report).toContain('********');
     expect(report).not.toContain('synthetic-session-value');
+  });
+
+  it('renders skipped prerequisite evidence separately from API failures', () => {
+    const report = renderBatchReport(
+      { id: 'batch-1', name: '审核回归', status: 'passed', startedAt: '2026-07-18T05:40:00.000Z', finishedAt: '2026-07-18T05:41:02.000Z', caseIds: ['case-1', 'case-2', 'case-3'] },
+      [
+        { id: 'run-1', caseName: '帖子审核', status: 'passed', startedAt: '2026-07-18T05:40:00.000Z', finishedAt: '2026-07-18T05:40:10.000Z', steps: [] },
+        { id: 'run-2', caseName: '用户资料审核', status: 'skipped', startedAt: '2026-07-18T05:40:10.000Z', finishedAt: '2026-07-18T05:40:20.000Z', steps: [{ id: 'select', status: 'skipped', attempts: 1, error: '前置数据不足：没有待处理记录', api: { action: 'list_member_update_log', httpStatus: 200, businessStatus: 1, durationMs: 80, request: { token: 'sensitive-token' }, response: { data: { list: [] }, token: 'sensitive-token' } } }] },
+        { id: 'run-3', caseName: '评论审核', status: 'failed', startedAt: '2026-07-18T05:40:20.000Z', finishedAt: '2026-07-18T05:41:02.000Z', steps: [] }
+      ]
+    );
+
+    expect(report).toContain('前置数据不足');
+    expect(report).toContain('<strong>1</strong> 跳过');
+    expect(report).toContain('<strong>1</strong> 失败');
+    expect(report).not.toContain('sensitive-token');
+  });
+
+  it('lists skipped single-run reports for prerequisite outcomes', async () => {
+    const store = createMemoryStore();
+    store.saveRun({ id: 'skipped-run', caseId: 'case-1', caseName: '用户资料审核', projectId: 'default-project', target: 'api', status: 'skipped', startedAt: '2026-07-20T00:00:00.000Z', finishedAt: '2026-07-20T00:00:01.000Z', variables: {}, steps: [] });
+    const app = createApp({ runner: {}, store });
+
+    await request(app).get('/api/reports?range=30d').expect(200).expect(({ body }) => {
+      expect(body).toMatchObject([{ id: 'skipped-run', status: 'skipped', skippedCases: 1 }]);
+    });
   });
 
   it('uploads a PNG visual baseline for an existing case', async () => {

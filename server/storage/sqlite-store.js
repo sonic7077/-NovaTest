@@ -260,6 +260,16 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   migrateUserSchema();
 
+  function migrateMutationAuthorizationSchema() {
+    const runColumns = db.prepare('PRAGMA table_info(test_runs)').all().map((column) => column.name);
+    const batchColumns = db.prepare('PRAGMA table_info(test_batches)').all().map((column) => column.name);
+    if (!runColumns.includes('allow_mutations')) db.exec('ALTER TABLE test_runs ADD COLUMN allow_mutations INTEGER NOT NULL DEFAULT 0');
+    if (!batchColumns.includes('allow_mutations')) db.exec('ALTER TABLE test_batches ADD COLUMN allow_mutations INTEGER NOT NULL DEFAULT 0');
+    if (db.prepare('PRAGMA user_version').get().user_version < 11) db.exec('PRAGMA user_version = 11');
+  }
+
+  migrateMutationAuthorizationSchema();
+
   function hydrateUser(row) {
     if (!row) return undefined;
     return {
@@ -354,6 +364,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
       projectId: row.projectId,
       target: row.target,
       status: row.status,
+      allowMutations: Boolean(row.allowMutations),
       startedAt: row.startedAt,
       finishedAt: row.finishedAt,
       variables: JSON.parse(row.variablesJson),
@@ -366,8 +377,8 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     const projectId = run.projectId || currentCase?.projectId || defaultProject().id;
     const target = run.target || currentCase?.target || null;
     db.prepare(`
-      INSERT INTO test_runs (id, case_id, case_name, batch_id, batch_position, project_id, target, status, started_at, finished_at, variables_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_runs (id, case_id, case_name, batch_id, batch_position, project_id, target, status, allow_mutations, started_at, finished_at, variables_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         case_id = excluded.case_id,
         case_name = excluded.case_name,
@@ -376,10 +387,11 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
         project_id = excluded.project_id,
         target = excluded.target,
         status = excluded.status,
+        allow_mutations = excluded.allow_mutations,
         started_at = excluded.started_at,
         finished_at = excluded.finished_at,
         variables_json = excluded.variables_json
-    `).run(run.id, run.caseId, run.caseName || currentCase?.name || '已删除用例', run.batchId || null, run.batchPosition ?? null, projectId, target, run.status, run.startedAt, run.finishedAt, JSON.stringify(run.variables || {}));
+    `).run(run.id, run.caseId, run.caseName || currentCase?.name || '已删除用例', run.batchId || null, run.batchPosition ?? null, projectId, target, run.status, Number(Boolean(run.allowMutations)), run.startedAt, run.finishedAt, JSON.stringify(run.variables || {}));
     db.prepare('DELETE FROM run_steps WHERE run_id = ?').run(run.id);
     const insertStep = db.prepare(`
       INSERT INTO run_steps (run_id, step_id, position, status, attempts, error, screenshot, logs_json, screenshots_json, api_json)
@@ -412,6 +424,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
       name: row.name,
       caseIds,
       status: row.status,
+      allowMutations: Boolean(row.allowMutations),
       runIds,
       startedAt: row.startedAt,
       finishedAt: row.finishedAt
@@ -422,16 +435,17 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     const projectId = batch.projectId || defaultProject().id;
     if (!db.prepare('SELECT 1 FROM projects WHERE id = ?').get(projectId)) throw new Error('project not found');
     db.prepare(`
-      INSERT INTO test_batches (id, project_id, target, name, status, started_at, finished_at, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_batches (id, project_id, target, name, status, allow_mutations, started_at, finished_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         project_id = excluded.project_id,
         target = excluded.target,
         name = excluded.name,
         status = excluded.status,
+        allow_mutations = excluded.allow_mutations,
         started_at = excluded.started_at,
         finished_at = excluded.finished_at
-    `).run(batch.id, projectId, batch.target || null, batch.name, batch.status, batch.startedAt, batch.finishedAt, batch.startedAt || new Date().toISOString());
+    `).run(batch.id, projectId, batch.target || null, batch.name, batch.status, Number(Boolean(batch.allowMutations)), batch.startedAt, batch.finishedAt, batch.startedAt || new Date().toISOString());
     db.prepare('DELETE FROM batch_cases WHERE batch_id = ?').run(batch.id);
     const insertCase = db.prepare('INSERT INTO batch_cases (batch_id, case_id, position) VALUES (?, ?, ?)');
     batch.caseIds.forEach((caseId, position) => insertCase.run(batch.id, caseId, position));
@@ -547,9 +561,9 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
       SELECT b.id, b.project_id AS projectId, p.name AS projectName, b.target, b.name, b.status,
         b.started_at AS startedAt, b.finished_at AS finishedAt,
         (SELECT COUNT(*) FROM batch_cases WHERE batch_id = b.id) AS totalCases,
-        (SELECT COUNT(*) FROM test_runs WHERE batch_id = b.id AND status IN ('passed', 'failed')) AS completedCases,
+        (SELECT COUNT(*) FROM test_runs WHERE batch_id = b.id AND status IN ('passed', 'failed', 'skipped')) AS completedCases,
         (SELECT COUNT(*) FROM run_steps JOIN test_runs ON test_runs.id = run_steps.run_id WHERE test_runs.batch_id = b.id) AS totalSteps,
-        (SELECT COUNT(*) FROM run_steps JOIN test_runs ON test_runs.id = run_steps.run_id WHERE test_runs.batch_id = b.id AND run_steps.status IN ('passed', 'failed')) AS completedSteps,
+        (SELECT COUNT(*) FROM run_steps JOIN test_runs ON test_runs.id = run_steps.run_id WHERE test_runs.batch_id = b.id AND run_steps.status IN ('passed', 'failed', 'skipped')) AS completedSteps,
         (SELECT case_name FROM test_runs WHERE batch_id = b.id AND status IN ('queued', 'running') ORDER BY batch_position, id LIMIT 1) AS currentCaseName
       FROM test_batches AS b
       LEFT JOIN projects AS p ON p.id = b.project_id
@@ -558,9 +572,9 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     const runs = db.prepare(`
       SELECT r.id, r.project_id AS projectId, p.name AS projectName, r.target, r.case_name AS name, r.status,
         r.started_at AS startedAt, r.finished_at AS finishedAt,
-        1 AS totalCases, CASE WHEN r.status IN ('passed', 'failed') THEN 1 ELSE 0 END AS completedCases,
+        1 AS totalCases, CASE WHEN r.status IN ('passed', 'failed', 'skipped') THEN 1 ELSE 0 END AS completedCases,
         (SELECT COUNT(*) FROM run_steps WHERE run_id = r.id) AS totalSteps,
-        (SELECT COUNT(*) FROM run_steps WHERE run_id = r.id AND status IN ('passed', 'failed')) AS completedSteps,
+        (SELECT COUNT(*) FROM run_steps WHERE run_id = r.id AND status IN ('passed', 'failed', 'skipped')) AS completedSteps,
         r.case_name AS currentCaseName
       FROM test_runs AS r
       LEFT JOIN projects AS p ON p.id = r.project_id
@@ -584,25 +598,27 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     const start = rangeStart(range, now);
     const batchFilters = executionFilters({ projectId, target, status }, 'b');
     const runFilters = executionFilters({ projectId, target, status }, 'r');
-    const terminal = "status IN ('passed', 'failed')";
+    const terminal = "status IN ('passed', 'failed', 'skipped')";
     const batchWhere = [terminal.replaceAll('status', 'b.status'), 'b.finished_at >= ?', batchFilters.where.replace(/^WHERE /, '')].filter(Boolean).join(' AND ');
     const runWhere = [terminal.replaceAll('status', 'r.status'), 'r.finished_at >= ?', 'r.batch_id IS NULL', runFilters.where.replace(/^WHERE /, '')].filter(Boolean).join(' AND ');
     const batches = db.prepare(`
       SELECT b.id, b.name, b.project_id AS projectId, p.name AS projectName, b.target, b.status,
         b.started_at AS startedAt, b.finished_at AS finishedAt,
         (SELECT COUNT(*) FROM test_runs WHERE batch_id = b.id AND status = 'passed') AS passedCases,
-        (SELECT COUNT(*) FROM test_runs WHERE batch_id = b.id AND status = 'failed') AS failedCases
+        (SELECT COUNT(*) FROM test_runs WHERE batch_id = b.id AND status = 'failed') AS failedCases,
+        (SELECT COUNT(*) FROM test_runs WHERE batch_id = b.id AND status = 'skipped') AS skippedCases
       FROM test_batches AS b LEFT JOIN projects AS p ON p.id = b.project_id
       WHERE ${batchWhere}
-    `).all(start, ...batchFilters.parameters).map((row) => ({ ...row, kind: 'batch', reportUrl: `/api/batches/${encodeURIComponent(row.id)}/report`, passedCases: Number(row.passedCases), failedCases: Number(row.failedCases) }));
+    `).all(start, ...batchFilters.parameters).map((row) => ({ ...row, kind: 'batch', reportUrl: `/api/batches/${encodeURIComponent(row.id)}/report`, passedCases: Number(row.passedCases), failedCases: Number(row.failedCases), skippedCases: Number(row.skippedCases) }));
     const runs = db.prepare(`
       SELECT r.id, r.case_name AS name, r.project_id AS projectId, p.name AS projectName, r.target, r.status,
         r.started_at AS startedAt, r.finished_at AS finishedAt,
         CASE WHEN r.status = 'passed' THEN 1 ELSE 0 END AS passedCases,
-        CASE WHEN r.status = 'failed' THEN 1 ELSE 0 END AS failedCases
+        CASE WHEN r.status = 'failed' THEN 1 ELSE 0 END AS failedCases,
+        CASE WHEN r.status = 'skipped' THEN 1 ELSE 0 END AS skippedCases
       FROM test_runs AS r LEFT JOIN projects AS p ON p.id = r.project_id
       WHERE ${runWhere}
-    `).all(start, ...runFilters.parameters).map((row) => ({ ...row, kind: 'run', reportUrl: `/api/runs/${encodeURIComponent(row.id)}/report`, passedCases: Number(row.passedCases), failedCases: Number(row.failedCases) }));
+    `).all(start, ...runFilters.parameters).map((row) => ({ ...row, kind: 'run', reportUrl: `/api/runs/${encodeURIComponent(row.id)}/report`, passedCases: Number(row.passedCases), failedCases: Number(row.failedCases), skippedCases: Number(row.skippedCases) }));
     return [...batches, ...runs].sort((first, second) => String(second.finishedAt).localeCompare(String(first.finishedAt)));
   }
 
@@ -689,7 +705,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     saveRun,
     getRun(id) {
       return hydrateRun(db.prepare(`
-        SELECT id, case_id AS caseId, case_name AS caseName, project_id AS projectId, target, status, started_at AS startedAt,
+        SELECT id, case_id AS caseId, case_name AS caseName, project_id AS projectId, target, status, allow_mutations AS allowMutations, started_at AS startedAt,
           finished_at AS finishedAt, variables_json AS variablesJson
         FROM test_runs
         WHERE id = ?
@@ -699,14 +715,14 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     saveBatch,
     getBatch(id) {
       return hydrateBatch(db.prepare(`
-        SELECT id, project_id AS projectId, target, name, status, started_at AS startedAt, finished_at AS finishedAt
+        SELECT id, project_id AS projectId, target, name, status, allow_mutations AS allowMutations, started_at AS startedAt, finished_at AS finishedAt
         FROM test_batches
         WHERE id = ?
       `).get(id));
     },
     listBatches(projectId = '') {
       return db.prepare(`
-        SELECT id, project_id AS projectId, target, name, status, started_at AS startedAt, finished_at AS finishedAt
+        SELECT id, project_id AS projectId, target, name, status, allow_mutations AS allowMutations, started_at AS startedAt, finished_at AS finishedAt
         FROM test_batches
         ${projectId ? 'WHERE project_id = ?' : ''}
         ORDER BY created_at, id
