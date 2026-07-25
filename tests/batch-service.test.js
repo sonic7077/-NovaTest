@@ -93,7 +93,7 @@ describe('BatchService', () => {
     expect(batch.status).toBe('passed');
     expect(batch.projectId).toBe('default-project');
     expect(batch.runIds).toHaveLength(2);
-    expect(batch.runIds.map((id) => store.getRun(id).variables)).toEqual([{}, {}]);
+    expect(batch.runIds.map((id) => store.getRun(id).variables)).toEqual(batch.runIds.map((id) => ({ runId: id })));
   });
 
   it('shares mutation authorization and ID reservations across API runs', async () => {

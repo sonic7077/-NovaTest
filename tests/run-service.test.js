@@ -120,7 +120,7 @@ describe('RunService', () => {
     const service = new RunService({ execute: async () => ({}) });
     const queued = service.createQueuedRun(testCase);
 
-    expect(queued).toMatchObject({ status: 'queued', startedAt: null, steps: [{ id: 's1', status: 'queued', attempts: 0 }] });
+    expect(queued).toMatchObject({ status: 'queued', startedAt: null, variables: { runId: queued.id }, steps: [{ id: 's1', status: 'queued', attempts: 0 }] });
 
     await service.start(testCase, {
       run: queued,

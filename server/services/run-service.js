@@ -11,8 +11,9 @@ export class RunService {
   }
 
   createQueuedRun(testCase, { batchId, batchPosition, allowMutations = false } = {}) {
+    const id = crypto.randomUUID();
     return {
-      id: crypto.randomUUID(),
+      id,
       caseId: testCase.id,
       caseName: testCase.name,
       projectId: testCase.projectId,
@@ -23,7 +24,7 @@ export class RunService {
       status: 'queued',
       startedAt: null,
       finishedAt: null,
-      variables: {},
+      variables: { runId: id },
       steps: testCase.steps.map((step) => ({ id: step.id, status: 'queued', attempts: 0, logs: [], screenshots: [] }))
     };
   }
