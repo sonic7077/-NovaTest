@@ -1,0 +1,30 @@
+import { describe, expect, it, vi } from 'vitest';
+import { createRuntimeServices } from '../server/services/runtime-services.js';
+import { completeRuntimeConfig } from './helpers/runtime-config-fixture.js';
+
+describe('runtime services', () => {
+  it('constructs Web UI, CMS, and Lighthouse runners from SQLite configuration', async () => {
+    const webRunner = { execute: vi.fn() };
+    const createWebRunner = vi.fn(async () => webRunner);
+    const CmsRunner = vi.fn(function CmsRunner({ config }) { this.config = config; this.execute = vi.fn(); });
+    const store = { getRuntimeConfig: () => completeRuntimeConfig, saveRuntimeConfig: vi.fn() };
+
+    const services = await createRuntimeServices({ runtimeConfig: completeRuntimeConfig, store, createWebRunner, CmsRunner });
+
+    expect(createWebRunner).toHaveBeenCalledWith(expect.objectContaining({
+      modelConfig: completeRuntimeConfig.model,
+      lighthouseCredentials: completeRuntimeConfig.lighthouse
+    }));
+    expect(CmsRunner).toHaveBeenCalledWith({ config: completeRuntimeConfig.cms });
+    expect(services.runnerStatus).toMatchObject({ ready: true });
+    expect(services.cmsRunnerStatus).toMatchObject({ ready: true });
+  });
+
+  it('keeps the application available when the SQLite runtime configuration is absent', async () => {
+    const services = await createRuntimeServices({ runtimeConfig: undefined, store: { getRuntimeConfig: () => undefined } });
+
+    expect(services.runnerStatus).toMatchObject({ ready: false, message: 'SQLite runtime configuration is unavailable' });
+    expect(services.cmsRunnerStatus).toMatchObject({ ready: false, message: 'SQLite runtime configuration is unavailable' });
+    await expect(services.runner.web.execute()).rejects.toThrow('SQLite runtime configuration is unavailable');
+  });
+});

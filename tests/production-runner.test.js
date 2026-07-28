@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assertMidsceneConfig, createBrowserFactory, createLighthouseBeforeFirstStep, createMidsceneAgentFactory, resolveBrowserLaunchOptions, resolveCaseAssetPath, resolveMidsceneReplanningCycleLimit } from '../server/runners/production-runner.js';
+import { assertMidsceneConfig, createBrowserFactory, createLighthouseBeforeFirstStep, createMidsceneAgentFactory, midsceneConfigFromModel, resolveBrowserLaunchOptions, resolveCaseAssetPath, resolveMidsceneReplanningCycleLimit } from '../server/runners/production-runner.js';
 
 describe('Midscene configuration', () => {
   it('reports every missing model setting before starting a browser', () => {
@@ -12,6 +12,11 @@ describe('Midscene configuration', () => {
       MIDSCENE_MODEL_API_KEY: 'key',
       MIDSCENE_MODEL_NAME: 'model'
     })).not.toThrow();
+  });
+
+  it('maps the SQLite model configuration to Midscene without reading business environment values', () => {
+    expect(midsceneConfigFromModel({ baseUrl: 'https://model.example/api', modelName: 'vision', modelFamily: 'gemini', apiKey: 'private-key' }))
+      .toEqual({ MIDSCENE_MODEL_BASE_URL: 'https://model.example/api', MIDSCENE_MODEL_NAME: 'vision', MIDSCENE_MODEL_FAMILY: 'gemini', MIDSCENE_MODEL_API_KEY: 'private-key' });
   });
 
   it('uses a bounded replanning limit and falls back to 40 for invalid configuration', () => {
@@ -86,9 +91,8 @@ describe('Midscene configuration', () => {
 
   it('runs Lighthouse login only for Web UI cases on the configured project host', async () => {
     const credentials = { email: 'person@example.test', password: 'private-value', totpSecret: 'seed' };
-    const readCredentials = vi.fn(() => credentials);
     const login = vi.fn(async () => {});
-    const beforeFirstStep = createLighthouseBeforeFirstStep({ env: {}, readCredentials, login });
+    const beforeFirstStep = createLighthouseBeforeFirstStep({ credentials, login });
     const page = {};
 
     await beforeFirstStep(page, {
@@ -100,7 +104,6 @@ describe('Midscene configuration', () => {
       testCase: { target: 'api', baseUrl: 'https://dt.chenmoyuan.tech/api' }
     });
 
-    expect(readCredentials).toHaveBeenCalledTimes(1);
     expect(login).toHaveBeenCalledTimes(1);
     expect(login).toHaveBeenCalledWith(page, credentials);
   });

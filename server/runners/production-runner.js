@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { shouldUseLighthouseLogin } from '../domain/project-auth.js';
-import { loginLighthouse, readLighthouseCredentials } from '../services/lighthouse-login.js';
+import { loginLighthouse } from '../services/lighthouse-login.js';
 import { createWebRunner } from './web-runner.js';
 
 const requiredSettings = [
@@ -16,6 +16,15 @@ const maxReplanningCycleLimit = 80;
 export function assertMidsceneConfig(env) {
   const missing = requiredSettings.filter((name) => !env[name]);
   if (missing.length) throw new Error(`missing Midscene configuration: ${missing.join(', ')}`);
+}
+
+export function midsceneConfigFromModel(modelConfig = {}) {
+  return {
+    MIDSCENE_MODEL_BASE_URL: String(modelConfig.baseUrl || ''),
+    MIDSCENE_MODEL_NAME: String(modelConfig.modelName || ''),
+    MIDSCENE_MODEL_FAMILY: String(modelConfig.modelFamily || ''),
+    MIDSCENE_MODEL_API_KEY: String(modelConfig.apiKey || '')
+  };
 }
 
 export function resolveBrowserLaunchOptions(env) {
@@ -75,26 +84,29 @@ export function createBrowserFactory({ launch }) {
   };
 }
 
-export function createLighthouseBeforeFirstStep({ env = process.env, readCredentials = readLighthouseCredentials, login = loginLighthouse } = {}) {
+export function createLighthouseBeforeFirstStep({ credentials, login = loginLighthouse } = {}) {
   return async (page, context) => {
     if (!shouldUseLighthouseLogin(context.project, context.testCase)) return;
-    await login(page, readCredentials(env));
+    await login(page, credentials);
   };
 }
 
-export async function createProductionRunner({ env = process.env, screenshotDir = 'data/evidence', caseAssetsDir = join(process.cwd(), 'data/case-assets'), beforeFirstStep = createLighthouseBeforeFirstStep({ env }) } = {}) {
-  assertMidsceneConfig(env);
-  const [{ chromium }, { PlaywrightAgent }] = await Promise.all([
+export async function createProductionRunner({ modelConfig, lighthouseCredentials, env = process.env, screenshotDir = 'data/evidence', caseAssetsDir = join(process.cwd(), 'data/case-assets'), beforeFirstStep } = {}) {
+  const midsceneConfig = midsceneConfigFromModel(modelConfig);
+  assertMidsceneConfig(midsceneConfig);
+  const [{ chromium }, { PlaywrightAgent }, { overrideAIConfig }] = await Promise.all([
     import('playwright'),
-    import('@midscene/web/playwright')
+    import('@midscene/web/playwright'),
+    import('@midscene/shared/env')
   ]);
+  overrideAIConfig(midsceneConfig);
   await mkdir(screenshotDir, { recursive: true });
   const browser = createBrowserFactory({ launch: () => chromium.launch(resolveBrowserLaunchOptions(env)) });
 
   return createWebRunner({
     browser,
     agentFactory: createMidsceneAgentFactory(PlaywrightAgent, env),
-    beforeFirstStep,
+    beforeFirstStep: beforeFirstStep || createLighthouseBeforeFirstStep({ credentials: lighthouseCredentials }),
     screenshotDir,
     resolveAssetPath: (assetPath) => resolveCaseAssetPath(assetPath, caseAssetsDir)
   });

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createSqliteStore } from '../server/storage/sqlite-store.js';
-import { completeRuntimeConfig } from './runtime-config-service.test.js';
+import { completeRuntimeConfig } from './helpers/runtime-config-fixture.js';
 
 const webCase = {
   id: 'case-1',
@@ -30,7 +30,7 @@ describe('SQLite store', () => {
     }
   });
 
-  it('persists an encrypted model override independently from test assets', async () => {
+  it('keeps the legacy model override separate from the SQLite runtime configuration', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-model-config-'));
     try {
       const store = createSqliteStore({ databasePath: join(directory, 'novatest.db') });
