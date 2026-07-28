@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node server/index.js",
+    "config:bootstrap": "node server/commands/bootstrap-runtime-config.js",
     "test": "vitest run"
   },
   "dependencies": {
