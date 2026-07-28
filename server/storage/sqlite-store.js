@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, readFileSync, renameSync } from 'node:fs';
 import { normalizeProjectWebAuth } from '../domain/project-auth.js';
+import { normalizeRuntimeConfig } from '../services/runtime-config-service.js';
 
 const schema = `
   PRAGMA foreign_keys = ON;
@@ -348,6 +349,19 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     db.prepare(`INSERT INTO platform_settings (key, value_json, updated_at) VALUES ('model_config', ?, ?)
       ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`).run(JSON.stringify(saved), new Date().toISOString());
     return getModelConfig();
+  }
+
+  function getRuntimeConfig() {
+    const row = db.prepare("SELECT value_json AS valueJson FROM platform_settings WHERE key = 'runtime_config'").get();
+    return row ? JSON.parse(row.valueJson) : undefined;
+  }
+
+  function saveRuntimeConfig(config) {
+    const saved = normalizeRuntimeConfig(config);
+    db.prepare(`INSERT INTO platform_settings (key, value_json, updated_at) VALUES ('runtime_config', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`)
+      .run(JSON.stringify(saved), new Date().toISOString());
+    return saved;
   }
 
   const selectCase = db.prepare(`
@@ -792,6 +806,8 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     ensureDefaultAdmin,
     getModelConfig,
     saveModelConfig,
+    getRuntimeConfig,
+    saveRuntimeConfig,
     failInterruptedExecutions
   };
 }
