@@ -327,10 +327,29 @@ describe('execution API', () => {
         baseUrl: 'https://model.example/api',
         modelName: 'vision-model',
         modelFamily: 'gemini',
-        apiKey: 'pro****************'
+        apiKey: 'pro****************',
+        hasApiKey: true
       });
       expect(JSON.stringify(body)).not.toContain('provider-secret-key');
     });
+  });
+
+  it('requires an authenticated session to update model configuration', async () => {
+    const saved = [];
+    const app = createApp({
+      runner: {},
+      store: createMemoryStore(),
+      authRequired: true,
+      modelConfigManager: {
+        getPublicConfig: () => ({ source: 'PLATFORM', baseUrl: 'https://model.example', modelName: 'vision', modelFamily: '', apiKey: 'mod****************', hasApiKey: true }),
+        async update(input) { saved.push(input); return this.getPublicConfig(); }
+      }
+    });
+
+    await request(app).put('/api/model-config').send({ baseUrl: 'https://model.example', modelName: 'vision' }).expect(401);
+    const login = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'admin123' }).expect(200);
+    await request(app).put('/api/model-config').set('Cookie', login.headers['set-cookie']).send({ baseUrl: 'https://model.example', modelName: 'vision' }).expect(200).expect(({ body }) => expect(body.hasApiKey).toBe(true));
+    expect(saved).toEqual([{ baseUrl: 'https://model.example', modelName: 'vision' }]);
   });
 
   it('seeds read-only CMS cases idempotently without running them', () => {

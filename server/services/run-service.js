@@ -34,7 +34,8 @@ export class RunService {
   }
 
   async start(testCase, { project, apiSession, selectedApiIds, allowMutations, run: queuedRun, onUpdate } = {}) {
-    const runner = this.runner[testCase.target] || this.runner;
+    const configuredRunner = this.runner[testCase.target] || this.runner;
+    const runner = configuredRunner.snapshot ? configuredRunner.snapshot() : configuredRunner;
     const run = queuedRun || this.createQueuedRun(testCase);
     const publish = () => onUpdate?.(structuredClone(run));
     run.status = 'running';

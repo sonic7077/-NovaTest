@@ -18,6 +18,23 @@ const webCase = {
 };
 
 describe('SQLite store', () => {
+  it('persists an encrypted model override independently from test assets', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-model-config-'));
+    try {
+      const store = createSqliteStore({ databasePath: join(directory, 'novatest.db') });
+      store.saveModelConfig({ baseUrl: 'https://model.example', modelName: 'vision', modelFamily: 'gemini', encryptedApiKey: 'ciphertext' });
+
+      expect(store.getModelConfig()).toMatchObject({
+        baseUrl: 'https://model.example',
+        modelName: 'vision',
+        modelFamily: 'gemini',
+        encryptedApiKey: 'ciphertext'
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('initializes one persistent administrator and saves its profile', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-auth-store-'));
     const databasePath = join(directory, 'novatest.db');

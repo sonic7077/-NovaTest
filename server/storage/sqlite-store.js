@@ -29,6 +29,11 @@ const schema = `
     PRIMARY KEY (case_id, id),
     UNIQUE (case_id, position)
   );
+  CREATE TABLE IF NOT EXISTS platform_settings (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `;
 
 export function createSqliteStore({ databasePath, legacyJsonPath }) {
@@ -325,6 +330,24 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   function ensureDefaultAdmin({ hash, salt }) {
     const existing = getUserByUsername('admin');
     return existing || saveUser({ username: 'admin', passwordHash: hash, passwordSalt: salt, displayName: 'admin', jobTitle: '平台管理员', email: '' });
+  }
+
+  function getModelConfig() {
+    const row = db.prepare("SELECT value_json AS valueJson FROM platform_settings WHERE key = 'model_config'").get();
+    return row ? JSON.parse(row.valueJson) : undefined;
+  }
+
+  function saveModelConfig(config) {
+    const saved = {
+      source: config.source || 'PLATFORM',
+      baseUrl: config.baseUrl,
+      modelName: config.modelName,
+      modelFamily: config.modelFamily || '',
+      encryptedApiKey: config.encryptedApiKey || ''
+    };
+    db.prepare(`INSERT INTO platform_settings (key, value_json, updated_at) VALUES ('model_config', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`).run(JSON.stringify(saved), new Date().toISOString());
+    return getModelConfig();
   }
 
   const selectCase = db.prepare(`
@@ -767,6 +790,8 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     getUser,
     saveUser,
     ensureDefaultAdmin,
+    getModelConfig,
+    saveModelConfig,
     failInterruptedExecutions
   };
 }

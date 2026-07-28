@@ -3,7 +3,8 @@ import {
   decryptModelApiKey,
   encryptModelApiKey,
   normalizeModelConfig,
-  publicModelConfig
+  publicModelConfig,
+  modelConfigRunnerEnv
 } from '../server/services/model-config-service.js';
 
 describe('model configuration service', () => {
@@ -32,5 +33,11 @@ describe('model configuration service', () => {
   it('rejects an unsupported model endpoint before it can be saved', () => {
     expect(() => normalizeModelConfig({ baseUrl: 'ftp://model.example', modelName: 'vision' }, {}, { encryptionKey }))
       .toThrow('baseUrl must use HTTP or HTTPS');
+  });
+
+  it('does not restore an environment key after an administrator clears the saved key', () => {
+    const env = modelConfigRunnerEnv({ baseUrl: 'https://model.example', modelName: 'vision', encryptedApiKey: '' }, encryptionKey, { MIDSCENE_MODEL_API_KEY: 'environment-secret' });
+
+    expect(env.MIDSCENE_MODEL_API_KEY).toBe('');
   });
 });

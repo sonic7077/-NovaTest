@@ -10,12 +10,14 @@ import { renderBatchReport, renderReport } from './services/report-service.js';
 import { ExecutionService } from './services/execution-service.js';
 import { hashPasswordSync, publicUser, validatePasswordChange, validateProfile, verifyPassword } from './services/auth-service.js';
 import { createCaseAssetService } from './services/case-asset-service.js';
+import { publicModelConfig } from './services/model-config-service.js';
 
 export function createMemoryStore() {
   const cases = new Map();
   const runs = new Map();
   const batches = new Map();
   const users = new Map();
+  let modelConfig;
   const projects = new Map([['default-project', { id: 'default-project', name: '默认项目', webAuth: undefined, createdAt: '1970-01-01T00:00:00.000Z', updatedAt: '1970-01-01T00:00:00.000Z' }]]);
   function listProjects() {
     return [...projects.values()].map((project) => {
@@ -109,6 +111,8 @@ export function createMemoryStore() {
     getUser(id) { return users.get(id); },
     saveUser,
     ensureDefaultAdmin,
+    getModelConfig() { return modelConfig; },
+    saveModelConfig(config) { modelConfig = { ...config }; return modelConfig; },
     failInterruptedExecutions
   };
 }
@@ -116,17 +120,10 @@ export function createMemoryStore() {
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
 function sanitizeModelConfig(modelConfig) {
-  const apiKey = String(modelConfig.apiKey || '');
-  return {
-    source: modelConfig.source || 'MIDSCENE',
-    baseUrl: modelConfig.baseUrl || '',
-    modelName: modelConfig.modelName || '',
-    modelFamily: modelConfig.modelFamily || '',
-    apiKey: apiKey.includes('*') ? apiKey : (apiKey ? `${apiKey.slice(0, 3)}****************` : '')
-  };
+  return publicModelConfig(modelConfig);
 }
 
-export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), caseAssetsDir = join(projectRoot, 'data/case-assets'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, modelConfig = { source: 'MIDSCENE', baseUrl: '', modelName: '', modelFamily: '', apiKey: '' }, cmsSeedCases = [], executionSchedule, authRequired = false } = {}) {
+export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), caseAssetsDir = join(projectRoot, 'data/case-assets'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, modelConfig = { source: 'MIDSCENE', baseUrl: '', modelName: '', modelFamily: '', apiKey: '' }, modelConfigManager, cmsSeedCases = [], executionSchedule, authRequired = false } = {}) {
   const app = express();
   const sessions = new Map();
   if (authRequired) store.ensureDefaultAdmin(hashPasswordSync('admin123'));
@@ -139,6 +136,10 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
   const assetService = createCaseAssetService({ caseAssetsDir, store });
   const requestedMutationAuthorization = (value) => value === true;
+  const resolvedModelConfigManager = modelConfigManager || {
+    getPublicConfig: () => sanitizeModelConfig(modelConfig),
+    async update() { throw new Error('model configuration updates are unavailable'); }
+  };
 
   app.get('/api/health', (_req, res) => res.json({ webRunner: runnerStatus, cmsRunner: cmsRunnerStatus }));
 
@@ -286,7 +287,11 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     return res.status(404).json({ error: 'execution not found' });
   });
   app.get('/api/dashboard', (req, res) => res.json(store.getDashboard({ range: req.query.range || '7d' })));
-  app.get('/api/model-config', (_req, res) => res.json(sanitizeModelConfig(modelConfig)));
+  app.get('/api/model-config', (_req, res) => res.json(resolvedModelConfigManager.getPublicConfig()));
+  app.put('/api/model-config', async (req, res) => {
+    try { return res.json(await resolvedModelConfigManager.update(req.body || {})); }
+    catch (error) { return res.status(400).json({ error: error.message || '模型配置保存失败' }); }
+  });
   app.get('/api/reports', (req, res) => res.json(store.listReports({ projectId: req.query.projectId || '', target: req.query.target || '', status: req.query.status || '', range: req.query.range || '7d' })));
 
   app.get('/api/batches', (req, res) => res.json(store.listBatches(req.query.projectId || '').reverse()));

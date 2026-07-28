@@ -82,7 +82,10 @@ export function publicModelConfig(config = {}, { decryptApiKey, fallback = {} } 
 }
 
 export function modelConfigRunnerEnv(config, secret, fallbackEnv = {}) {
-  const apiKey = config.encryptedApiKey ? decryptModelApiKey(config.encryptedApiKey, secret) : String(fallbackEnv.MIDSCENE_MODEL_API_KEY || '');
+  const hasSavedKeySetting = Object.hasOwn(config, 'encryptedApiKey');
+  const apiKey = config.encryptedApiKey
+    ? decryptModelApiKey(config.encryptedApiKey, secret)
+    : (hasSavedKeySetting ? '' : String(fallbackEnv.MIDSCENE_MODEL_API_KEY || ''));
   return {
     ...fallbackEnv,
     MIDSCENE_MODEL_BASE_URL: config.baseUrl || fallbackEnv.MIDSCENE_MODEL_BASE_URL || '',
