@@ -809,34 +809,42 @@ async function loadRunnerStatus() {
   $('#runState').dataset.cmsReady = String(cmsRunner.ready);
 }
 
-function modelConfigField(label, value) {
-  const field = document.createElement('div');
-  field.className = 'model-config-field';
-  const name = document.createElement('span');
-  name.textContent = label;
-  const content = document.createElement('strong');
-  content.textContent = value || '未配置';
-  field.append(name, content);
-  return field;
-}
-
 async function loadModelConfig() {
   const [configResponse, healthResponse] = await Promise.all([fetch('/api/model-config'), fetch('/api/health')]);
   if (!configResponse.ok || !healthResponse.ok) throw new Error('无法读取模型配置');
   const [config, health] = await Promise.all([configResponse.json(), healthResponse.json()]);
-  const details = $('#modelConfigDetails');
-  details.replaceChildren(
-    modelConfigField('配置来源', config.source),
-    modelConfigField('服务地址', config.baseUrl),
-    modelConfigField('模型名称', config.modelName),
-    modelConfigField('模型适配器', config.modelFamily),
-    modelConfigField('API Key', config.apiKey)
-  );
+  $('#modelBaseUrl').value = config.baseUrl || '';
+  $('#modelName').value = config.modelName || '';
+  $('#modelFamily').value = config.modelFamily || '';
+  $('#modelApiKey').value = '';
+  $('#clearModelApiKey').checked = false;
+  $('#modelApiKeyStatus').textContent = config.hasApiKey ? '已保存' : '未保存';
+  $('#modelConfigSource').textContent = config.source || 'MIDSCENE';
   const ready = health.webRunner.ready;
   $('#modelConfigStatus').textContent = ready ? 'Midscene Web runner 已就绪' : health.webRunner.message;
   const badge = $('#modelConfigBadge');
   badge.textContent = ready ? '已就绪' : '不可用';
   badge.classList.toggle('offline', !ready);
+  $('#modelWebHealth').textContent = ready ? '已就绪' : health.webRunner.message;
+  $('#modelCmsHealth').textContent = health.cmsRunner.ready ? '已就绪' : health.cmsRunner.message;
+}
+
+async function saveModelConfig(event) {
+  event.preventDefault();
+  const button = $('#saveModelConfig');
+  button.disabled = true;
+  button.innerHTML = '<i data-lucide="loader-circle"></i>保存中';
+  renderIcons();
+  try {
+    const response = await fetch('/api/model-config', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ baseUrl: $('#modelBaseUrl').value, modelName: $('#modelName').value, modelFamily: $('#modelFamily').value, apiKey: $('#modelApiKey').value, clearApiKey: $('#clearModelApiKey').checked }) });
+    if (!response.ok) throw new Error((await response.json()).error || '模型配置保存失败');
+    await loadModelConfig();
+    showToast('模型配置已保存，新任务将使用该连接');
+  } finally {
+    button.disabled = false;
+    button.innerHTML = '<i data-lucide="save"></i>保存配置';
+    renderIcons();
+  }
 }
 
 const dashboardEmptyMessage = '所选时间范围内暂无已完成执行记录';
@@ -1284,6 +1292,7 @@ $('#reportProject').addEventListener('change', () => loadReports().catch((error)
 $('#loginForm').addEventListener('submit', (event) => handleLogin(event).catch(() => { $('#loginError').textContent = '登录失败，请稍后重试。'; $('#loginError').hidden = false; }));
 $('#profileForm').addEventListener('submit', (event) => saveProfile(event).catch((error) => showToast(error.message, true)));
 $('#passwordForm').addEventListener('submit', (event) => changePassword(event).catch((error) => showToast(error.message, true)));
+$('#modelConfigForm').addEventListener('submit', (event) => saveModelConfig(event).catch((error) => showToast(error.message, true)));
 $('#logoutButton').addEventListener('click', () => logout().catch((error) => showToast(error.message, true)));
 $('#currentUserButton').addEventListener('click', () => { location.hash = '#/profile'; });
 window.addEventListener('hashchange', () => { if (currentUser) renderRoute(); });

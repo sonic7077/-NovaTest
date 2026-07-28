@@ -46,7 +46,7 @@ describe('test console stylesheet', () => {
     expect(html).toContain('href="#/reports"');
     expect(html).toContain('href="#/model-config"');
     expect(html).toContain('data-route-view="model-config"');
-    expect(html).toContain('id="modelConfigDetails"');
+    expect(html).toContain('id="modelConfigForm"');
     expect(html).toContain('data-route-view="executions"');
     expect(html).toContain('data-route-view="reports"');
     expect(html).toContain('id="executionProject"');
@@ -115,6 +115,13 @@ describe('test console stylesheet', () => {
     expect(script).toContain('function renderExecutionDetail(');
     expect(stylesheet).toContain('.execution-conclusion');
     expect(stylesheet).toContain('.model-config-grid');
+    expect(html).toContain('id="modelConfigForm"');
+    expect(html).toContain('id="modelApiKey"');
+    expect(html).toContain('id="clearModelApiKey"');
+    expect(script).toContain('async function saveModelConfig(event)');
+    expect(script).toContain("fetch('/api/model-config', { method: 'PUT'");
+    expect(stylesheet).toContain('.model-config-form');
+    expect(stylesheet).toContain('.model-config-health');
     expect(stylesheet).toContain('.execution-timeline');
     expect(script).toContain('function renderRoute()');
     expect(script).toContain("fetch('/api/model-config')");

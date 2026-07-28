@@ -90,18 +90,11 @@ deploy:test:
       git checkout "${DEPLOY_BRANCH}"
       git reset --hard "origin/${DEPLOY_BRANCH}"
 
-      # 2) 首次生成 test.env（已存在则保留，不覆盖）
-      if [ ! -f deploy/test.env ]; then
-        cp deploy/test.env.example deploy/test.env
-        echo "created deploy/test.env from example"
-      fi
+      # 2) 从源码构建并启动容器。业务配置由 data/novatest.db 提供。
+      docker compose -f docker-compose.deploy.yml up -d --build
 
-      # 3) 从源码构建并启动容器
-      docker compose -f docker-compose.deploy.yml --env-file deploy/test.env up -d --build
-
-      # 4) host nginx 站点 + 证书
-      APP_PORT="$(grep -E '^AT_APP_PORT=' deploy/test.env | cut -d= -f2)"
-      APP_PORT="${APP_PORT:-18084}"
+      # 3) host nginx 站点 + 证书
+      APP_PORT="18084"
       CONF="/etc/nginx/sites-available/${DEPLOY_DOMAIN}"
       mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
 
@@ -137,7 +130,7 @@ deploy:test:
         nginx -t && reload_nginx
       fi
 
-      # 5) 健康校验
+      # 4) 健康校验
       sleep 5
       curl -k -fsS "https://${DEPLOY_DOMAIN}/api/health" && echo "  <- health OK"
       REMOTE

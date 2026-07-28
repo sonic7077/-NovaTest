@@ -7,5 +7,8 @@ describe('production entrypoint', () => {
 
     expect(source).toContain("createSqliteStore({ databasePath: 'data/novatest.db', legacyJsonPath: 'data/store.json' })");
     expect(source).not.toContain("createFileStore('data/store.json')");
+    expect(source).not.toContain('process.env.CMS_');
+    expect(source).not.toContain('process.env.LIGHTHOUSE_');
+    expect(source).not.toContain('process.env.MIDSCENE_');
   });
 });

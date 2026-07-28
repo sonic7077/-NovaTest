@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createSqliteStore } from '../server/storage/sqlite-store.js';
+import { completeRuntimeConfig } from './helpers/runtime-config-fixture.js';
 
 const webCase = {
   id: 'case-1',
@@ -18,6 +19,34 @@ const webCase = {
 };
 
 describe('SQLite store', () => {
+  it('persists one complete runtime configuration record', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-runtime-config-'));
+    try {
+      const store = createSqliteStore({ databasePath: join(directory, 'novatest.db') });
+      store.saveRuntimeConfig(completeRuntimeConfig);
+      expect(store.getRuntimeConfig()).toEqual(completeRuntimeConfig);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the legacy model override separate from the SQLite runtime configuration', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-model-config-'));
+    try {
+      const store = createSqliteStore({ databasePath: join(directory, 'novatest.db') });
+      store.saveModelConfig({ baseUrl: 'https://model.example', modelName: 'vision', modelFamily: 'gemini', encryptedApiKey: 'ciphertext' });
+
+      expect(store.getModelConfig()).toMatchObject({
+        baseUrl: 'https://model.example',
+        modelName: 'vision',
+        modelFamily: 'gemini',
+        encryptedApiKey: 'ciphertext'
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('initializes one persistent administrator and saves its profile', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-auth-store-'));
     const databasePath = join(directory, 'novatest.db');
