@@ -1,3 +1,6 @@
+import { executionFocusRoute, readExecutionFocus, resolveSelectedExecutionId } from './client/execution-navigation.js';
+import { canDeleteWebStep, clipboardImageFile } from './client/web-step-interactions.js';
+
 const $ = (selector) => document.querySelector(selector);
 const steps = $('#steps');
 const apiSteps = $('#apiSteps');
@@ -14,8 +17,13 @@ let dashboardRange = '7d';
 let executionPollId;
 let currentRouteView = 'dashboard';
 let selectedExecutionId = null;
+let handledExecutionFocusId = '';
 let currentUser = null;
 const selectedCaseIds = new Set();
+
+function renderIcons() {
+  window.lucide?.createIcons();
+}
 
 function setApplicationVisible(visible) {
   document.querySelector('.sidebar').hidden = !visible;
@@ -84,21 +92,23 @@ function updateEditorBreadcrumb() {
 function renderRoute() {
   const route = location.hash || '#/dashboard';
   const projectRoute = /^#\/projects\/([^/]+)\/assets(?:\/([^/]+))?$/.exec(route);
-  const view = route === '#/dashboard' ? 'dashboard' : (route === '#/profile' ? 'profile' : (route === '#/executions' || route.startsWith('#/executions?') ? 'executions' : (route === '#/reports' ? 'reports' : (route === '#/assets' ? 'projects-list' : (projectRoute ? (projectRoute[2] ? 'asset-editor' : 'assets-list') : 'asset-editor')))));
+  const view = route === '#/dashboard' ? 'dashboard' : (route === '#/profile' ? 'profile' : (route === '#/model-config' ? 'model-config' : (route === '#/executions' || route.startsWith('#/executions?') ? 'executions' : (route === '#/reports' ? 'reports' : (route === '#/assets' ? 'projects-list' : (projectRoute ? (projectRoute[2] ? 'asset-editor' : 'assets-list') : 'asset-editor'))))));
   currentRouteView = view;
   if (view !== 'executions') stopExecutionPolling();
   document.querySelectorAll('.route-view').forEach((element) => { element.hidden = element.dataset.routeView !== view; });
-  document.querySelectorAll('.nav-item[href^="#/"]').forEach((link) => link.classList.toggle('active', link.getAttribute('href') === (view === 'dashboard' ? '#/dashboard' : view === 'executions' ? '#/executions' : view === 'reports' ? '#/reports' : '#/assets')));
+  document.querySelectorAll('.nav-item[href^="#/"]').forEach((link) => link.classList.toggle('active', link.getAttribute('href') === (view === 'dashboard' ? '#/dashboard' : view === 'executions' ? '#/executions' : view === 'reports' ? '#/reports' : view === 'model-config' ? '#/model-config' : '#/assets')));
   if (view === 'dashboard') $('#breadcrumb').innerHTML = '工作台 <i data-lucide="chevron-right"></i> <span>执行概览</span>';
   else if (view === 'projects-list') $('#breadcrumb').innerHTML = '测试资产 <i data-lucide="chevron-right"></i> <span>项目目录</span>';
   else if (view === 'executions') $('#breadcrumb').innerHTML = '执行中心 <i data-lucide="chevron-right"></i> <span>任务队列</span>';
   else if (view === 'reports') $('#breadcrumb').innerHTML = '质量报告 <i data-lucide="chevron-right"></i> <span>报告历史</span>';
+  else if (view === 'model-config') $('#breadcrumb').innerHTML = 'AI 模型配置 <i data-lucide="chevron-right"></i> <span>当前配置</span>';
   else if (view === 'profile') $('#breadcrumb').innerHTML = '个人信息 <i data-lucide="chevron-right"></i> <span>账户设置</span>';
   else updateEditorBreadcrumb();
-  lucide.createIcons();
+  renderIcons();
   if (view === 'dashboard') loadDashboard();
-  if (view === 'executions') loadProjectFilters().then(() => loadExecutions()).catch((error) => showToast(error.message, true));
+  if (view === 'executions') loadProjectFilters(readExecutionFocus(route).projectId).then(() => loadExecutions()).catch((error) => showToast(error.message, true));
   if (view === 'reports') loadProjectFilters().then(() => loadReports()).catch((error) => showToast(error.message, true));
+  if (view === 'model-config') loadModelConfig().catch((error) => showToast(error.message, true));
   if (view === 'projects-list') loadProjects().catch((error) => showToast(error.message, true));
   if (projectRoute) {
     const [, encodedProjectId, action] = projectRoute;
@@ -136,7 +146,7 @@ async function redirectToDefaultProject(action = '') {
 
 window.addEventListener('hashchange', renderRoute);
 
-lucide.createIcons();
+renderIcons();
 
 function showToast(message, isError = false) {
   toast.querySelector('span').textContent = message;
@@ -177,7 +187,7 @@ document.querySelectorAll('.target-tab').forEach((tab) => {
 function syncEditorTarget() {
   const isApi = target === 'api';
   steps.hidden = isApi;
-  $('#addStep').hidden = isApi;
+  $('#addStep').closest('.add-step-wrap').hidden = isApi;
   apiSteps.hidden = !isApi;
   $('#addApiStep').hidden = !isApi;
   $('#apiRequestPreview').hidden = !isApi;
@@ -186,24 +196,47 @@ function syncEditorTarget() {
   $('#editorSubtitle').textContent = isApi ? '以明确的请求、断言和变量提取定义接口回归流程。' : '自然语言描述网页步骤，由 Playwright 与 Midscene 自动执行。';
   document.querySelectorAll('.target-tab[data-target]').forEach((tab) => tab.classList.toggle('selected', tab.dataset.target === target));
   updateEditorBreadcrumb();
-  lucide.createIcons();
+  renderIcons();
   if (isApi) updateApiRequestPreview();
 }
 
-$('#addStep').addEventListener('click', () => {
-  const number = String(steps.children.length + 1).padStart(2, '0');
-  const node = document.createElement('div');
-  node.className = 'step';
-  node.dataset.kind = 'action';
-  node.innerHTML = `<span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">${number}</span><div class="step-content"><div class="step-type"><i data-lucide="mouse-pointer-click"></i>执行操作</div><textarea placeholder="例如：点击确认按钮，等待页面提示提交成功"></textarea></div><button class="step-menu" title="步骤菜单"><i data-lucide="more-horizontal"></i></button>`;
+function closeStepMenus(except) {
+  document.querySelectorAll('.step-menu-popover, .add-step-menu').forEach((menu) => {
+    if (menu !== except) menu.hidden = true;
+  });
+  $('#addStep').setAttribute('aria-expanded', String(except === $('#addStepMenu')));
+}
+
+function addWebStep(kind = 'action') {
+  const node = createStepNode({ kind, instruction: '' }, steps.children.length);
   steps.appendChild(node);
   node.querySelector('textarea').focus();
-  lucide.createIcons();
+  renderIcons();
+}
+
+$('#addStep').addEventListener('click', () => {
+  const menu = $('#addStepMenu');
+  const willOpen = menu.hidden;
+  closeStepMenus(menu);
+  menu.hidden = !willOpen;
+  $('#addStep').setAttribute('aria-expanded', String(willOpen));
+});
+
+$('#addStepMenu').addEventListener('click', (event) => {
+  const option = event.target.closest('[data-add-web-step]');
+  if (!option) return;
+  if (option.dataset.addWebStep === 'assert') addWebStep('assert');
+  else addWebStep('action');
+  closeStepMenus();
+});
+
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('.step-menu-wrap, .add-step-wrap')) closeStepMenus();
 });
 
 $('#addApiStep').addEventListener('click', () => {
   apiSteps.appendChild(renderApiStepNode({ instruction: '', request: { method: 'POST', safety: 'readonly', payload: {}, expectedStatus: 1, expectedJson: [], extract: {} } }, apiSteps.children.length));
-  lucide.createIcons();
+  renderIcons();
   updateApiRequestPreview();
 });
 
@@ -214,7 +247,7 @@ function updateApiRequestPreview() {
   if (!first) return;
   const value = (field) => first.querySelector(`[data-field="${field}"]`)?.value || '';
   try {
-    $('#apiPreviewCode').textContent = JSON.stringify({ method: 'POST', action: value('action'), payload: parseJson(value('payload'), '请求 Body', {}), expectedStatus: Number(value('expectedStatus') || 1), expectedJson: parseJson(value('expectedJson'), 'JSON 断言', []), extract: parseJson(value('extract'), '变量提取', {}) }, null, 2);
+    $('#apiPreviewCode').textContent = JSON.stringify({ method: 'POST', action: value('action'), payload: parseJson(value('payload'), '请求 Body', {}), expectedStatus: Number(value('expectedStatus') || 1), expectedJson: parseJson(value('expectedJson'), 'JSON 断言', []), extract: parseJson(value('extract'), '变量提取', {}), select: parseJson(value('select'), '列表选择', undefined) }, null, 2);
   } catch (error) {
     $('#apiPreviewCode').textContent = error.message;
   }
@@ -231,7 +264,13 @@ function readCaseFromForm() {
     steps: [...steps.children].map((step, index) => ({
       id: `step-${index + 1}`,
       kind: step.dataset.kind || 'action',
-      instruction: step.querySelector('textarea').value.trim()
+      instruction: step.querySelector('textarea').value.trim(),
+      visualChecks: [...step.querySelectorAll('[data-visual-check]')].map((card) => ({
+        id: card.dataset.visualCheckId,
+        assetPath: card.dataset.assetPath,
+        source: card.dataset.source || 'upload',
+        description: card.querySelector('[data-visual-description]').value.trim()
+      }))
     }))
   };
 }
@@ -246,7 +285,7 @@ function readApiCaseFromForm() {
     projectId: $('#caseProjectId').value, name: document.querySelector('.case-meta input').value.trim(), target: 'api', baseUrl: $('#baseUrl').value.trim(), viewport: 'desktop',
     steps: [...apiSteps.children].map((node, index) => ({
       id: `api-step-${index + 1}`, kind: 'apiRequest', instruction: node.querySelector('[data-field="instruction"]').value.trim() || '执行接口请求',
-      request: { action: node.querySelector('[data-field="action"]').value.trim(), method: 'POST', safety: node.querySelector('[data-field="safety"]').value, payload: parseJson(node.querySelector('[data-field="payload"]').value, '请求 Body', {}), expectedStatus: Number(node.querySelector('[data-field="expectedStatus"]').value || 1), expectedJson: parseJson(node.querySelector('[data-field="expectedJson"]').value, 'JSON 断言', []), extract: parseJson(node.querySelector('[data-field="extract"]').value, '变量提取', {}) }
+      request: { action: node.querySelector('[data-field="action"]').value.trim(), method: 'POST', safety: node.querySelector('[data-field="safety"]').value, payload: parseJson(node.querySelector('[data-field="payload"]').value, '请求 Body', {}), expectedStatus: Number(node.querySelector('[data-field="expectedStatus"]').value || 1), expectedJson: parseJson(node.querySelector('[data-field="expectedJson"]').value, 'JSON 断言', []), extract: parseJson(node.querySelector('[data-field="extract"]').value, '变量提取', {}), select: parseJson(node.querySelector('[data-field="select"]').value, '列表选择', undefined) }
     }))
   };
 }
@@ -255,7 +294,7 @@ function renderApiStepNode(step, index) {
   const request = step.request || {};
   const node = document.createElement('article');
   node.className = 'step api-request';
-  node.innerHTML = `<span class="step-number">${String(index + 1).padStart(2, '0')}</span><div class="step-content"><div class="step-type query"><i data-lucide="braces"></i>接口请求</div><label>步骤说明<input data-field="instruction"></label><div class="api-grid"><label>Action<input data-field="action" placeholder="list_post"></label><label>安全级别<select data-field="safety"><option value="readonly">只读</option><option value="mutating">写操作</option></select></label><label>预期业务状态<input data-field="expectedStatus" type="number" value="1"></label></div><label>JSON Body<textarea data-field="payload" placeholder='{"status":10}'></textarea></label><label>JSON 断言<textarea data-field="expectedJson" placeholder='[{"path":"$.total","equals":1}]'></textarea></label><label>变量提取<textarea data-field="extract" placeholder='{"postId":"$.list[0].id"}'></textarea></label></div>`;
+  node.innerHTML = `<span class="step-number">${String(index + 1).padStart(2, '0')}</span><div class="step-content"><div class="step-type query"><i data-lucide="braces"></i>接口请求</div><label>步骤说明<input data-field="instruction"></label><div class="api-grid"><label>Action<input data-field="action" placeholder="list_post"></label><label>安全级别<select data-field="safety"><option value="readonly">只读</option><option value="mutating">写操作</option></select></label><label>预期业务状态<input data-field="expectedStatus" type="number" value="1"></label></div><label>JSON Body<textarea data-field="payload" placeholder='{"status":10}'></textarea></label><label>JSON 断言<textarea data-field="expectedJson" placeholder='[{"path":"$.total","equals":1}]'></textarea></label><label>变量提取<textarea data-field="extract" placeholder='{"postId":"$.list[0].id"}'></textarea></label><label>选择列表项<textarea data-field="select" placeholder='{"listPath":"$.data.list","variable":"memberLogId","idPath":"$.id"}'></textarea></label></div>`;
   node.querySelector('[data-field="instruction"]').value = step.instruction || '';
   node.querySelector('[data-field="action"]').value = request.action || '';
   node.querySelector('[data-field="safety"]').value = request.safety || 'readonly';
@@ -263,6 +302,7 @@ function renderApiStepNode(step, index) {
   node.querySelector('[data-field="payload"]').value = JSON.stringify(request.payload || {}, null, 2);
   node.querySelector('[data-field="expectedJson"]').value = JSON.stringify(request.expectedJson || [], null, 2);
   node.querySelector('[data-field="extract"]').value = JSON.stringify(request.extract || {}, null, 2);
+  node.querySelector('[data-field="select"]').value = request.select ? JSON.stringify(request.select, null, 2) : '';
   return node;
 }
 
@@ -270,14 +310,128 @@ function renumberSteps() {
   [...steps.children].forEach((step, index) => { step.querySelector('.step-number').textContent = String(index + 1).padStart(2, '0'); });
 }
 
+function visualAssetUrl(assetPath) {
+  const [caseId, fileName, ...rest] = String(assetPath || '').split('/');
+  if (!caseId || !fileName || rest.length) return '';
+  return `/api/cases/${encodeURIComponent(caseId)}/assets/${encodeURIComponent(fileName)}`;
+}
+
+function visualCheckCopy(kind) {
+  return kind === 'assert'
+    ? { heading: '验证依据图片', label: '验证说明', placeholder: '描述预期的验证结果' }
+    : { heading: '辅助识别图片', label: '辅助识别说明', placeholder: '描述图片中的页面元素或状态' };
+}
+
+function createVisualCheckCard(visualCheck, kind = 'action') {
+  const copy = visualCheckCopy(kind);
+  const card = document.createElement('article');
+  card.className = 'visual-check-card';
+  card.dataset.visualCheck = '';
+  card.dataset.visualCheckId = visualCheck.id;
+  card.dataset.assetPath = visualCheck.assetPath;
+  card.dataset.source = visualCheck.source || 'upload';
+
+  const preview = document.createElement('img');
+  preview.className = 'visual-check-preview';
+  preview.alt = '参考图片预览';
+  preview.src = visualCheck.previewUrl || visualAssetUrl(visualCheck.assetPath);
+
+  const detail = document.createElement('div');
+  detail.className = 'visual-check-detail';
+  const label = document.createElement('label');
+  label.textContent = copy.label;
+  const description = document.createElement('input');
+  description.type = 'text';
+  description.dataset.visualDescription = '';
+  description.placeholder = copy.placeholder;
+  description.value = visualCheck.description || '';
+  label.append(description);
+  detail.append(label);
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'visual-check-remove icon-button';
+  remove.title = '移除参考图片';
+  remove.innerHTML = '<i data-lucide="trash-2"></i>';
+  remove.addEventListener('click', () => card.remove());
+  card.append(preview, detail, remove);
+  return card;
+}
+
+function addVisualCheckToStep(stepNode, visualCheck) {
+  stepNode.querySelector('.step-visual-check-list').appendChild(createVisualCheckCard(visualCheck, stepNode.dataset.kind));
+  renderIcons();
+}
+
+async function uploadVisualCheck(file, stepNode) {
+  if (!editingCaseId) {
+    showToast('保存用例后可上传参考图片', true);
+    return;
+  }
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) throw new Error('请选择 PNG、JPEG 或 WebP 图片');
+  if (file.size > 5 * 1024 * 1024) throw new Error('参考图片不能超过 5MB');
+  const uploadTrigger = stepNode.querySelector('[data-visual-upload-trigger]');
+  uploadTrigger.disabled = true;
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`/api/cases/${encodeURIComponent(editingCaseId)}/assets`, { method: 'POST', body: formData });
+    if (!response.ok) throw new Error((await response.json()).error || '参考图片上传失败');
+    const uploaded = await response.json();
+    addVisualCheckToStep(stepNode, { ...uploaded, description: '', previewUrl: URL.createObjectURL(file) });
+  } finally {
+    uploadTrigger.disabled = false;
+  }
+}
+
+function bindVisualCheckControls(stepNode) {
+  const input = stepNode.querySelector('[data-visual-upload]');
+  const trigger = stepNode.querySelector('[data-visual-upload-trigger]');
+  trigger.addEventListener('click', () => {
+    if (!editingCaseId) { showToast('保存用例后可上传参考图片', true); return; }
+    input.click();
+  });
+  input.addEventListener('change', () => {
+    const [file] = input.files;
+    if (!file) return;
+    uploadVisualCheck(file, stepNode)
+      .catch((error) => showToast(error.message, true))
+      .finally(() => { input.value = ''; });
+  });
+  stepNode.addEventListener('paste', (event) => {
+    const file = clipboardImageFile(event.clipboardData);
+    if (!file) return;
+    event.preventDefault();
+    uploadVisualCheck(file, stepNode)
+      .catch((error) => showToast(error.message, true));
+  });
+}
+
 function createStepNode(step, index) {
-  const kindCopy = { action: ['mouse-pointer-click', '执行操作', ''], assert: ['shield-check', '智能断言', 'assert'], query: ['scan-search', '数据提取', 'query'] };
+  const kindCopy = { action: ['mouse-pointer-click', '执行操作', ''], assert: ['shield-check', '验证结果', 'assert'], query: ['scan-search', '数据提取', 'query'] };
   const [icon, label, modifier] = kindCopy[step.kind] || kindCopy.action;
+  const visualCopy = visualCheckCopy(step.kind);
   const node = document.createElement('div');
   node.className = 'step';
   node.dataset.kind = step.kind;
-  node.innerHTML = `<span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">${String(index + 1).padStart(2, '0')}</span><div class="step-content"><div class="step-type ${modifier}"><i data-lucide="${icon}"></i>${label}</div><textarea></textarea></div><button class="step-menu" title="步骤菜单"><i data-lucide="more-horizontal"></i></button>`;
+  node.innerHTML = `<span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">${String(index + 1).padStart(2, '0')}</span><div class="step-content"><div class="step-type ${modifier}"><i data-lucide="${icon}"></i>${label}</div><textarea></textarea><section class="step-visual-checks"><div class="step-visual-check-head"><span>${visualCopy.heading}</span><button type="button" class="secondary-button" data-visual-upload-trigger><i data-lucide="image-up"></i>上传图片</button><input class="visually-hidden" data-visual-upload type="file" accept="image/png,image/jpeg,image/webp"></div><div class="step-visual-check-list"></div></section></div><div class="step-menu-wrap"><button type="button" class="step-menu" data-step-menu title="步骤菜单"><i data-lucide="more-horizontal"></i></button><div class="step-menu-popover" hidden><button type="button" data-delete-step><i data-lucide="trash-2"></i>删除步骤</button></div></div>`;
   node.querySelector('textarea').value = step.instruction;
+  (step.visualChecks || []).forEach((visualCheck) => addVisualCheckToStep(node, visualCheck));
+  bindVisualCheckControls(node);
+  const menu = node.querySelector('.step-menu-popover');
+  node.querySelector('[data-step-menu]').addEventListener('click', () => {
+    const willOpen = menu.hidden;
+    closeStepMenus(menu);
+    menu.hidden = !willOpen;
+  });
+  node.querySelector('[data-delete-step]').addEventListener('click', () => {
+    if (!canDeleteWebStep(steps.children.length)) {
+      showToast('至少保留一个步骤', true);
+      return;
+    }
+    node.remove();
+    renumberSteps();
+  });
   return node;
 }
 
@@ -298,7 +452,7 @@ function applyCase(testCase) {
   if (target === 'web') selectViewport(viewport);
   else deviceStrip.innerHTML = '<span class="status-dot"></span><span><b>接口测试执行</b><small>结构化 POST 请求 · 断言、变量提取</small></span>';
   syncEditorTarget();
-  lucide.createIcons();
+  renderIcons();
 }
 
 function resetEditor(nextTarget = 'web', projectId = activeProjectId) {
@@ -337,6 +491,7 @@ async function loadProjects() {
     container.innerHTML = '<p class="empty-state">还没有测试项目。</p>';
     return;
   }
+  const projectMeta = (project) => `${project.caseCount} 个用例 · Web UI ${project.webCaseCount} · 接口 ${project.apiCaseCount}${project.webAuth?.provider === 'lighthouse' ? ' · 公共登录：灯塔' : ''}`;
   projects.forEach((project) => {
     const card = document.createElement('article');
     card.className = 'project-card';
@@ -344,7 +499,7 @@ async function loadProjects() {
     const name = document.createElement('b');
     name.textContent = project.name;
     const meta = document.createElement('small');
-    meta.textContent = `${project.caseCount} 个用例 · Web UI ${project.webCaseCount} · 接口 ${project.apiCaseCount}`;
+    meta.textContent = projectMeta(project);
     copy.append(name, meta);
     const actions = document.createElement('div');
     actions.className = 'project-actions';
@@ -360,7 +515,7 @@ async function loadProjects() {
     card.append(copy, actions);
     container.appendChild(card);
   });
-  lucide.createIcons();
+  renderIcons();
 }
 
 async function loadProjectContext() {
@@ -373,12 +528,12 @@ async function loadProjectContext() {
   }
   activeProjectName = project.name;
   $('#activeProjectName').textContent = project.name;
-  $('#activeProjectMeta').textContent = `${project.caseCount} 个用例 · Web UI ${project.webCaseCount} · 接口 ${project.apiCaseCount}`;
+  $('#activeProjectMeta').textContent = `${project.caseCount} 个用例 · Web UI ${project.webCaseCount} · 接口 ${project.apiCaseCount}${project.webAuth?.provider === 'lighthouse' ? ' · 公共登录：灯塔' : ''}`;
   $('#newWebCaseLink').href = `${projectAssetsRoute(project.id)}/new-web`;
   $('#newApiCaseLink').href = `${projectAssetsRoute(project.id)}/new-api`;
   if (/\/assets\/[^/]+$/.test(location.hash)) updateEditorBreadcrumb();
   else $('#breadcrumb').innerHTML = `测试资产 <i data-lucide="chevron-right"></i> <span>${project.name} · 用例库</span>`;
-  lucide.createIcons();
+  renderIcons();
   return project;
 }
 
@@ -490,7 +645,7 @@ async function loadSavedCases() {
     container.appendChild(item);
   });
   updateBatchSelection();
-  lucide.createIcons();
+  renderIcons();
 }
 
 async function loadBatchHistory(projectId = activeProjectId) {
@@ -506,6 +661,12 @@ async function loadBatchHistory(projectId = activeProjectId) {
 
 function selectedCasesInOrder() {
   return savedCases.filter((testCase) => selectedCaseIds.has(testCase.id)).map((testCase) => testCase.id);
+}
+
+function requestMutationAuthorization(testCases) {
+  const mutatingCases = testCases.filter((testCase) => testCase.steps.some((step) => step.request?.safety === 'mutating'));
+  if (!mutatingCases.length) return false;
+  return window.confirm(`将执行 ${mutatingCases.length} 条包含业务写入的用例，可能创建或变更测试环境数据。是否继续？`);
 }
 
 function toggleVisibleCases() {
@@ -544,7 +705,8 @@ function renderBatchHistory(batches) {
     const item = document.createElement('article');
     item.className = 'batch-item';
     const passed = batch.runs.filter((run) => run.status === 'passed').length;
-    const failed = batch.runs.length - passed;
+    const failed = batch.runs.filter((run) => run.status === 'failed').length;
+    const skipped = batch.runs.filter((run) => run.status === 'skipped').length;
     const title = document.createElement('div');
     const name = document.createElement('b');
     name.textContent = batch.name;
@@ -555,7 +717,7 @@ function renderBatchHistory(batches) {
     state.className = `batch-status ${batch.status}`;
     state.textContent = batch.status.toUpperCase();
     const summary = document.createElement('p');
-    summary.textContent = `${passed} 通过 · ${failed} 失败`;
+    summary.textContent = `${passed} 通过 · ${skipped} 前置不足 · ${failed} 失败`;
     const reports = document.createElement('div');
     reports.className = 'batch-reports';
     const report = document.createElement('a');
@@ -593,7 +755,11 @@ async function deleteSelectedCases() {
 }
 
 async function runSavedCase(testCase) {
-  const response = await fetch(`/api/cases/${encodeURIComponent(testCase.id)}/runs`, { method: 'POST' });
+  const allowMutations = requestMutationAuthorization([testCase]);
+  if (testCase.steps.some((step) => step.request?.safety === 'mutating') && !allowMutations) return;
+  const response = await fetch(`/api/cases/${encodeURIComponent(testCase.id)}/runs`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ allowMutations })
+  });
   if (!response.ok) throw new Error((await response.json()).error || '执行测试用例失败');
   const run = await response.json();
   location.hash = `#/executions?focus=${encodeURIComponent(run.id)}`;
@@ -603,19 +769,22 @@ async function runSavedCase(testCase) {
 async function createBatch() {
   const button = $('#runBatch');
   const caseIds = selectedCasesInOrder();
+  const selectedCases = savedCases.filter((testCase) => caseIds.includes(testCase.id));
   if (!caseIds.length || button.disabled) return;
   try {
+    const allowMutations = requestMutationAuthorization(selectedCases);
+    if (selectedCases.some((testCase) => testCase.steps.some((step) => step.request?.safety === 'mutating')) && !allowMutations) return;
     button.disabled = true;
     button.innerHTML = '<i data-lucide="loader-circle"></i>正在执行';
-    lucide.createIcons();
+    renderIcons();
     const response = await fetch('/api/batches', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ caseIds })
+      body: JSON.stringify({ caseIds, allowMutations })
     });
     if (!response.ok) throw new Error((await response.json()).error || '批量执行失败');
     const batch = await response.json();
-    location.hash = `#/executions?focus=${encodeURIComponent(batch.id)}`;
+    location.hash = executionFocusRoute({ projectId: activeProjectId, executionId: batch.id });
     selectedCaseIds.clear();
     await loadSavedCases();
     await loadBatchHistory();
@@ -625,7 +794,7 @@ async function createBatch() {
   } finally {
     button.innerHTML = '<i data-lucide="list-play"></i>批量执行';
     updateBatchSelection();
-    lucide.createIcons();
+    renderIcons();
   }
 }
 
@@ -638,6 +807,36 @@ async function loadRunnerStatus() {
   badge.textContent = webRunner.ready ? '在线' : '未配置';
   badge.classList.toggle('offline', !webRunner.ready);
   $('#runState').dataset.cmsReady = String(cmsRunner.ready);
+}
+
+function modelConfigField(label, value) {
+  const field = document.createElement('div');
+  field.className = 'model-config-field';
+  const name = document.createElement('span');
+  name.textContent = label;
+  const content = document.createElement('strong');
+  content.textContent = value || '未配置';
+  field.append(name, content);
+  return field;
+}
+
+async function loadModelConfig() {
+  const [configResponse, healthResponse] = await Promise.all([fetch('/api/model-config'), fetch('/api/health')]);
+  if (!configResponse.ok || !healthResponse.ok) throw new Error('无法读取模型配置');
+  const [config, health] = await Promise.all([configResponse.json(), healthResponse.json()]);
+  const details = $('#modelConfigDetails');
+  details.replaceChildren(
+    modelConfigField('配置来源', config.source),
+    modelConfigField('服务地址', config.baseUrl),
+    modelConfigField('模型名称', config.modelName),
+    modelConfigField('模型适配器', config.modelFamily),
+    modelConfigField('API Key', config.apiKey)
+  );
+  const ready = health.webRunner.ready;
+  $('#modelConfigStatus').textContent = ready ? 'Midscene Web runner 已就绪' : health.webRunner.message;
+  const badge = $('#modelConfigBadge');
+  badge.textContent = ready ? '已就绪' : '不可用';
+  badge.classList.toggle('offline', !ready);
 }
 
 const dashboardEmptyMessage = '所选时间范围内暂无已完成执行记录';
@@ -853,7 +1052,11 @@ export async function deleteEditor() {
 async function debugApiCase() {
   if (target !== 'api') return;
   const saved = await saveCase();
-  const response = await fetch(`/api/cases/${encodeURIComponent(saved.id)}/runs`, { method: 'POST' });
+  const allowMutations = requestMutationAuthorization([saved]);
+  if (saved.steps.some((step) => step.request?.safety === 'mutating') && !allowMutations) return;
+  const response = await fetch(`/api/cases/${encodeURIComponent(saved.id)}/runs`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ allowMutations })
+  });
   if (!response.ok) throw new Error((await response.json()).error || '接口调试失败');
   const run = await response.json();
   location.hash = `#/executions?focus=${encodeURIComponent(run.id)}`;
@@ -904,7 +1107,7 @@ function renderQualityList(container, items, label, withReport = false) {
     }
     container.append(row);
   });
-  lucide.createIcons();
+  renderIcons();
 }
 
 function getExecutionConclusion(detail) {
@@ -912,13 +1115,14 @@ function getExecutionConclusion(detail) {
   const firstFailure = steps.find((step) => step.status === 'failed');
   const retryCount = steps.reduce((count, step) => count + Math.max(0, (step.attempts || 0) - 1), 0);
   if (detail.task.status === 'failed') return { tone: 'failed', icon: 'circle-x', title: '执行失败', description: firstFailure?.error || '存在未通过步骤', firstFailure, retryCount };
+  if (detail.task.status === 'skipped') return { tone: 'attention', icon: 'circle-pause', title: '前置数据不足', description: steps.find((step) => step.status === 'skipped')?.error || '没有可用于本次运行的业务数据', firstFailure: null, retryCount };
   if (['queued', 'running'].includes(detail.task.status)) return { tone: 'running', icon: 'loader-circle', title: detail.task.status === 'queued' ? '等待执行' : '正在执行', description: '执行进度会自动刷新', firstFailure: null, retryCount };
   if (retryCount) return { tone: 'attention', icon: 'triangle-alert', title: '执行完成，需关注', description: `共发生 ${retryCount} 次重试`, firstFailure: null, retryCount };
   return { tone: 'passed', icon: 'circle-check-big', title: '执行通过', description: '所有已执行步骤均通过', firstFailure: null, retryCount: 0 };
 }
 
 function executionReportUrl(detail) {
-  if (!['passed', 'failed'].includes(detail.task.status)) return '';
+  if (!['passed', 'failed', 'skipped'].includes(detail.task.status)) return '';
   return detail.kind === 'batch' ? `/api/batches/${encodeURIComponent(detail.task.id)}/report` : `/api/runs/${encodeURIComponent(detail.task.id)}/report`;
 }
 
@@ -939,10 +1143,10 @@ function renderExecutionDetail(detail) {
   const container = $('#executionDetail');
   const conclusion = getExecutionConclusion(detail);
   const steps = detail.runs.flatMap((run) => (run.steps || []).map((step) => ({ ...step, caseName: run.caseName })));
-  const completedSteps = steps.filter((step) => ['passed', 'failed'].includes(step.status)).length;
+  const completedSteps = steps.filter((step) => ['passed', 'failed', 'skipped'].includes(step.status)).length;
   const passedSteps = steps.filter((step) => step.status === 'passed').length;
   const totalCases = detail.runs.length || detail.task.caseIds?.length || 1;
-  const completedCases = detail.runs.filter((run) => ['passed', 'failed'].includes(run.status)).length;
+  const completedCases = detail.runs.filter((run) => ['passed', 'failed', 'skipped'].includes(run.status)).length;
   const percent = steps.length ? Math.round(completedSteps / steps.length * 100) : 0;
   container.innerHTML = '';
 
@@ -962,7 +1166,7 @@ function renderExecutionDetail(detail) {
   if (!steps.length) { const empty = document.createElement('p'); empty.className = 'empty-state'; empty.textContent = '任务等待执行，步骤将在开始后显示。'; timeline.append(empty); }
   steps.forEach((step) => {
     const item = document.createElement('article'); item.className = `timeline-step ${step.status}`;
-    const icon = document.createElement('span'); icon.className = 'timeline-icon'; icon.innerHTML = `<i data-lucide="${step.status === 'passed' ? 'check' : step.status === 'failed' ? 'x' : step.status === 'running' ? 'loader-circle' : 'clock-3'}"></i>`;
+    const icon = document.createElement('span'); icon.className = 'timeline-icon'; icon.innerHTML = `<i data-lucide="${step.status === 'passed' ? 'check' : step.status === 'failed' ? 'x' : step.status === 'skipped' ? 'circle-pause' : step.status === 'running' ? 'loader-circle' : 'clock-3'}"></i>`;
     const copy = document.createElement('div');
     const title = document.createElement('b'); title.textContent = `${step.caseName || '测试用例'} · ${step.api?.action || step.id}`;
     const meta = document.createElement('small');
@@ -979,7 +1183,7 @@ function renderExecutionDetail(detail) {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'run-button'; button.innerHTML = '<i data-lucide="file-text"></i>查看测试报告'; button.onclick = () => window.open(reportUrl, '_blank', 'noopener');
     actions.append(button); container.append(actions);
   }
-  lucide.createIcons();
+  renderIcons();
 }
 
 async function loadExecutions() {
@@ -990,16 +1194,20 @@ async function loadExecutions() {
   const response = await fetch(`/api/executions?${query}`);
   if (!response.ok) throw new Error('无法读取执行任务');
   const tasks = await response.json();
-  const requestedExecutionId = new URLSearchParams(location.hash.split('?')[1] || '').get('focus');
-  if (!tasks.some((task) => task.id === selectedExecutionId)) {
-    selectedExecutionId = tasks.some((task) => task.id === requestedExecutionId) ? requestedExecutionId : null;
-    if (!selectedExecutionId) selectedExecutionId = tasks[0]?.id || null;
-  }
+  const requestedExecutionId = readExecutionFocus(location.hash).executionId;
+  const selection = resolveSelectedExecutionId({
+    taskIds: tasks.map((task) => task.id),
+    selectedExecutionId,
+    handledFocusId: handledExecutionFocusId,
+    requestedExecutionId
+  });
+  selectedExecutionId = selection.selectedExecutionId;
+  handledExecutionFocusId = selection.handledFocusId;
   const list = $('#executionList'); list.innerHTML = '';
   tasks.forEach((task) => {
     const row = document.createElement('button'); row.className = `execution-item ${task.id === selectedExecutionId ? 'selected' : ''}`; row.type = 'button';
     row.textContent = `${task.name} · ${task.status.toUpperCase()} · ${task.completedSteps}/${task.totalSteps} 步`;
-    row.onclick = () => { selectedExecutionId = task.id; loadExecutions(); };
+    row.onclick = () => { selectedExecutionId = task.id; handledExecutionFocusId = requestedExecutionId; loadExecutions(); };
     list.append(row);
   });
   if (!tasks.length) list.textContent = '暂无执行任务';
@@ -1018,7 +1226,7 @@ function startExecutionPolling() {
 
 function stopExecutionPolling() { if (executionPollId) window.clearInterval(executionPollId); executionPollId = undefined; }
 
-async function loadProjectFilters() {
+async function loadProjectFilters(requestedProjectId = '') {
   const response = await fetch('/api/projects');
   if (!response.ok) throw new Error('无法读取测试项目');
   const projects = await response.json();
@@ -1032,7 +1240,8 @@ async function loadProjectFilters() {
       option.textContent = project.name;
       select.append(option);
     });
-    select.value = projects.some((project) => project.id === selected) ? selected : '';
+    const desiredProjectId = requestedProjectId || selected;
+    select.value = projects.some((project) => project.id === desiredProjectId) ? desiredProjectId : '';
   });
 }
 
@@ -1044,7 +1253,7 @@ async function loadReports() {
   const response = await fetch(`/api/reports?${query}`);
   if (!response.ok) throw new Error('无法读取质量报告');
   const reports = await response.json();
-  renderQualityList($('#reportList'), reports, (report) => `${report.name} · ${report.status.toUpperCase()} · ${report.passedCases} 通过 / ${report.failedCases} 失败`, true);
+  renderQualityList($('#reportList'), reports, (report) => `${report.name} · ${report.status === 'skipped' ? '前置数据不足' : report.status.toUpperCase()} · ${report.passedCases} 通过 / ${report.skippedCases || 0} 前置不足 / ${report.failedCases} 失败`, true);
 }
 
 $('#saveBtn').addEventListener('click', async () => {

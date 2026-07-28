@@ -5,16 +5,18 @@ import { fileURLToPath } from 'node:url';
 import { basename, join } from 'node:path';
 import multer from 'multer';
 import { validateWebCase } from './domain/case.js';
+import { normalizeProjectWebAuth } from './domain/project-auth.js';
 import { renderBatchReport, renderReport } from './services/report-service.js';
 import { ExecutionService } from './services/execution-service.js';
 import { hashPasswordSync, publicUser, validatePasswordChange, validateProfile, verifyPassword } from './services/auth-service.js';
+import { createCaseAssetService } from './services/case-asset-service.js';
 
 export function createMemoryStore() {
   const cases = new Map();
   const runs = new Map();
   const batches = new Map();
   const users = new Map();
-  const projects = new Map([['default-project', { id: 'default-project', name: '默认项目', createdAt: '1970-01-01T00:00:00.000Z', updatedAt: '1970-01-01T00:00:00.000Z' }]]);
+  const projects = new Map([['default-project', { id: 'default-project', name: '默认项目', webAuth: undefined, createdAt: '1970-01-01T00:00:00.000Z', updatedAt: '1970-01-01T00:00:00.000Z' }]]);
   function listProjects() {
     return [...projects.values()].map((project) => {
       const projectCases = [...cases.values()].filter((testCase) => testCase.projectId === project.id);
@@ -32,18 +34,18 @@ export function createMemoryStore() {
     const batchItems = [...batches.values()].filter((batch) => matches(batch, filters)).map((batch) => {
       const batchRuns = batch.runIds.map((id) => runs.get(id)).filter(Boolean);
       const steps = batchRuns.flatMap((run) => run.steps || []);
-      return { ...batch, kind: 'batch', projectName: projects.get(batch.projectId)?.name, totalCases: batch.caseIds.length, completedCases: batchRuns.filter((run) => ['passed', 'failed'].includes(run.status)).length, totalSteps: steps.length, completedSteps: steps.filter((step) => ['passed', 'failed'].includes(step.status)).length, currentCaseName: batchRuns.find((run) => ['queued', 'running'].includes(run.status))?.caseName };
+      return { ...batch, kind: 'batch', projectName: projects.get(batch.projectId)?.name, totalCases: batch.caseIds.length, completedCases: batchRuns.filter((run) => ['passed', 'failed', 'skipped'].includes(run.status)).length, totalSteps: steps.length, completedSteps: steps.filter((step) => ['passed', 'failed', 'skipped'].includes(step.status)).length, currentCaseName: batchRuns.find((run) => ['queued', 'running'].includes(run.status))?.caseName };
     });
-    const runItems = [...runs.values()].filter((run) => !run.batchId && matches(run, filters)).map((run) => ({ ...run, kind: 'run', name: run.caseName, projectName: projects.get(run.projectId)?.name, totalCases: 1, completedCases: ['passed', 'failed'].includes(run.status) ? 1 : 0, totalSteps: run.steps.length, completedSteps: run.steps.filter((step) => ['passed', 'failed'].includes(step.status)).length, currentCaseName: run.caseName }));
+    const runItems = [...runs.values()].filter((run) => !run.batchId && matches(run, filters)).map((run) => ({ ...run, kind: 'run', name: run.caseName, projectName: projects.get(run.projectId)?.name, totalCases: 1, completedCases: ['passed', 'failed', 'skipped'].includes(run.status) ? 1 : 0, totalSteps: run.steps.length, completedSteps: run.steps.filter((step) => ['passed', 'failed', 'skipped'].includes(step.status)).length, currentCaseName: run.caseName }));
     return [...batchItems, ...runItems].sort((first, second) => String(second.finishedAt || second.startedAt || '').localeCompare(String(first.finishedAt || first.startedAt || '')));
   }
   function listReports(filters = {}) {
     const start = rangeStart(filters.range, filters.now);
-    const batchItems = [...batches.values()].filter((batch) => ['passed', 'failed'].includes(batch.status) && batch.finishedAt >= start && matches(batch, filters)).map((batch) => {
+    const batchItems = [...batches.values()].filter((batch) => ['passed', 'failed', 'skipped'].includes(batch.status) && batch.finishedAt >= start && matches(batch, filters)).map((batch) => {
       const batchRuns = batch.runIds.map((id) => runs.get(id)).filter(Boolean);
-      return { ...batch, kind: 'batch', projectName: projects.get(batch.projectId)?.name, passedCases: batchRuns.filter((run) => run.status === 'passed').length, failedCases: batchRuns.filter((run) => run.status === 'failed').length, reportUrl: `/api/batches/${batch.id}/report` };
+      return { ...batch, kind: 'batch', projectName: projects.get(batch.projectId)?.name, passedCases: batchRuns.filter((run) => run.status === 'passed').length, failedCases: batchRuns.filter((run) => run.status === 'failed').length, skippedCases: batchRuns.filter((run) => run.status === 'skipped').length, reportUrl: `/api/batches/${batch.id}/report` };
     });
-    const runItems = [...runs.values()].filter((run) => !run.batchId && ['passed', 'failed'].includes(run.status) && run.finishedAt >= start && matches(run, filters)).map((run) => ({ ...run, kind: 'run', name: run.caseName, projectName: projects.get(run.projectId)?.name, passedCases: run.status === 'passed' ? 1 : 0, failedCases: run.status === 'failed' ? 1 : 0, reportUrl: `/api/runs/${run.id}/report` }));
+    const runItems = [...runs.values()].filter((run) => !run.batchId && ['passed', 'failed', 'skipped'].includes(run.status) && run.finishedAt >= start && matches(run, filters)).map((run) => ({ ...run, kind: 'run', name: run.caseName, projectName: projects.get(run.projectId)?.name, passedCases: run.status === 'passed' ? 1 : 0, failedCases: run.status === 'failed' ? 1 : 0, skippedCases: run.status === 'skipped' ? 1 : 0, reportUrl: `/api/runs/${run.id}/report` }));
     return [...batchItems, ...runItems].sort((first, second) => String(second.finishedAt).localeCompare(String(first.finishedAt)));
   }
   function getDashboard({ range = '7d', now } = {}) {
@@ -78,10 +80,17 @@ export function createMemoryStore() {
       if (!name) throw new Error('project name required');
       if ([...projects.values()].some((item) => item.id !== project.id && item.name.toLowerCase() === name.toLowerCase())) throw new Error('project name already exists');
       const timestamp = new Date().toISOString();
-      const saved = { id: project.id || crypto.randomUUID(), name, createdAt: project.createdAt || timestamp, updatedAt: timestamp };
+    const saved = { id: project.id || crypto.randomUUID(), name, webAuth: normalizeProjectWebAuth(project.webAuth), createdAt: project.createdAt || timestamp, updatedAt: timestamp };
       if (project.id && !projects.has(project.id)) throw new Error('project not found');
       projects.set(saved.id, saved);
-      return this.getProject(saved.id);
+    return this.getProject(saved.id);
+  },
+    ensureProjectWebAuth({ name, webAuth }) {
+      const project = [...projects.values()].find((item) => item.name === name);
+      if (!project) throw new Error('project not found');
+      project.webAuth = normalizeProjectWebAuth(webAuth);
+      project.updatedAt = new Date().toISOString();
+      return project.id;
     },
     deleteProject(id) {
       if (!projects.has(id) || [...cases.values()].some((testCase) => testCase.projectId === id)) return false;
@@ -106,7 +115,18 @@ export function createMemoryStore() {
 
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
-export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, cmsSeedCases = [], executionSchedule, authRequired = false } = {}) {
+function sanitizeModelConfig(modelConfig) {
+  const apiKey = String(modelConfig.apiKey || '');
+  return {
+    source: modelConfig.source || 'MIDSCENE',
+    baseUrl: modelConfig.baseUrl || '',
+    modelName: modelConfig.modelName || '',
+    modelFamily: modelConfig.modelFamily || '',
+    apiKey: apiKey.includes('*') ? apiKey : (apiKey ? `${apiKey.slice(0, 3)}****************` : '')
+  };
+}
+
+export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), caseAssetsDir = join(projectRoot, 'data/case-assets'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, modelConfig = { source: 'MIDSCENE', baseUrl: '', modelName: '', modelFamily: '', apiKey: '' }, cmsSeedCases = [], executionSchedule, authRequired = false } = {}) {
   const app = express();
   const sessions = new Map();
   if (authRequired) store.ensureDefaultAdmin(hashPasswordSync('admin123'));
@@ -117,6 +137,8 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
   });
   app.use(express.json());
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+  const assetService = createCaseAssetService({ caseAssetsDir, store });
+  const requestedMutationAuthorization = (value) => value === true;
 
   app.get('/api/health', (_req, res) => res.json({ webRunner: runnerStatus, cmsRunner: cmsRunnerStatus }));
 
@@ -218,10 +240,15 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[req.file.mimetype];
     const id = crypto.randomUUID();
     const assetPath = `${req.params.id}/${id}.${extension}`;
-    const directory = join(projectRoot, 'data/case-assets', req.params.id);
+    const directory = join(caseAssetsDir, req.params.id);
     await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, `${id}.${extension}`), req.file.buffer);
+    await writeFile(assetService.uploadPath(req.params.id, `${id}.${extension}`), req.file.buffer);
     return res.status(201).json({ id, assetPath, source: 'upload' });
+  });
+
+  app.get('/api/cases/:caseId/assets/:fileName', (req, res) => {
+    const filePath = assetService.resolve({ caseId: req.params.caseId, fileName: req.params.fileName, runId: req.query.runId });
+    return filePath ? res.sendFile(filePath) : res.status(404).end();
   });
 
   app.put('/api/cases/:id', (req, res) => {
@@ -247,7 +274,7 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     const name = typeof req.body.name === 'string' && req.body.name.trim()
       ? req.body.name.trim()
       : `批量执行 ${new Date().toLocaleString('zh-CN')}`;
-    return res.status(202).json(executionService.queueBatch({ name, projectId: cases[0].projectId, target: cases[0].target, caseIds, cases }));
+    return res.status(202).json(executionService.queueBatch({ name, projectId: cases[0].projectId, target: cases[0].target, caseIds, cases, allowMutations: requestedMutationAuthorization(req.body.allowMutations) }));
   });
 
   app.get('/api/executions', (req, res) => res.json(store.listExecutions({ projectId: req.query.projectId || '', target: req.query.target || '', status: req.query.status || '' })));
@@ -259,6 +286,7 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     return res.status(404).json({ error: 'execution not found' });
   });
   app.get('/api/dashboard', (req, res) => res.json(store.getDashboard({ range: req.query.range || '7d' })));
+  app.get('/api/model-config', (_req, res) => res.json(sanitizeModelConfig(modelConfig)));
   app.get('/api/reports', (req, res) => res.json(store.listReports({ projectId: req.query.projectId || '', target: req.query.target || '', status: req.query.status || '', range: req.query.range || '7d' })));
 
   app.get('/api/batches', (req, res) => res.json(store.listBatches(req.query.projectId || '').reverse()));
@@ -279,7 +307,7 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
   app.post('/api/cases/:id/runs', (req, res) => {
     const testCase = store.getCase(req.params.id);
     if (!testCase) return res.status(404).json({ error: 'test case not found' });
-    return res.status(202).json(executionService.queueRun(testCase));
+    return res.status(202).json(executionService.queueRun(testCase, { allowMutations: requestedMutationAuthorization(req.body?.allowMutations) }));
   });
 
   app.get('/api/runs/:id', (req, res) => {

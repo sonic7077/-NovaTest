@@ -14,6 +14,20 @@ function evidenceMarkup(runId, step) {
   }).join('');
 }
 
+function visualEvidenceMarkup(runId, visualChecks) {
+  return (visualChecks || []).map((visualCheck) => {
+    const [caseId, fileName, ...rest] = String(visualCheck.baselinePath || '').split('/');
+    const validBaseline = caseId && fileName && rest.length === 0 && caseId !== '.' && caseId !== '..' && fileName !== '.' && fileName !== '..';
+    const baselineUrl = validBaseline
+      ? `/api/cases/${encodeURIComponent(caseId)}/assets/${encodeURIComponent(fileName)}?runId=${encodeURIComponent(runId)}`
+      : '';
+    const screenshotName = String(visualCheck.screenshot || '').split('/').pop();
+    const screenshotUrl = screenshotName ? `/api/runs/${encodeURIComponent(runId)}/evidence/${encodeURIComponent(screenshotName)}` : '';
+    const status = visualCheck.status === 'passed' ? '视觉校验通过' : '视觉校验失败';
+    return `<section class="visual-check ${escapeHtml(visualCheck.status)}"><strong>${status}</strong><div class="visual-check-images">${baselineUrl ? `<figure><figcaption>参考图片</figcaption><img src="${baselineUrl}" alt="参考图片"></figure>` : ''}${screenshotUrl ? `<figure><figcaption>执行截图</figcaption><img src="${screenshotUrl}" alt="执行截图"></figure>` : ''}</div><p class="visual-check-reason">${escapeHtml(visualCheck.reason || '-')}</p></section>`;
+  }).join('');
+}
+
 function apiEvidenceMarkup(step) {
   if (!step.api) return evidenceMarkup(step.runId || '', step);
   const api = step.api;
@@ -22,7 +36,11 @@ function apiEvidenceMarkup(step) {
   return `<div class="api-evidence"><strong>${escapeHtml(api.action)} · HTTP ${escapeHtml(api.httpStatus)} · 业务状态 ${escapeHtml(api.businessStatus)} · ${escapeHtml(api.durationMs)}ms</strong><details><summary>请求摘要</summary><pre>${escapeHtml(JSON.stringify(request, null, 2))}</pre></details><details><summary>响应内容</summary><pre>${escapeHtml(JSON.stringify(response, null, 2))}</pre></details></div>`;
 }
 
-const reportStyles = 'body{font:14px system-ui;margin:40px;color:#17221f}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #d9e3dd;padding:10px;text-align:left;vertical-align:top}th{background:#eef6f1}.passed{color:#168657}.failed{color:#c74444}.evidence{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.evidence img{width:160px;max-height:110px;object-fit:cover;border:1px solid #d9e3dd}.run-section{margin-top:32px;padding-top:20px;border-top:1px solid #d9e3dd}.summary{display:flex;gap:18px;flex-wrap:wrap;color:#53645d}.summary strong{color:#17221f}';
+const reportStyles = 'body{font:14px system-ui;margin:40px;color:#17221f}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #d9e3dd;padding:10px;text-align:left;vertical-align:top}th{background:#eef6f1}.passed{color:#168657}.failed{color:#c74444}.skipped{color:#805b13}.evidence{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.evidence img{width:160px;max-height:110px;object-fit:cover;border:1px solid #d9e3dd}.visual-check{margin-top:10px;padding:8px;border:1px solid #d9e3dd;border-radius:4px}.visual-check-images{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.visual-check figure{margin:0}.visual-check figcaption{margin-bottom:3px;color:#53645d;font-size:12px}.visual-check img{width:160px;max-height:110px;object-fit:cover;border:1px solid #d9e3dd}.visual-check-reason{margin:7px 0 0}.run-section{margin-top:32px;padding-top:20px;border-top:1px solid #d9e3dd}.summary{display:flex;gap:18px;flex-wrap:wrap;color:#53645d}.summary strong{color:#17221f}@media(max-width:600px){body{margin:16px}.visual-check-images{display:block}.visual-check figure+figure{margin-top:8px}}';
+
+function statusLabel(status) {
+  return status === 'skipped' ? '前置数据不足' : String(status).toUpperCase();
+}
 
 export function formatLocalTime(value) {
   if (!value) return '-';
@@ -35,7 +53,7 @@ export function formatLocalTime(value) {
 }
 
 function runRows(run) {
-  return run.steps.map((step) => `<tr><td>${escapeHtml(step.id)}</td><td>${escapeHtml(step.instruction || step.api?.action || '-')}</td><td>${escapeHtml(step.status)}</td><td>${step.attempts}</td><td>${escapeHtml(step.error || '-')}<div class="evidence">${step.api ? apiEvidenceMarkup(step) : evidenceMarkup(run.id, step)}</div></td></tr>`).join('');
+  return run.steps.map((step) => `<tr><td>${escapeHtml(step.id)}</td><td>${escapeHtml(step.instruction || step.api?.action || '-')}</td><td>${escapeHtml(step.status)}</td><td>${step.attempts}</td><td>${escapeHtml(step.error || '-')}<div class="evidence">${step.api ? apiEvidenceMarkup(step) : evidenceMarkup(run.id, step)}</div>${step.api ? '' : visualEvidenceMarkup(run.id, step.visualChecks)}</td></tr>`).join('');
 }
 
 function runTable(run) {
@@ -47,12 +65,14 @@ function documentMarkup(title, content) {
 }
 
 export function renderReport(run, caseName) {
-  return documentMarkup(caseName, `<h1>${escapeHtml(caseName)}</h1><p>运行状态：<strong class="${run.status}">${escapeHtml(run.status.toUpperCase())}</strong></p><p>开始：${escapeHtml(formatLocalTime(run.startedAt))}<br>结束：${escapeHtml(formatLocalTime(run.finishedAt))}</p><h2>步骤结果</h2>${runTable(run)}<h2>变量</h2><pre>${escapeHtml(JSON.stringify(run.variables, null, 2))}</pre>`);
+  const variables = redactTransportSecrets(run.variables || {});
+  return documentMarkup(caseName, `<h1>${escapeHtml(caseName)}</h1><p>运行状态：<strong class="${run.status}">${escapeHtml(statusLabel(run.status))}</strong></p><p>开始：${escapeHtml(formatLocalTime(run.startedAt))}<br>结束：${escapeHtml(formatLocalTime(run.finishedAt))}</p><h2>步骤结果</h2>${runTable(run)}<h2>变量</h2><pre>${escapeHtml(JSON.stringify(variables, null, 2))}</pre>`);
 }
 
 export function renderBatchReport(batch, runs) {
   const passed = runs.filter((run) => run.status === 'passed').length;
-  const failed = runs.length - passed;
-  const runSections = runs.map((run) => `<section class="run-section"><h2>${escapeHtml(run.caseName || run.caseId)}</h2><p>运行状态：<strong class="${run.status}">${escapeHtml(run.status.toUpperCase())}</strong></p><p>开始：${escapeHtml(formatLocalTime(run.startedAt))}<br>结束：${escapeHtml(formatLocalTime(run.finishedAt))}</p>${runTable(run)}</section>`).join('');
-  return documentMarkup(batch.name, `<h1>${escapeHtml(batch.name)}</h1><p>批量状态：<strong class="${batch.status}">${escapeHtml(batch.status.toUpperCase())}</strong></p><div class="summary"><span><strong>${runs.length}</strong> 个用例</span><span><strong>${passed}</strong> 通过 · <strong>${failed}</strong> 失败</span><span>开始：${escapeHtml(formatLocalTime(batch.startedAt))}</span><span>结束：${escapeHtml(formatLocalTime(batch.finishedAt))}</span></div>${runSections}`);
+  const failed = runs.filter((run) => run.status === 'failed').length;
+  const skipped = runs.filter((run) => run.status === 'skipped').length;
+  const runSections = runs.map((run) => `<section class="run-section"><h2>${escapeHtml(run.caseName || run.caseId)}</h2><p>运行状态：<strong class="${run.status}">${escapeHtml(statusLabel(run.status))}</strong></p><p>开始：${escapeHtml(formatLocalTime(run.startedAt))}<br>结束：${escapeHtml(formatLocalTime(run.finishedAt))}</p>${runTable(run)}</section>`).join('');
+  return documentMarkup(batch.name, `<h1>${escapeHtml(batch.name)}</h1><p>批量状态：<strong class="${batch.status}">${escapeHtml(statusLabel(batch.status))}</strong></p><div class="summary"><span><strong>${runs.length}</strong> 个用例</span><span><strong>${passed}</strong> 通过 · <strong>${skipped}</strong> 跳过 · <strong>${failed}</strong> 失败</span><span>开始：${escapeHtml(formatLocalTime(batch.startedAt))}</span><span>结束：${escapeHtml(formatLocalTime(batch.finishedAt))}</span></div>${runSections}`);
 }

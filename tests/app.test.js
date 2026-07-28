@@ -61,6 +61,16 @@ describe('execution API', () => {
     await request(app).post('/api/projects').send({ name: ' 社区 cms ' }).expect(409);
   });
 
+  it('returns only public project Web authentication settings', async () => {
+    const app = createApp({ runner: {}, store: createMemoryStore() });
+    const project = (await request(app).post('/api/projects').send({
+      name: '无极灯塔', webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' }
+    }).expect(201)).body;
+
+    expect(project).toMatchObject({ webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' } });
+    expect(JSON.stringify(project)).not.toMatch(/password|secret|email/i);
+  });
+
   it('rejects a batch that mixes projects before execution', async () => {
     const app = createApp({ runner: { execute: async () => ({}) }, store: createMemoryStore() });
     const firstProject = (await request(app).post('/api/projects').send({ name: '项目一' }).expect(201)).body;
@@ -90,6 +100,21 @@ describe('execution API', () => {
       .expect(200)
       .expect('content-type', /html/)
       .expect((response) => expect(response.text).toContain('首页验证'));
+  });
+
+  it('records explicit mutation authorization for single and batch API runs', async () => {
+    const app = createApp({ runner: { api: { execute: async () => ({}) } }, store: createMemoryStore(), executionSchedule: () => {} });
+    const mutatingCase = {
+      ...apiCase,
+      name: '通过帖子审核',
+      steps: [{ id: 'approve', kind: 'apiRequest', instruction: '通过帖子', request: { action: 'pass_post', method: 'POST', payload: { id: [1] }, expectedStatus: 1, safety: 'mutating' } }]
+    };
+    const created = (await request(app).post('/api/cases').send(mutatingCase).expect(201)).body;
+
+    await request(app).post(`/api/cases/${created.id}/runs`).send({ allowMutations: true }).expect(202)
+      .expect(({ body }) => expect(body).toMatchObject({ allowMutations: true }));
+    await request(app).post('/api/batches').send({ caseIds: [created.id] }).expect(202)
+      .expect(({ body }) => expect(body).toMatchObject({ allowMutations: false }));
   });
 
   it('rejects a malformed web case before creating a run', async () => {
@@ -283,6 +308,31 @@ describe('execution API', () => {
       .expect({ webRunner: { ready: true, message: 'ready' }, cmsRunner: { ready: false, message: 'missing CMS_AES_KEY' } });
   });
 
+  it('exposes only redacted model configuration details', async () => {
+    const app = createApp({
+      runner: {},
+      store: createMemoryStore(),
+      modelConfig: {
+        source: 'WUJI',
+        baseUrl: 'https://model.example/api',
+        modelName: 'vision-model',
+        modelFamily: 'gemini',
+        apiKey: 'provider-secret-key'
+      }
+    });
+
+    await request(app).get('/api/model-config').expect(200).expect(({ body }) => {
+      expect(body).toEqual({
+        source: 'WUJI',
+        baseUrl: 'https://model.example/api',
+        modelName: 'vision-model',
+        modelFamily: 'gemini',
+        apiKey: 'pro****************'
+      });
+      expect(JSON.stringify(body)).not.toContain('provider-secret-key');
+    });
+  });
+
   it('seeds read-only CMS cases idempotently without running them', () => {
     const store = createMemoryStore();
     const cases = cmsWhitebagCases({ baseUrl: 'https://example.test/api.php' });
@@ -331,6 +381,31 @@ describe('execution API', () => {
     expect(report).toContain('&lt;script&gt;');
     expect(report).toContain('/api/runs/run-1/evidence/s1-attempt-1.png');
     expect(report).toContain('<img');
+  });
+
+  it('renders paired reference and execution images for visual checks', () => {
+    const report = renderReport({
+      id: 'run-visual-1', status: 'failed', startedAt: '2026-07-26T00:00:00.000Z', finishedAt: '2026-07-26T00:00:01.000Z', variables: {},
+      steps: [{
+        id: 's1', instruction: '验证新任务', status: 'failed', attempts: 1, error: '未找到新任务标题', screenshots: [],
+        visualChecks: [{ id: 'v1', status: 'failed', reason: '列表中没有目标标题', baselinePath: 'case-1/baseline.png', screenshot: 'run-visual-1/s1-attempt-1.png' }]
+      }]
+    }, '任务创建验证');
+
+    expect(report).toContain('/api/cases/case-1/assets/baseline.png?runId=run-visual-1');
+    expect(report).toContain('/api/runs/run-visual-1/evidence/s1-attempt-1.png');
+    expect(report).toContain('视觉校验失败');
+    expect(report).toContain('列表中没有目标标题');
+  });
+
+  it('does not render a protected login value from run variables', () => {
+    const report = renderReport({
+      id: 'run-1', status: 'passed', startedAt: '2026-07-17T00:00:00.000Z',
+      variables: { runId: 'run-1', lighthousePassword: 'private-value' }, steps: []
+    }, '首页验证');
+
+    expect(report).not.toContain('private-value');
+    expect(report).toContain('********');
   });
 
   it('renders redacted API request and response evidence in a report', () => {
@@ -382,12 +457,38 @@ describe('execution API', () => {
     );
 
     expect(report).toContain('查询回归');
-    expect(report).toContain('<strong>1</strong> 通过 · <strong>1</strong> 失败');
+    expect(report).toContain('<strong>1</strong> 通过 · <strong>0</strong> 跳过 · <strong>1</strong> 失败');
     expect(report).toContain('2026-07-18 13:40:00');
     expect(report).toContain('帖子列表查询');
     expect(report).toContain('评论列表查询');
     expect(report).toContain('********');
     expect(report).not.toContain('synthetic-session-value');
+  });
+
+  it('renders skipped prerequisite evidence separately from API failures', () => {
+    const report = renderBatchReport(
+      { id: 'batch-1', name: '审核回归', status: 'passed', startedAt: '2026-07-18T05:40:00.000Z', finishedAt: '2026-07-18T05:41:02.000Z', caseIds: ['case-1', 'case-2', 'case-3'] },
+      [
+        { id: 'run-1', caseName: '帖子审核', status: 'passed', startedAt: '2026-07-18T05:40:00.000Z', finishedAt: '2026-07-18T05:40:10.000Z', steps: [] },
+        { id: 'run-2', caseName: '用户资料审核', status: 'skipped', startedAt: '2026-07-18T05:40:10.000Z', finishedAt: '2026-07-18T05:40:20.000Z', steps: [{ id: 'select', status: 'skipped', attempts: 1, error: '前置数据不足：没有待处理记录', api: { action: 'list_member_update_log', httpStatus: 200, businessStatus: 1, durationMs: 80, request: { token: 'sensitive-token' }, response: { data: { list: [] }, token: 'sensitive-token' } } }] },
+        { id: 'run-3', caseName: '评论审核', status: 'failed', startedAt: '2026-07-18T05:40:20.000Z', finishedAt: '2026-07-18T05:41:02.000Z', steps: [] }
+      ]
+    );
+
+    expect(report).toContain('前置数据不足');
+    expect(report).toContain('<strong>1</strong> 跳过');
+    expect(report).toContain('<strong>1</strong> 失败');
+    expect(report).not.toContain('sensitive-token');
+  });
+
+  it('lists skipped single-run reports for prerequisite outcomes', async () => {
+    const store = createMemoryStore();
+    store.saveRun({ id: 'skipped-run', caseId: 'case-1', caseName: '用户资料审核', projectId: 'default-project', target: 'api', status: 'skipped', startedAt: '2026-07-20T00:00:00.000Z', finishedAt: '2026-07-20T00:00:01.000Z', variables: {}, steps: [] });
+    const app = createApp({ runner: {}, store });
+
+    await request(app).get('/api/reports?range=30d').expect(200).expect(({ body }) => {
+      expect(body).toMatchObject([{ id: 'skipped-run', status: 'skipped', skippedCases: 1 }]);
+    });
   });
 
   it('uploads a PNG visual baseline for an existing case', async () => {
@@ -399,5 +500,32 @@ describe('execution API', () => {
       .attach('file', Buffer.from([137, 80, 78, 71]), { filename: 'baseline.png', contentType: 'image/png' })
       .expect(201)
       .expect((response) => expect(response.body).toMatchObject({ source: 'upload', assetPath: expect.stringMatching(new RegExp(`^${created.id}/`)) }));
+  });
+
+  it('serves only case-scoped visual assets and retains report baselines by run ID', async () => {
+    const caseAssetsDir = await mkdtemp(join(tmpdir(), 'novatest-case-assets-'));
+    const store = createMemoryStore();
+    const app = createApp({ runner: {}, store, caseAssetsDir });
+    try {
+      const created = (await request(app).post('/api/cases').send(webCase).expect(201)).body;
+      const visualCheck = { id: 'baseline-1', assetPath: `${created.id}/baseline-1.png`, source: 'upload', description: '任务列表显示创建成功状态' };
+      await request(app).put(`/api/cases/${created.id}`).send({ ...created, steps: [{ ...created.steps[0], visualChecks: [visualCheck] }] }).expect(200);
+      await mkdir(join(caseAssetsDir, created.id), { recursive: true });
+      await writeFile(join(caseAssetsDir, created.id, 'baseline-1.png'), Buffer.from([137, 80, 78, 71]));
+
+      await request(app).get(`/api/cases/${created.id}/assets/baseline-1.png`).expect(200).expect('content-type', /image\/png/);
+      await request(app).get(`/api/cases/${created.id}/assets/..%2Fbaseline-1.png`).expect(404);
+      await request(app).get(`/api/cases/${created.id}/assets/other.png`).expect(404);
+
+      store.saveRun({
+        id: 'run-visual-1', caseId: created.id, caseName: created.name, projectId: created.projectId, target: 'web', status: 'passed',
+        startedAt: '2026-07-26T00:00:00.000Z', finishedAt: '2026-07-26T00:00:01.000Z', variables: {},
+        steps: [{ id: 's1', status: 'passed', attempts: 1, logs: [], visualChecks: [{ ...visualCheck, status: 'passed', reason: '页面状态一致', baselinePath: visualCheck.assetPath, screenshot: 'run-visual-1/s1-attempt-1.png' }] }]
+      });
+      await request(app).delete(`/api/cases/${created.id}`).expect(204);
+      await request(app).get(`/api/cases/${created.id}/assets/baseline-1.png?runId=run-visual-1`).expect(200).expect('content-type', /image\/png/);
+    } finally {
+      await rm(caseAssetsDir, { recursive: true, force: true });
+    }
   });
 });

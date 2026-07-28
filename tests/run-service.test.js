@@ -73,6 +73,22 @@ describe('RunService', () => {
     expect(contexts[0]).toBe(contexts[1]);
   });
 
+  it('passes the project policy to a Web UI runner and always finishes its session', async () => {
+    const calls = [];
+    const runner = {
+      web: {
+        execute: async (_step, context) => { calls.push(context.project.webAuth.provider); return {}; },
+        finish: async () => calls.push('finish')
+      }
+    };
+
+    await new RunService(runner).start(testCase, {
+      project: { id: 'project-1', webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' } }
+    });
+
+    expect(calls).toEqual(['lighthouse', 'finish']);
+  });
+
   it('keeps failed and passing evidence through one retry', async () => {
     let calls = 0;
     const runner = {
@@ -120,7 +136,7 @@ describe('RunService', () => {
     const service = new RunService({ execute: async () => ({}) });
     const queued = service.createQueuedRun(testCase);
 
-    expect(queued).toMatchObject({ status: 'queued', startedAt: null, steps: [{ id: 's1', status: 'queued', attempts: 0 }] });
+    expect(queued).toMatchObject({ status: 'queued', startedAt: null, variables: { runId: queued.id }, steps: [{ id: 's1', status: 'queued', attempts: 0 }] });
 
     await service.start(testCase, {
       run: queued,
@@ -143,5 +159,39 @@ describe('RunService', () => {
 
     expect(updates.some((run) => run.steps[0].logs.some((log) => log.message.includes('retrying once')))).toBe(true);
     expect(updates.at(-1)).toMatchObject({ status: 'failed', steps: [{ status: 'failed', attempts: 2 }] });
+  });
+
+  it('marks unavailable prerequisite data as skipped without retrying', async () => {
+    let attempts = 0;
+    const runner = {
+      execute: async () => {
+        attempts += 1;
+        throw Object.assign(new Error('前置数据不足：没有待审核记录'), { code: 'PRECONDITION_UNAVAILABLE' });
+      }
+    };
+
+    const run = await new RunService(runner).start(testCase);
+
+    expect(attempts).toBe(1);
+    expect(run).toMatchObject({ status: 'skipped', steps: [{ status: 'skipped', attempts: 1, error: expect.stringContaining('前置数据不足') }] });
+  });
+
+  it('interpolates one random title suffix and persists visual check results', async () => {
+    let receivedStep;
+    const runner = {
+      execute: async (step) => {
+        receivedStep = step;
+        return { visualChecks: [{ id: 'v1', status: 'passed', reason: '标题可见', baselinePath: 'case-1/ref.png', screenshot: 'run-1/s1-attempt-1.png' }] };
+      }
+    };
+    const caseWithRandomTitle = { ...testCase, steps: [{ id: 's1', kind: 'action', instruction: '创建衡川测试{{random6}}任务' }] };
+    const service = new RunService(runner);
+    const queued = service.createQueuedRun(caseWithRandomTitle);
+
+    expect(queued.variables.random6).toMatch(/^\d{6}$/);
+    const run = await service.start(caseWithRandomTitle, { run: queued });
+
+    expect(receivedStep.instruction).toBe(`创建衡川测试${run.variables.random6}任务`);
+    expect(run.steps[0].visualChecks).toEqual([{ id: 'v1', status: 'passed', reason: '标题可见', baselinePath: 'case-1/ref.png', screenshot: 'run-1/s1-attempt-1.png' }]);
   });
 });

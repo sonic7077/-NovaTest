@@ -1,5 +1,18 @@
 # 自动化测试
 
+## 灯塔项目公共登录
+
+灯塔 Web UI 用例在本机运行时会先完成账号密码与动态验证码登录。将下列变量写入本机 `.env`，该文件不得提交到仓库、数据库、用例或测试报告：
+
+```dotenv
+LIGHTHOUSE_PROJECT_NAME
+LIGHTHOUSE_EMAIL
+LIGHTHOUSE_PASSWORD
+LIGHTHOUSE_TOTP_SECRET
+```
+
+平台只持久化公共登录策略（提供方和目标域名）；账号、密码、动态验证码种子及生成的验证码不会写入平台数据。
+
 
 
 ## Getting started

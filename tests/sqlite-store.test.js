@@ -58,6 +58,22 @@ describe('SQLite store', () => {
     }
   });
 
+  it('persists a non-secret Lighthouse policy on a project', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
+    const databasePath = join(directory, 'novatest.db');
+
+    try {
+      const store = createSqliteStore({ databasePath });
+      const saved = store.saveProject({ name: '无极灯塔', webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' } });
+
+      expect(createSqliteStore({ databasePath }).getProject(saved.id)).toMatchObject({
+        webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' }
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('persists a case with steps in position order across store instances', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
     const databasePath = join(directory, 'novatest.db');
@@ -96,6 +112,26 @@ describe('SQLite store', () => {
     try {
       createSqliteStore({ databasePath }).saveCase({ ...webCase, steps: [{ ...webCase.steps[0], visualChecks }] });
       expect(createSqliteStore({ databasePath }).getCase(webCase.id).steps[0].visualChecks).toEqual(visualChecks);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('persists visual check results in run snapshots across store instances', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
+    const databasePath = join(directory, 'novatest.db');
+    const visualChecks = [{ id: 'visual-1', status: 'passed', reason: '标题和任务清单一致', baselinePath: 'case-1/baseline.png', screenshot: 'run-visual-1/step-1-attempt-1.png' }];
+
+    try {
+      const store = createSqliteStore({ databasePath });
+      store.saveCase(webCase);
+      store.saveRun({
+        id: 'run-visual-1', caseId: webCase.id, caseName: webCase.name, projectId: store.listProjects()[0].id, target: 'web', status: 'passed',
+        startedAt: '2026-07-26T00:00:00.000Z', finishedAt: '2026-07-26T00:00:01.000Z', variables: {},
+        steps: [{ id: 'step-1', status: 'passed', attempts: 1, logs: [], visualChecks }]
+      });
+
+      expect(createSqliteStore({ databasePath }).getRun('run-visual-1').steps[0].visualChecks).toEqual(visualChecks);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -307,16 +343,16 @@ describe('SQLite store', () => {
       store.saveCase(webCase);
       const projectId = store.listProjects()[0].id;
       store.saveRun({
-        id: 'running-run', caseId: webCase.id, caseName: webCase.name, projectId, target: 'web', status: 'running', startedAt: '2026-07-19T11:58:00.000Z', finishedAt: null, variables: {},
+        id: 'running-run', caseId: webCase.id, caseName: webCase.name, projectId, target: 'web', status: 'running', allowMutations: true, startedAt: '2026-07-19T11:58:00.000Z', finishedAt: null, variables: {},
         steps: [{ id: 'step-1', status: 'passed', attempts: 1, logs: [] }, { id: 'step-2', status: 'queued', attempts: 0, logs: [] }]
       });
       store.saveRun({ id: 'passed-run', caseId: webCase.id, caseName: webCase.name, projectId, target: 'web', status: 'passed', startedAt: '2026-07-18T10:00:00.000Z', finishedAt: '2026-07-18T10:01:00.000Z', variables: {}, steps: [] });
       store.saveRun({ id: 'failed-run', caseId: webCase.id, caseName: '接口配置', projectId, target: 'api', status: 'failed', startedAt: '2026-07-19T10:00:00.000Z', finishedAt: '2026-07-19T10:00:30.000Z', variables: {}, steps: [{ id: 'config', status: 'failed', attempts: 2, error: 'status mismatch', logs: [] }] });
-      store.saveBatch({ id: 'batch-1', projectId, target: 'web', name: 'Web 回归', caseIds: [webCase.id], status: 'running', runIds: ['running-run'], startedAt: '2026-07-19T11:58:00.000Z', finishedAt: null });
+      store.saveBatch({ id: 'batch-1', projectId, target: 'web', name: 'Web 回归', caseIds: [webCase.id], status: 'running', allowMutations: true, runIds: ['running-run'], startedAt: '2026-07-19T11:58:00.000Z', finishedAt: null });
 
       const reloaded = createSqliteStore({ databasePath });
-      expect(reloaded.getRun('running-run')).toMatchObject({ projectId, target: 'web', steps: [{ status: 'passed' }, { status: 'queued' }] });
-      expect(reloaded.getBatch('batch-1')).toMatchObject({ projectId, target: 'web' });
+      expect(reloaded.getRun('running-run')).toMatchObject({ projectId, target: 'web', allowMutations: true, steps: [{ status: 'passed' }, { status: 'queued' }] });
+      expect(reloaded.getBatch('batch-1')).toMatchObject({ projectId, target: 'web', allowMutations: true });
       expect(reloaded.listExecutions({ projectId }).find((execution) => execution.id === 'batch-1')).toMatchObject({ id: 'batch-1', totalCases: 1, completedSteps: 1, totalSteps: 2, status: 'running' });
       expect(reloaded.getDashboard({ range: '7d', now })).toMatchObject({ completedRuns: 2, passedRuns: 1, failedRuns: 1, automatedCaseCount: 1 });
       expect(reloaded.listReports({ projectId, range: '7d', now }).map((report) => report.id)).toEqual(['failed-run', 'passed-run']);

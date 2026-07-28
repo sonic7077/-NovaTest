@@ -93,6 +93,40 @@ describe('BatchService', () => {
     expect(batch.status).toBe('passed');
     expect(batch.projectId).toBe('default-project');
     expect(batch.runIds).toHaveLength(2);
-    expect(batch.runIds.map((id) => store.getRun(id).variables)).toEqual([{}, {}]);
+    expect(batch.runIds.map((id) => store.getRun(id).variables)).toEqual(batch.runIds.map((id) => ({
+      runId: id,
+      random6: expect.stringMatching(/^\d{6}$/)
+    })));
+  });
+
+  it('shares mutation authorization and ID reservations across API runs', async () => {
+    const store = createMemoryStore();
+    const contexts = [];
+    const apiCases = [
+      { ...firstCase, id: 'api-1', target: 'api', steps: [{ id: 's1', kind: 'apiRequest', instruction: '查询', request: { action: 'list_member_update_log', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly' } }] },
+      { ...firstCase, id: 'api-2', target: 'api', steps: [{ id: 's2', kind: 'apiRequest', instruction: '审核', request: { action: 'pass_member_update_log', method: 'POST', payload: {}, expectedStatus: 1, safety: 'mutating' } }] }
+    ];
+    const api = { createSession: () => ({}), execute: async (_step, context) => { contexts.push(context); return {}; } };
+
+    const batch = await new BatchService({ runner: { api }, store }).start({
+      name: '用户审核', projectId: 'default-project', caseIds: apiCases.map(({ id }) => id), cases: apiCases, allowMutations: true
+    });
+
+    expect(batch).toMatchObject({ status: 'passed', allowMutations: true });
+    expect(contexts.every((context) => context.allowMutations)).toBe(true);
+    expect(new Set(contexts.map((context) => context.selectedApiIds))).toHaveLength(1);
+  });
+
+  it('resolves each Web UI case project for a batch run', async () => {
+    const store = createMemoryStore();
+    store.saveProject({ id: 'default-project', name: '默认项目', webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' } });
+    const contexts = [];
+    const runner = { web: { execute: async (_step, context) => { contexts.push(context); return {}; }, finish: async () => {} } };
+    const batch = { id: 'batch-1', projectId: 'default-project', target: 'web', caseIds: ['case-1'], runIds: [], allowMutations: false };
+
+    await new BatchService({ runner, store }).execute({ batch, cases: [firstCase] });
+
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0].project.webAuth).toEqual({ provider: 'lighthouse', host: 'dt.chenmoyuan.tech' });
   });
 });
