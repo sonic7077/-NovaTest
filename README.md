@@ -1,5 +1,20 @@
 # 自动化测试
 
+## 测试服务器部署配置
+
+测试服务器使用 `/opt/auto_test/deploy/test.env` 作为唯一的部署环境文件。CI 仅在该文件不存在时从 `deploy/test.env.example` 创建它，因此仓库模板更新后，需要在服务器上手动补齐新增变量。
+
+模型配置页面保存的 API Key 以 `PLATFORM_CONFIG_ENCRYPTION_KEY` 加密。该值必须是 32 个或更多随机字符，只能写入服务器的 `deploy/test.env`，不得提交到仓库或录入测试用例。
+
+接口测试执行器仍完全依赖服务器环境中的 `CMS_BASE_URL`、`CMS_AES_KEY`、`CMS_AES_IV`、`CMS_APP_KEY`、`CMS_USERNAME`、`CMS_PASSWORD`、`CMS_GOOGLE_SECRET`、`CMS_OAUTH_ID`、`CMS_OAUTH_TYPE`、`CMS_VERSION`、`CMS_BUNDLE_ID`、`CMS_LANGUAGE` 与 `CMS_VIA`。健康状态出现 `missing CMS_*` 时，在 `/opt/auto_test/deploy/test.env` 补齐对应项后执行：
+
+```bash
+cd /opt/auto_test
+docker compose -f docker-compose.deploy.yml --env-file deploy/test.env up -d --build
+```
+
+不要通过平台页面、SQLite 数据库或测试报告保存 CMS 密钥。
+
 ## 灯塔项目公共登录
 
 灯塔 Web UI 用例在本机运行时会先完成账号密码与动态验证码登录。将下列变量写入本机 `.env`，该文件不得提交到仓库、数据库、用例或测试报告：
