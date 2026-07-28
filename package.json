@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node server/index.js",
     "config:bootstrap": "node server/commands/bootstrap-runtime-config.js",
+    "package:data": "node server/commands/package-data.js",
     "test": "vitest run"
   },
   "dependencies": {
