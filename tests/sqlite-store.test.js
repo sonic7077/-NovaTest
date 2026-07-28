@@ -58,6 +58,22 @@ describe('SQLite store', () => {
     }
   });
 
+  it('persists a non-secret Lighthouse policy on a project', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
+    const databasePath = join(directory, 'novatest.db');
+
+    try {
+      const store = createSqliteStore({ databasePath });
+      const saved = store.saveProject({ name: '无极灯塔', webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' } });
+
+      expect(createSqliteStore({ databasePath }).getProject(saved.id)).toMatchObject({
+        webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' }
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('persists a case with steps in position order across store instances', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
     const databasePath = join(directory, 'novatest.db');
@@ -96,6 +112,26 @@ describe('SQLite store', () => {
     try {
       createSqliteStore({ databasePath }).saveCase({ ...webCase, steps: [{ ...webCase.steps[0], visualChecks }] });
       expect(createSqliteStore({ databasePath }).getCase(webCase.id).steps[0].visualChecks).toEqual(visualChecks);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('persists visual check results in run snapshots across store instances', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-sqlite-'));
+    const databasePath = join(directory, 'novatest.db');
+    const visualChecks = [{ id: 'visual-1', status: 'passed', reason: '标题和任务清单一致', baselinePath: 'case-1/baseline.png', screenshot: 'run-visual-1/step-1-attempt-1.png' }];
+
+    try {
+      const store = createSqliteStore({ databasePath });
+      store.saveCase(webCase);
+      store.saveRun({
+        id: 'run-visual-1', caseId: webCase.id, caseName: webCase.name, projectId: store.listProjects()[0].id, target: 'web', status: 'passed',
+        startedAt: '2026-07-26T00:00:00.000Z', finishedAt: '2026-07-26T00:00:01.000Z', variables: {},
+        steps: [{ id: 'step-1', status: 'passed', attempts: 1, logs: [], visualChecks }]
+      });
+
+      expect(createSqliteStore({ databasePath }).getRun('run-visual-1').steps[0].visualChecks).toEqual(visualChecks);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

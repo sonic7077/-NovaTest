@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, readFileSync, renameSync } from 'node:fs';
+import { normalizeProjectWebAuth } from '../domain/project-auth.js';
 
 const schema = `
   PRAGMA foreign_keys = ON;
@@ -87,12 +88,24 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   }
 
   function defaultProject() {
-    const project = db.prepare('SELECT id, name, created_at AS createdAt, updated_at AS updatedAt FROM projects WHERE name = ?').get('默认项目');
-    if (project) return project;
+    const project = db.prepare('SELECT id, name, web_auth_json AS webAuthJson, created_at AS createdAt, updated_at AS updatedAt FROM projects WHERE name = ?').get('默认项目');
+    if (project) return hydrateProject(project);
     const timestamp = new Date().toISOString();
     const created = { id: crypto.randomUUID(), name: '默认项目', createdAt: timestamp, updatedAt: timestamp };
-    db.prepare('INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)').run(created.id, created.name, created.createdAt, created.updatedAt);
-    return created;
+    db.prepare('INSERT INTO projects (id, name, web_auth_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(created.id, created.name, 'null', created.createdAt, created.updatedAt);
+    return { ...created, webAuth: undefined };
+  }
+
+  function migrateProjectWebAuthSchema() {
+    const columns = db.prepare('PRAGMA table_info(projects)').all().map((column) => column.name);
+    if (!columns.includes('web_auth_json')) db.exec("ALTER TABLE projects ADD COLUMN web_auth_json TEXT NOT NULL DEFAULT 'null'");
+    if (db.prepare('PRAGMA user_version').get().user_version < 12) db.exec('PRAGMA user_version = 12');
+  }
+
+  function hydrateProject(row) {
+    if (!row) return undefined;
+    const { webAuthJson, ...project } = row;
+    return { ...project, webAuth: normalizeProjectWebAuth(JSON.parse(webAuthJson || 'null')) };
   }
 
   function migrateProjectSchema() {
@@ -146,6 +159,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   }
 
   migrateHistorySchema();
+  migrateProjectWebAuthSchema();
 
   function migrateEvidenceSchema() {
     const columns = db.prepare('PRAGMA table_info(run_steps)').all().map((column) => column.name);
@@ -270,6 +284,14 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   migrateMutationAuthorizationSchema();
 
+  function migrateRunVisualCheckSchema() {
+    const columns = db.prepare('PRAGMA table_info(run_steps)').all().map((column) => column.name);
+    if (!columns.includes('visual_checks_json')) db.exec("ALTER TABLE run_steps ADD COLUMN visual_checks_json TEXT NOT NULL DEFAULT '[]'");
+    if (db.prepare('PRAGMA user_version').get().user_version < 13) db.exec('PRAGMA user_version = 13');
+  }
+
+  migrateRunVisualCheckSchema();
+
   function hydrateUser(row) {
     if (!row) return undefined;
     return {
@@ -352,11 +374,11 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   function hydrateRun(row) {
     if (!row) return undefined;
     const steps = db.prepare(`
-      SELECT step_id AS id, status, attempts, error, screenshot, logs_json, screenshots_json, api_json
+      SELECT step_id AS id, status, attempts, error, screenshot, logs_json, screenshots_json, api_json, visual_checks_json
       FROM run_steps
       WHERE run_id = ?
       ORDER BY position
-    `).all(row.id).map(({ logs_json, screenshots_json, api_json, ...step }) => ({ ...step, logs: JSON.parse(logs_json), screenshots: JSON.parse(screenshots_json || '[]'), api: JSON.parse(api_json || 'null') || undefined }));
+    `).all(row.id).map(({ logs_json, screenshots_json, api_json, visual_checks_json, ...step }) => ({ ...step, logs: JSON.parse(logs_json), screenshots: JSON.parse(screenshots_json || '[]'), api: JSON.parse(api_json || 'null') || undefined, visualChecks: JSON.parse(visual_checks_json || '[]') }));
     return {
       id: row.id,
       caseId: row.caseId,
@@ -394,11 +416,11 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     `).run(run.id, run.caseId, run.caseName || currentCase?.name || '已删除用例', run.batchId || null, run.batchPosition ?? null, projectId, target, run.status, Number(Boolean(run.allowMutations)), run.startedAt, run.finishedAt, JSON.stringify(run.variables || {}));
     db.prepare('DELETE FROM run_steps WHERE run_id = ?').run(run.id);
     const insertStep = db.prepare(`
-      INSERT INTO run_steps (run_id, step_id, position, status, attempts, error, screenshot, logs_json, screenshots_json, api_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO run_steps (run_id, step_id, position, status, attempts, error, screenshot, logs_json, screenshots_json, api_json, visual_checks_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     run.steps.forEach((step, position) => {
-      insertStep.run(run.id, step.id, position, step.status, step.attempts, step.error || null, step.screenshot || null, JSON.stringify(step.logs || []), JSON.stringify(step.screenshots || []), JSON.stringify(step.api || null));
+      insertStep.run(run.id, step.id, position, step.status, step.attempts, step.error || null, step.screenshot || null, JSON.stringify(step.logs || []), JSON.stringify(step.screenshots || []), JSON.stringify(step.api || null), JSON.stringify(step.visualChecks || []));
     });
     return { ...run, projectId, target };
   }
@@ -506,7 +528,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   function listProjects() {
     return db.prepare(`
-      SELECT projects.id, projects.name, projects.created_at AS createdAt, projects.updated_at AS updatedAt,
+      SELECT projects.id, projects.name, projects.web_auth_json AS webAuthJson, projects.created_at AS createdAt, projects.updated_at AS updatedAt,
         SUM(CASE WHEN test_cases.target = 'web' THEN 1 ELSE 0 END) AS webCaseCount,
         SUM(CASE WHEN test_cases.target = 'api' THEN 1 ELSE 0 END) AS apiCaseCount,
         COUNT(test_cases.id) AS caseCount
@@ -514,7 +536,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
       LEFT JOIN test_cases ON test_cases.project_id = projects.id
       GROUP BY projects.id
       ORDER BY projects.created_at, projects.id
-    `).all().map((project) => ({ ...project, webCaseCount: Number(project.webCaseCount), apiCaseCount: Number(project.apiCaseCount), caseCount: Number(project.caseCount) }));
+    `).all().map((project) => ({ ...hydrateProject(project), webCaseCount: Number(project.webCaseCount), apiCaseCount: Number(project.apiCaseCount), caseCount: Number(project.caseCount) }));
   }
 
   function getProject(id) {
@@ -524,20 +546,29 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   function saveProject(project) {
     const name = project?.name?.trim();
     if (!name) throw new Error('project name required');
+    const webAuth = normalizeProjectWebAuth(project.webAuth);
     const timestamp = new Date().toISOString();
     const id = project.id || crypto.randomUUID();
     try {
       if (project.id) {
-        const result = db.prepare('UPDATE projects SET name = ?, updated_at = ? WHERE id = ?').run(name, timestamp, id);
+        const result = db.prepare('UPDATE projects SET name = ?, web_auth_json = ?, updated_at = ? WHERE id = ?').run(name, JSON.stringify(webAuth || null), timestamp, id);
         if (result.changes === 0) throw new Error('project not found');
       } else {
-        db.prepare('INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)').run(id, name, timestamp, timestamp);
+        db.prepare('INSERT INTO projects (id, name, web_auth_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(id, name, JSON.stringify(webAuth || null), timestamp, timestamp);
       }
     } catch (error) {
       if (String(error.message).includes('UNIQUE constraint failed')) throw new Error('project name already exists');
       throw error;
     }
     return getProject(id);
+  }
+
+  function ensureProjectWebAuth({ name, webAuth }) {
+    const normalized = normalizeProjectWebAuth(webAuth);
+    if (!normalized) throw new Error('invalid project web auth');
+    const result = db.prepare('UPDATE projects SET web_auth_json = ?, updated_at = ? WHERE name = ?').run(JSON.stringify(normalized), new Date().toISOString(), name);
+    if (result.changes === 0) throw new Error('project not found');
+    return db.prepare('SELECT id FROM projects WHERE name = ?').get(name).id;
   }
 
   function deleteProject(id) {
@@ -701,6 +732,7 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     listProjects,
     getProject,
     saveProject,
+    ensureProjectWebAuth,
     deleteProject,
     saveRun,
     getRun(id) {

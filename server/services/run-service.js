@@ -5,6 +5,10 @@ const viewports = {
   mobile: { width: 390, height: 844 }
 };
 
+function randomSixDigits() {
+  return String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0');
+}
+
 export class RunService {
   constructor(runner) {
     this.runner = runner;
@@ -24,12 +28,12 @@ export class RunService {
       status: 'queued',
       startedAt: null,
       finishedAt: null,
-      variables: { runId: id },
+      variables: { runId: id, random6: randomSixDigits() },
       steps: testCase.steps.map((step) => ({ id: step.id, status: 'queued', attempts: 0, logs: [], screenshots: [] }))
     };
   }
 
-  async start(testCase, { apiSession, selectedApiIds, allowMutations, run: queuedRun, onUpdate } = {}) {
+  async start(testCase, { project, apiSession, selectedApiIds, allowMutations, run: queuedRun, onUpdate } = {}) {
     const runner = this.runner[testCase.target] || this.runner;
     const run = queuedRun || this.createQueuedRun(testCase);
     const publish = () => onUpdate?.(structuredClone(run));
@@ -42,11 +46,13 @@ export class RunService {
       viewport: viewports[testCase.viewport],
       runId: run.id,
       allowMutations: Boolean(allowMutations ?? run.allowMutations),
+      project,
       selectedApiIds,
       apiSession: apiSession || (testCase.target === 'api' && typeof runner.createSession === 'function' ? runner.createSession() : undefined)
     };
 
-    for (const step of testCase.steps) {
+    try {
+      for (const step of testCase.steps) {
       const stepRun = run.steps.find((item) => item.id === step.id) || { id: step.id, status: 'queued', attempts: 0, logs: [], screenshots: [] };
       if (!run.steps.includes(stepRun)) run.steps.push(stepRun);
       stepRun.status = 'running';
@@ -67,6 +73,7 @@ export class RunService {
         } catch (error) {
           stepRun.error = error.message;
           if (error.api) stepRun.api = error.api;
+          if (error.visualChecks) stepRun.visualChecks = error.visualChecks;
           if (error.evidence) stepRun.screenshots.push(error.evidence);
           if (error.evidenceWarning) stepRun.logs.push({ level: 'warn', message: error.evidenceWarning });
           if (error.code === 'PRECONDITION_UNAVAILABLE') {
@@ -89,11 +96,14 @@ export class RunService {
         publish();
         return run;
       }
-    }
+      }
 
-    run.status = 'passed';
-    run.finishedAt = new Date().toISOString();
-    publish();
-    return run;
+      run.status = 'passed';
+      run.finishedAt = new Date().toISOString();
+      publish();
+      return run;
+    } finally {
+      await runner.finish?.(executionContext);
+    }
   }
 }

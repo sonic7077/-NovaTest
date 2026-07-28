@@ -58,4 +58,20 @@ describe('ExecutionService', () => {
     expect(run).toMatchObject({ status: 'queued', allowMutations: true });
     expect(store.getRun(run.id)).toMatchObject({ allowMutations: true });
   });
+
+  it('resolves a Web UI case project before executing it', async () => {
+    const store = createMemoryStore();
+    store.saveProject({ id: 'default-project', name: '默认项目', webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' } });
+    let receivedProject;
+    const service = new ExecutionService({
+      runner: { web: { execute: async (_step, context) => { receivedProject = context.project; return {}; }, finish: async () => {} } },
+      store,
+      schedule: () => {}
+    });
+    const run = service.queueRun(webCase);
+
+    await service.executeRun(webCase, run);
+
+    expect(receivedProject.webAuth).toEqual({ provider: 'lighthouse', host: 'dt.chenmoyuan.tech' });
+  });
 });

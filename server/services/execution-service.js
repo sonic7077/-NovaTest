@@ -51,6 +51,7 @@ export class ExecutionService {
     try {
       return await this.runService.start(testCase, {
         run,
+        project: this.store.getProject(testCase.projectId),
         onUpdate: (update) => this.store.saveRun(update)
       });
     } catch (error) {

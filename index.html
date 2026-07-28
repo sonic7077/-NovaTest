@@ -18,7 +18,7 @@
       <a class="nav-item" href="#/assets"><i data-lucide="folder-kanban"></i>测试资产 <b id="caseCount">0</b></a>
       <a class="nav-item" href="#/executions"><i data-lucide="monitor-play"></i>执行中心</a>
       <a class="nav-item" href="#/reports"><i data-lucide="chart-no-axes-combined"></i>质量报告</a>
-      <a class="nav-item" href="#"><i data-lucide="bot"></i>AI 模型配置</a>
+      <a class="nav-item" href="#/model-config"><i data-lucide="bot"></i>AI 模型配置</a>
     </nav>
     <div class="sidebar-bottom">
       <button class="user user-button" id="currentUserButton" type="button"><span class="avatar" id="currentUserAvatar">AD</span><span><strong id="currentUserName">admin</strong><small id="currentUserTitle">平台管理员</small></span><i data-lucide="chevron-right"></i></button>
@@ -60,6 +60,9 @@
     <section class="page-heading route-view" data-route-view="reports"><div><p class="eyebrow">QUALITY REPORTS</p><h1>质量报告</h1><p class="subtitle">查看已完成的单条与批量测试报告。</p></div></section>
     <section class="assets panel route-view" data-route-view="reports"><div class="execution-filters"><select id="reportProject" aria-label="所属项目"><option value="">全部项目</option></select><select id="reportStatus"><option value="">全部状态</option><option value="passed">通过</option><option value="skipped">前置数据不足</option><option value="failed">失败</option></select><select id="reportTarget"><option value="">全部类型</option><option value="web">Web UI</option><option value="api">接口测试</option></select><select id="reportRange"><option value="today">今日</option><option value="7d" selected>最近 7 天</option><option value="30d">最近 30 天</option></select></div><div id="reportList" class="quality-list"></div></section>
 
+    <section class="page-heading route-view" data-route-view="model-config"><div><p class="eyebrow">AI MODEL CONFIGURATION</p><h1>AI 模型配置</h1><p class="subtitle">查看当前生效的只读模型连接信息与执行器状态。</p></div></section>
+    <section class="panel model-config-panel route-view" data-route-view="model-config"><div class="panel-head"><div><h2>当前配置</h2><p id="modelConfigStatus">正在读取模型配置...</p></div><span class="status-badge" id="modelConfigBadge">--</span></div><div class="model-config-grid" id="modelConfigDetails"></div></section>
+
     <section class="page-heading route-view" data-route-view="profile"><div><p class="eyebrow">PERSONAL SETTINGS</p><h1>个人信息</h1><p class="subtitle">维护测试平台中的个人资料与登录密码。</p></div></section>
     <section class="profile-grid route-view" data-route-view="profile"><article class="panel profile-panel"><div class="panel-head"><div><h2>基本信息</h2><p>资料会保存在当前测试平台。</p></div></div><form id="profileForm" class="profile-form"><label>账号<input id="profileUsername" disabled /></label><label>显示名称<input id="profileDisplayName" required maxlength="80" /></label><label>岗位<input id="profileJobTitle" required maxlength="80" /></label><label>邮箱<input id="profileEmail" type="email" maxlength="80" /></label><button class="run-button" type="submit"><i data-lucide="save"></i>保存信息</button></form></article><article class="panel profile-panel"><div class="panel-head"><div><h2>修改密码</h2><p>修改后需要重新登录。</p></div></div><form id="passwordForm" class="profile-form"><label>当前密码<input id="currentPassword" type="password" required /></label><label>新密码<input id="newPassword" type="password" minlength="8" required /></label><button class="secondary-button" type="submit"><i data-lucide="key-round"></i>更新密码</button></form><button class="logout-button" id="logoutButton" type="button"><i data-lucide="log-out"></i>退出登录</button></article></section>
 
@@ -97,13 +100,8 @@
           <button class="target-tab" data-target="api"><span class="target-icon api"><i data-lucide="braces"></i></span>API 服务</button>
         </div>
         <div class="device-strip" id="deviceStrip"><span class="status-dot"></span><span><b>Chromium · Desktop</b><small>1440 × 900 · Playwright browser context</small></span><div class="viewport-switch"><button class="viewport-button selected" data-viewport="desktop">Desktop</button><button class="viewport-button" data-viewport="mobile">Mobile H5</button></div></div>
-        <div class="steps" id="steps">
-          <div class="step" data-kind="action"><span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">01</span><div class="step-content"><div class="step-type"><i data-lucide="mouse-pointer-click"></i>执行操作</div><textarea>打开应用，在首页点击「好物精选」并进入第一件商品详情</textarea></div><button class="step-menu" title="步骤菜单"><i data-lucide="more-horizontal"></i></button></div>
-          <div class="step" data-kind="assert"><span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">02</span><div class="step-content"><div class="step-type assert"><i data-lucide="shield-check"></i>智能断言</div><textarea>确认商品标题、价格和「加入购物车」按钮均正常展示</textarea></div><button class="step-menu" title="步骤菜单"><i data-lucide="more-horizontal"></i></button></div>
-          <div class="step" data-kind="action"><span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">03</span><div class="step-content"><div class="step-type"><i data-lucide="mouse-pointer-click"></i>执行操作</div><textarea>点击加入购物车，进入购物车后提交订单</textarea></div><button class="step-menu" title="步骤菜单"><i data-lucide="more-horizontal"></i></button></div>
-          <div class="step" data-kind="query"><span class="grab"><i data-lucide="grip-vertical"></i></span><span class="step-number">04</span><div class="step-content"><div class="step-type query"><i data-lucide="scan-search"></i>数据提取</div><textarea>提取订单号和应付金额，保存为变量 orderId、totalAmount</textarea></div><button class="step-menu" title="步骤菜单"><i data-lucide="more-horizontal"></i></button></div>
-        </div>
-        <button class="add-step" id="addStep"><i data-lucide="plus"></i>添加自然语言步骤</button>
+        <div class="steps" id="steps"></div>
+        <div class="add-step-wrap"><button type="button" class="add-step" id="addStep" aria-haspopup="menu" aria-expanded="false"><i data-lucide="plus"></i>添加步骤</button><div class="add-step-menu" id="addStepMenu" hidden><button type="button" data-add-web-step="action"><i data-lucide="mouse-pointer-click"></i><span>执行操作<small>通过文字与图片辅助识别完成页面操作</small></span></button><button type="button" data-add-web-step="assert"><i data-lucide="shield-check"></i><span>验证结果<small>用文字与图片校验上一步执行后的页面结果</small></span></button></div></div>
         <div class="api-steps" id="apiSteps" hidden></div>
         <button class="add-step" id="addApiStep" hidden><i data-lucide="plus"></i>添加接口请求</button>
         <section class="api-preview" id="apiRequestPreview" hidden><h3>请求预览</h3><pre id="apiPreviewCode"></pre></section>

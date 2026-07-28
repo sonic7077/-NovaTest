@@ -2,10 +2,11 @@ import 'dotenv/config';
 import { createApp } from './app.js';
 import { CmsApiRunner } from './runners/cms-api-runner.js';
 import { seedArkCommunityCases } from './seed/ark-community-cases.js';
+import { upgradeLighthouseTaskListCase } from './seed/lighthouse-cases.js';
 import { createProductionRunner } from './runners/production-runner.js';
 import { cmsWhitebagCases } from './seed/cms-whitebag-cases.js';
 import { createSqliteStore } from './storage/sqlite-store.js';
-import { withWujiMidsceneConfig } from './services/midscene-config.js';
+import { publicMidsceneConfig, withWujiMidsceneConfig } from './services/midscene-config.js';
 
 function requiredCmsConfig() {
   const fields = ['CMS_BASE_URL', 'CMS_AES_KEY', 'CMS_AES_IV', 'CMS_APP_KEY', 'CMS_USERNAME', 'CMS_PASSWORD', 'CMS_GOOGLE_SECRET', 'CMS_OAUTH_ID', 'CMS_OAUTH_TYPE', 'CMS_VERSION', 'CMS_BUNDLE_ID', 'CMS_LANGUAGE', 'CMS_VIA'];
@@ -31,7 +32,14 @@ function requiredCmsConfig() {
 }
 
 async function main() {
-  Object.assign(process.env, withWujiMidsceneConfig(process.env));
+  const modelEnv = withWujiMidsceneConfig(process.env);
+  Object.assign(process.env, modelEnv);
+  const store = createSqliteStore({ databasePath: 'data/novatest.db', legacyJsonPath: 'data/store.json' });
+  store.ensureProjectWebAuth({
+    name: process.env.LIGHTHOUSE_PROJECT_NAME || '默认项目',
+    webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' }
+  });
+  upgradeLighthouseTaskListCase(store);
   let webRunner;
   let runnerStatus;
   try {
@@ -52,9 +60,8 @@ async function main() {
   const runner = { web: webRunner, api: apiRunner };
   const port = Number(process.env.PORT || 4173);
   const host = process.env.HOST || '127.0.0.1';
-  const store = createSqliteStore({ databasePath: 'data/novatest.db', legacyJsonPath: 'data/store.json' });
   if (cmsConfig.baseUrl) seedArkCommunityCases(store, { baseUrl: cmsConfig.baseUrl });
-  createApp({ runner, store, authRequired: true, runnerStatus, cmsRunnerStatus, cmsSeedCases: cmsConfig.baseUrl ? cmsWhitebagCases({ baseUrl: cmsConfig.baseUrl }) : [] }).listen(port, host, () => console.log(`先锋营自动化测试平台运行于 http://${host}:${port}`));
+  createApp({ runner, store, authRequired: true, runnerStatus, cmsRunnerStatus, modelConfig: publicMidsceneConfig(modelEnv), cmsSeedCases: cmsConfig.baseUrl ? cmsWhitebagCases({ baseUrl: cmsConfig.baseUrl }) : [] }).listen(port, host, () => console.log(`先锋营自动化测试平台运行于 http://${host}:${port}`));
 }
 
 main();

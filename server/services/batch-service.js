@@ -41,6 +41,7 @@ export class BatchService {
       this.store.saveBatch(batch);
 
       const run = await this.runService.start(testCase, {
+        project: this.store.getProject(testCase.projectId),
         apiSession,
         selectedApiIds,
         allowMutations: batch.allowMutations,
