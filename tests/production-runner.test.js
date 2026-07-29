@@ -15,8 +15,8 @@ describe('Midscene configuration', () => {
   });
 
   it('maps the SQLite model configuration to Midscene without reading business environment values', () => {
-    expect(midsceneConfigFromModel({ baseUrl: 'https://model.example/api', modelName: 'vision', modelFamily: 'gemini', apiKey: 'private-key' }))
-      .toEqual({ MIDSCENE_MODEL_BASE_URL: 'https://model.example/api', MIDSCENE_MODEL_NAME: 'vision', MIDSCENE_MODEL_FAMILY: 'gemini', MIDSCENE_MODEL_API_KEY: 'private-key' });
+    expect(midsceneConfigFromModel({ baseUrl: 'https://model.example/api', modelName: 'vision', modelFamily: 'gemini', apiKey: 'private-key', userAgent: 'Mozilla/5.0 NovaTest' }))
+      .toEqual({ MIDSCENE_MODEL_BASE_URL: 'https://model.example/api', MIDSCENE_MODEL_NAME: 'vision', MIDSCENE_MODEL_FAMILY: 'gemini', MIDSCENE_MODEL_API_KEY: 'private-key', MIDSCENE_MODEL_INIT_CONFIG_JSON: '{"defaultHeaders":{"User-Agent":"Mozilla/5.0 NovaTest"}}' });
   });
 
   it('uses a bounded replanning limit and falls back to 40 for invalid configuration', () => {

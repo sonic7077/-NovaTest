@@ -43,4 +43,11 @@ describe('runtime configuration service', () => {
       LIGHTHOUSE_TOTP_SECRET: completeRuntimeConfig.lighthouse.totpSecret
     })).toEqual(completeRuntimeConfig);
   });
+
+  it('adds a browser-compatible user agent when migrating an existing SQLite configuration', () => {
+    const legacy = structuredClone(completeRuntimeConfig);
+    delete legacy.model.userAgent;
+
+    expect(normalizeRuntimeConfig(legacy).model.userAgent).toContain('Mozilla/5.0');
+  });
 });

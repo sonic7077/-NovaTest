@@ -1,3 +1,5 @@
+import { DEFAULT_MODEL_USER_AGENT } from './model-config-service.js';
+
 const cmsFields = ['baseUrl', 'key', 'iv', 'appKey', 'username', 'password', 'googleSecret', 'oauthId', 'oauthType', 'version', 'bundleId', 'language', 'via'];
 const lighthouseFields = ['projectName', 'email', 'password', 'totpSecret'];
 
@@ -24,7 +26,10 @@ function normalizeModel(input = {}) {
     baseUrl: requiredUrl(input.baseUrl, 'model.baseUrl'),
     modelName: requiredText(input.modelName, 'model.modelName'),
     modelFamily: typeof input.modelFamily === 'string' ? input.modelFamily.trim() : '',
-    apiKey: requiredText(input.apiKey, 'model.apiKey')
+    apiKey: requiredText(input.apiKey, 'model.apiKey'),
+    userAgent: typeof input.userAgent === 'string' && input.userAgent.trim()
+      ? requiredText(input.userAgent, 'model.userAgent')
+      : DEFAULT_MODEL_USER_AGENT
   };
 }
 

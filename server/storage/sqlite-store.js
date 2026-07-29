@@ -353,7 +353,12 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   function getRuntimeConfig() {
     const row = db.prepare("SELECT value_json AS valueJson FROM platform_settings WHERE key = 'runtime_config'").get();
-    return row ? JSON.parse(row.valueJson) : undefined;
+    if (!row) return undefined;
+    const saved = normalizeRuntimeConfig(JSON.parse(row.valueJson));
+    const valueJson = JSON.stringify(saved);
+    if (valueJson !== row.valueJson) db.prepare("UPDATE platform_settings SET value_json = ?, updated_at = ? WHERE key = 'runtime_config'")
+      .run(valueJson, new Date().toISOString());
+    return saved;
   }
 
   function saveRuntimeConfig(config) {

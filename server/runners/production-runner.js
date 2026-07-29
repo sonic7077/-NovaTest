@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { shouldUseLighthouseLogin } from '../domain/project-auth.js';
 import { loginLighthouse } from '../services/lighthouse-login.js';
+import { DEFAULT_MODEL_USER_AGENT } from '../services/model-config-service.js';
 import { createWebRunner } from './web-runner.js';
 
 const requiredSettings = [
@@ -23,7 +24,10 @@ export function midsceneConfigFromModel(modelConfig = {}) {
     MIDSCENE_MODEL_BASE_URL: String(modelConfig.baseUrl || ''),
     MIDSCENE_MODEL_NAME: String(modelConfig.modelName || ''),
     MIDSCENE_MODEL_FAMILY: String(modelConfig.modelFamily || ''),
-    MIDSCENE_MODEL_API_KEY: String(modelConfig.apiKey || '')
+    MIDSCENE_MODEL_API_KEY: String(modelConfig.apiKey || ''),
+    MIDSCENE_MODEL_INIT_CONFIG_JSON: JSON.stringify({
+      defaultHeaders: { 'User-Agent': String(modelConfig.userAgent || DEFAULT_MODEL_USER_AGENT) }
+    })
   };
 }
 

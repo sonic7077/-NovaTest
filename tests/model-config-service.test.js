@@ -23,4 +23,11 @@ describe('model configuration service', () => {
     expect(() => normalizeModelConfig({ baseUrl: 'ftp://model.example', modelName: 'vision' }, {}))
       .toThrow('baseUrl must use HTTP or HTTPS');
   });
+
+  it('preserves the stored model user agent while updating a visible model setting', () => {
+    expect(normalizeModelConfig(
+      { baseUrl: 'https://model.example', modelName: 'vision', apiKey: '' },
+      { apiKey: 'saved-key', userAgent: 'Mozilla/5.0 Custom Test Agent' }
+    )).toMatchObject({ userAgent: 'Mozilla/5.0 Custom Test Agent' });
+  });
 });

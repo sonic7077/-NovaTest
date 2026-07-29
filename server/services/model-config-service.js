@@ -1,4 +1,5 @@
 const maxFieldLength = 500;
+export const DEFAULT_MODEL_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 function asBoundedText(value, field, { required = false } = {}) {
   const normalized = typeof value === 'string' ? value.trim() : '';
@@ -31,7 +32,8 @@ export function normalizeModelConfig(input = {}, existing = {}) {
     baseUrl,
     modelName,
     modelFamily: asBoundedText(input.modelFamily, 'modelFamily'),
-    apiKey
+    apiKey,
+    userAgent: asBoundedText(existing.userAgent, 'userAgent') || DEFAULT_MODEL_USER_AGENT
   };
 }
 
