@@ -271,6 +271,10 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     if (cases.some((testCase) => !testCase)) return res.status(400).json({ error: 'test case not found' });
     if (new Set(cases.map((testCase) => testCase.target)).size !== 1) return res.status(400).json({ error: 'batch cases must share one target' });
     if (new Set(cases.map((testCase) => testCase.projectId)).size !== 1) return res.status(409).json({ error: '批量执行只能选择同一项目的用例' });
+    if (cases[0].target === 'api') {
+      const protocols = new Set(cases.flatMap((testCase) => testCase.steps.map((step) => step.request?.protocol || 'cms')));
+      if (protocols.size !== 1) return res.status(409).json({ error: '批量执行只能选择同一接口协议的用例' });
+    }
 
     const name = typeof req.body.name === 'string' && req.body.name.trim()
       ? req.body.name.trim()

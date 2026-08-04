@@ -281,6 +281,22 @@ describe('execution API', () => {
     });
   });
 
+  it('rejects a batch that mixes CMS and Editorial API protocols', async () => {
+    const app = createApp({ runner: { api: { execute: async () => ({}) } }, store: createMemoryStore(), executionSchedule: () => {} });
+    const cms = (await request(app).post('/api/cases').send(apiCase).expect(201)).body;
+    const editorial = (await request(app).post('/api/cases').send({
+      ...apiCase,
+      name: 'AI 评论概览',
+      baseUrl: 'https://editorial.example.test',
+      steps: [{ id: 'summary', kind: 'apiRequest', instruction: '查询概览', request: {
+        protocol: 'editorial', action: 'ai-comment/summary', method: 'GET', payload: {}, expectedStatus: 200, safety: 'readonly'
+      } }]
+    }).expect(201)).body;
+
+    await request(app).post('/api/batches').send({ caseIds: [cms.id, editorial.id] }).expect(409)
+      .expect({ error: '批量执行只能选择同一接口协议的用例' });
+  });
+
   it('reports whether the Web UI runner is configured', async () => {
     const app = createApp({
       runner: {},
