@@ -96,6 +96,10 @@ function requestFailure(message, api) {
   return error;
 }
 
+function expectedStatusMatches(actualStatus, expectedStatus) {
+  return (Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus]).includes(actualStatus);
+}
+
 export class EditorialApiRunner {
   constructor({ config, fetchImpl = fetch }) {
     this.config = config;
@@ -151,7 +155,7 @@ export class EditorialApiRunner {
     });
     const body = await parseJson(response);
     const api = apiEvidence({ action: request.action, method: request.method, response, body, startedAt, payload });
-    if (!response.ok || response.status !== request.expectedStatus) throw requestFailure(`API assertion failed: ${request.action}`, api);
+    if (!expectedStatusMatches(response.status, request.expectedStatus)) throw requestFailure(`API assertion failed: ${request.action}`, api);
 
     try {
       const selectedVariables = selectListVariables(body, request.select, context.selectedApiIds ||= new Set(), api);

@@ -82,4 +82,37 @@ describe('Editorial API runner', () => {
     }), { testCase: { baseUrl: config.baseUrl }, variables: {} }))
       .rejects.toThrow('mutating API step requires allowMutations');
   });
+
+  it('accepts an allowed non-success HTTP status and records the actual status', async () => {
+    const runner = new EditorialApiRunner({
+      config,
+      fetchImpl: async (url) => url.endsWith('/api/auth/login')
+        ? response(200, { access_token: 'private-jwt' })
+        : response(404, { detail: 'project not found' })
+    });
+
+    const result = await runner.execute(editorialStep('ai-comment/summary', {
+      expectedStatus: [403, 404]
+    }), { testCase: { baseUrl: config.baseUrl }, variables: {} });
+
+    expect(result.api.httpStatus).toBe(404);
+  });
+
+  it('does not authenticate an unauthenticated Editorial negative probe', async () => {
+    const calls = [];
+    const runner = new EditorialApiRunner({
+      config,
+      fetchImpl: async (url) => {
+        calls.push(url);
+        return response(401, { detail: 'not authenticated' });
+      }
+    });
+
+    await runner.execute(editorialStep('ai-comment/summary', {
+      auth: 'none', expectedStatus: 401
+    }), { testCase: { baseUrl: config.baseUrl }, variables: {} });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).not.toContain('/api/auth/login');
+  });
 });

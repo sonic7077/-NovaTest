@@ -69,6 +69,21 @@ describe('web test case', () => {
     expect(testCase.steps[0].request.protocol).toBe('editorial');
   });
 
+  it('accepts a numeric Editorial expected-status set and rejects invalid status sets', () => {
+    const request = {
+      protocol: 'editorial', action: 'ai-comment/summary', method: 'GET', payload: {},
+      expectedStatus: [403, 404], safety: 'readonly'
+    };
+    const testCase = validateWebCase({
+      id: 'editorial-status-set', projectId: 'project-1', name: '项目权限边界', target: 'api',
+      baseUrl: 'https://editorial.example.test', viewport: 'desktop',
+      steps: [{ id: 'summary', kind: 'apiRequest', instruction: '读取项目概览', request }]
+    });
+
+    expect(testCase.steps[0].request.expectedStatus).toEqual([403, 404]);
+    expect(() => validateWebCase({ ...testCase, steps: [{ ...testCase.steps[0], request: { ...request, expectedStatus: [403, '404'] } }] })).toThrow('invalid API request');
+  });
+
   it('rejects unsupported API authentication modes', () => {
     expect(() => validateWebCase({
       id: 'bad-auth', projectId: 'project-1', name: '错误认证方式', target: 'api',

@@ -25,6 +25,11 @@ function validSelection(select) {
     && validJsonPath(select.listPath) && validJsonPath(select.idPath));
 }
 
+function validExpectedStatus(value) {
+  const statuses = Array.isArray(value) ? value : [value];
+  return statuses.length > 0 && statuses.every((status) => Number.isInteger(status));
+}
+
 export function validateWebCase(input) {
   if (!input || typeof input !== 'object') throw new Error('invalid web case');
   if (!input.projectId?.trim()) throw new Error('project required');
@@ -44,7 +49,7 @@ export function validateWebCase(input) {
         ? request?.method === 'POST'
         : ['GET', 'POST'].includes(request?.method);
       const validAuth = request?.auth === undefined || request.auth === 'session' || request.auth === 'none';
-      if (step.kind !== 'apiRequest' || !request?.action?.trim() || !apiProtocols.has(protocol) || !validMethod || !['readonly', 'mutating'].includes(request.safety) || !validAuth || !validExpectedJson(request.expectedJson) || !validExtract(request.extract) || !validSelection(request.select)) throw new Error('invalid API request');
+      if (step.kind !== 'apiRequest' || !request?.action?.trim() || !apiProtocols.has(protocol) || !validMethod || !validExpectedStatus(request.expectedStatus) || !['readonly', 'mutating'].includes(request.safety) || !validAuth || !validExpectedJson(request.expectedJson) || !validExtract(request.extract) || !validSelection(request.select)) throw new Error('invalid API request');
     }
     if (input.target === 'web' && step.kind === 'apiRequest') throw new Error('invalid step');
     (step.visualChecks || []).forEach((visualCheck) => {
