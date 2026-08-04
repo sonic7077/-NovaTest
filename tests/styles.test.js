@@ -136,6 +136,8 @@ describe('test console stylesheet', () => {
     expect(script).toContain("step.request?.safety === 'mutating'");
     expect(script).toContain('window.confirm(');
     expect(script).toContain('data-field="select"');
+    expect(script).toContain('data-field="protocol"');
+    expect(script).toContain('data-field="method"');
     expect(stylesheet).toContain('.batch-status.skipped');
     expect(script).toContain('async function loadBatchHistory(projectId = activeProjectId)');
     expect(script).toContain('`/api/batches?projectId=${encodeURIComponent(projectId)}`');

@@ -235,19 +235,20 @@ document.addEventListener('click', (event) => {
 });
 
 $('#addApiStep').addEventListener('click', () => {
-  apiSteps.appendChild(renderApiStepNode({ instruction: '', request: { method: 'POST', safety: 'readonly', payload: {}, expectedStatus: 1, expectedJson: [], extract: {} } }, apiSteps.children.length));
+  apiSteps.appendChild(renderApiStepNode({ instruction: '', request: { protocol: 'cms', method: 'POST', safety: 'readonly', payload: {}, expectedStatus: 1, expectedJson: [], extract: {} } }, apiSteps.children.length));
   renderIcons();
   updateApiRequestPreview();
 });
 
 apiSteps.addEventListener('input', updateApiRequestPreview);
+apiSteps.addEventListener('change', updateApiRequestPreview);
 
 function updateApiRequestPreview() {
   const first = apiSteps.firstElementChild;
   if (!first) return;
   const value = (field) => first.querySelector(`[data-field="${field}"]`)?.value || '';
   try {
-    $('#apiPreviewCode').textContent = JSON.stringify({ method: 'POST', action: value('action'), payload: parseJson(value('payload'), '请求 Body', {}), expectedStatus: Number(value('expectedStatus') || 1), expectedJson: parseJson(value('expectedJson'), 'JSON 断言', []), extract: parseJson(value('extract'), '变量提取', {}), select: parseJson(value('select'), '列表选择', undefined) }, null, 2);
+    $('#apiPreviewCode').textContent = JSON.stringify({ protocol: value('protocol') || 'cms', method: value('method') || 'POST', action: value('action'), payload: parseJson(value('payload'), '请求 Body', {}), expectedStatus: Number(value('expectedStatus') || 1), expectedJson: parseJson(value('expectedJson'), 'JSON 断言', []), extract: parseJson(value('extract'), '变量提取', {}), select: parseJson(value('select'), '列表选择', undefined) }, null, 2);
   } catch (error) {
     $('#apiPreviewCode').textContent = error.message;
   }
@@ -285,7 +286,7 @@ function readApiCaseFromForm() {
     projectId: $('#caseProjectId').value, name: document.querySelector('.case-meta input').value.trim(), target: 'api', baseUrl: $('#baseUrl').value.trim(), viewport: 'desktop',
     steps: [...apiSteps.children].map((node, index) => ({
       id: `api-step-${index + 1}`, kind: 'apiRequest', instruction: node.querySelector('[data-field="instruction"]').value.trim() || '执行接口请求',
-      request: { action: node.querySelector('[data-field="action"]').value.trim(), method: 'POST', safety: node.querySelector('[data-field="safety"]').value, payload: parseJson(node.querySelector('[data-field="payload"]').value, '请求 Body', {}), expectedStatus: Number(node.querySelector('[data-field="expectedStatus"]').value || 1), expectedJson: parseJson(node.querySelector('[data-field="expectedJson"]').value, 'JSON 断言', []), extract: parseJson(node.querySelector('[data-field="extract"]').value, '变量提取', {}), select: parseJson(node.querySelector('[data-field="select"]').value, '列表选择', undefined) }
+      request: { protocol: node.querySelector('[data-field="protocol"]').value || 'cms', action: node.querySelector('[data-field="action"]').value.trim(), method: node.querySelector('[data-field="method"]').value || 'POST', safety: node.querySelector('[data-field="safety"]').value, payload: parseJson(node.querySelector('[data-field="payload"]').value, '请求 Body', {}), expectedStatus: Number(node.querySelector('[data-field="expectedStatus"]').value || 1), expectedJson: parseJson(node.querySelector('[data-field="expectedJson"]').value, 'JSON 断言', []), extract: parseJson(node.querySelector('[data-field="extract"]').value, '变量提取', {}), select: parseJson(node.querySelector('[data-field="select"]').value, '列表选择', undefined) }
     }))
   };
 }
@@ -294,8 +295,10 @@ function renderApiStepNode(step, index) {
   const request = step.request || {};
   const node = document.createElement('article');
   node.className = 'step api-request';
-  node.innerHTML = `<span class="step-number">${String(index + 1).padStart(2, '0')}</span><div class="step-content"><div class="step-type query"><i data-lucide="braces"></i>接口请求</div><label>步骤说明<input data-field="instruction"></label><div class="api-grid"><label>Action<input data-field="action" placeholder="list_post"></label><label>安全级别<select data-field="safety"><option value="readonly">只读</option><option value="mutating">写操作</option></select></label><label>预期业务状态<input data-field="expectedStatus" type="number" value="1"></label></div><label>JSON Body<textarea data-field="payload" placeholder='{"status":10}'></textarea></label><label>JSON 断言<textarea data-field="expectedJson" placeholder='[{"path":"$.total","equals":1}]'></textarea></label><label>变量提取<textarea data-field="extract" placeholder='{"postId":"$.list[0].id"}'></textarea></label><label>选择列表项<textarea data-field="select" placeholder='{"listPath":"$.data.list","variable":"memberLogId","idPath":"$.id"}'></textarea></label></div>`;
+  node.innerHTML = `<span class="step-number">${String(index + 1).padStart(2, '0')}</span><div class="step-content"><div class="step-type query"><i data-lucide="braces"></i>接口请求</div><label>步骤说明<input data-field="instruction"></label><div class="api-grid"><label>协议<select data-field="protocol"><option value="cms">CMS 加密</option><option value="editorial">方舟审核</option></select></label><label>请求方法<select data-field="method"><option value="POST">POST</option><option value="GET">GET</option></select></label><label>Action<input data-field="action" placeholder="list_post"></label><label>安全级别<select data-field="safety"><option value="readonly">只读</option><option value="mutating">写操作</option></select></label><label>预期状态码<input data-field="expectedStatus" type="number" value="1"></label></div><label>JSON Body<textarea data-field="payload" placeholder='{"status":10}'></textarea></label><label>JSON 断言<textarea data-field="expectedJson" placeholder='[{"path":"$.total","equals":1}]'></textarea></label><label>变量提取<textarea data-field="extract" placeholder='{"postId":"$.list[0].id"}'></textarea></label><label>选择列表项<textarea data-field="select" placeholder='{"listPath":"$.data.list","variable":"memberLogId","idPath":"$.id"}'></textarea></label></div>`;
   node.querySelector('[data-field="instruction"]').value = step.instruction || '';
+  node.querySelector('[data-field="protocol"]').value = request.protocol || 'cms';
+  node.querySelector('[data-field="method"]').value = request.method || 'POST';
   node.querySelector('[data-field="action"]').value = request.action || '';
   node.querySelector('[data-field="safety"]').value = request.safety || 'readonly';
   node.querySelector('[data-field="expectedStatus"]').value = request.expectedStatus ?? 1;
@@ -458,7 +461,7 @@ function applyCase(testCase) {
 function resetEditor(nextTarget = 'web', projectId = activeProjectId) {
   applyCase({
     name: '', projectId, target: nextTarget, baseUrl: nextTarget === 'api' ? 'https://example.test/api.php' : 'https://example.test', viewport: 'desktop',
-    steps: nextTarget === 'api' ? [{ id: 'api-step-1', kind: 'apiRequest', instruction: '', request: { action: '', method: 'POST', safety: 'readonly', payload: {}, expectedStatus: 1, expectedJson: [], extract: {} } }] : [{ id: 'step-1', kind: 'action', instruction: '' }]
+    steps: nextTarget === 'api' ? [{ id: 'api-step-1', kind: 'apiRequest', instruction: '', request: { protocol: 'cms', action: '', method: 'POST', safety: 'readonly', payload: {}, expectedStatus: 1, expectedJson: [], extract: {} } }] : [{ id: 'step-1', kind: 'action', instruction: '' }]
   });
 }
 

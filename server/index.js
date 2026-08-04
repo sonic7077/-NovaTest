@@ -2,6 +2,7 @@ import { createApp } from './app.js';
 import { seedArkCommunityCases } from './seed/ark-community-cases.js';
 import { upgradeLighthouseTaskListCase } from './seed/lighthouse-cases.js';
 import { cmsWhitebagCases } from './seed/cms-whitebag-cases.js';
+import { seedArkAiCommentReviewCases } from './seed/ark-ai-comment-review-cases.js';
 import { createSqliteStore } from './storage/sqlite-store.js';
 import { createRuntimeServices } from './services/runtime-services.js';
 
@@ -17,6 +18,7 @@ async function main() {
   const port = Number(process.env.PORT || 4173);
   const host = process.env.HOST || '127.0.0.1';
   if (services.cmsBaseUrl) seedArkCommunityCases(store, { baseUrl: services.cmsBaseUrl });
+  if (services.editorialBaseUrl) seedArkAiCommentReviewCases(store, { baseUrl: services.editorialBaseUrl });
   createApp({ ...services, store, authRequired: true, cmsSeedCases: services.cmsBaseUrl ? cmsWhitebagCases({ baseUrl: services.cmsBaseUrl }) : [] }).listen(port, host, () => console.log(`先锋营自动化测试平台运行于 http://${host}:${port}`));
 }
 

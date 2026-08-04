@@ -75,6 +75,7 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
       runner: reloadableWebRunner,
       runnerStatus
     }),
-    cmsBaseUrl: config.cms.baseUrl
+    cmsBaseUrl: config.cms.baseUrl,
+    editorialBaseUrl: config.editorial?.baseUrl
   };
 }
