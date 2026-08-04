@@ -1,5 +1,11 @@
 import { RunService } from './run-service.js';
 
+export function resolveBatchStatus(runs) {
+  if (runs.every((run) => run?.status === 'passed')) return 'passed';
+  if (runs.length > 0 && runs.every((run) => run?.status === 'skipped')) return 'skipped';
+  return 'failed';
+}
+
 export class BatchService {
   constructor({ runner, store }) {
     this.runner = runner;
@@ -28,7 +34,7 @@ export class BatchService {
 
     await this.execute({ batch, cases, apiSession, selectedApiIds: new Set() });
 
-    batch.status = batch.runIds.every((runId) => this.store.getRun(runId).status === 'passed') ? 'passed' : 'failed';
+    batch.status = resolveBatchStatus(batch.runIds.map((runId) => this.store.getRun(runId)));
     batch.finishedAt = new Date().toISOString();
     return this.store.saveBatch(batch);
   }

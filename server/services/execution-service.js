@@ -1,4 +1,4 @@
-import { BatchService } from './batch-service.js';
+import { BatchService, resolveBatchStatus } from './batch-service.js';
 import { RunService } from './run-service.js';
 
 function failRun(run, error) {
@@ -72,7 +72,7 @@ export class ExecutionService {
 
     try {
       await this.batchService.execute({ batch, cases, apiSession });
-      batch.status = batch.runIds.every((runId) => this.store.getRun(runId)?.status === 'passed') ? 'passed' : 'failed';
+      batch.status = resolveBatchStatus(batch.runIds.map((runId) => this.store.getRun(runId)));
     } catch (error) {
       batch.status = 'failed';
       batch.error = error.message;

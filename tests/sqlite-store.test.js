@@ -30,6 +30,21 @@ describe('SQLite store', () => {
     }
   });
 
+  it('persists an optional Editorial API configuration with the existing runtime groups', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-editorial-runtime-config-'));
+    try {
+      const store = createSqliteStore({ databasePath: join(directory, 'novatest.db') });
+      const editorial = { baseUrl: 'https://editorial.example.test', username: 'editorial-admin', password: 'editorial-password', googleSecret: 'TOTPSECRET' };
+
+      store.saveRuntimeConfig({ ...completeRuntimeConfig, editorial });
+
+      expect(store.getRuntimeConfig()).toMatchObject({ editorial });
+      expect(store.getRuntimeConfig().cms).toEqual(completeRuntimeConfig.cms);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('keeps the legacy model override separate from the SQLite runtime configuration', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-model-config-'));
     try {

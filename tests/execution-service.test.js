@@ -49,6 +49,23 @@ describe('ExecutionService', () => {
     expect(api.execute).toHaveBeenCalledTimes(2);
   });
 
+  it('marks a batch skipped when every API run lacks prerequisite data', async () => {
+    const store = createMemoryStore();
+    const api = {
+      createSession: () => ({}),
+      execute: async () => { throw Object.assign(new Error('前置数据不足'), { code: 'PRECONDITION_UNAVAILABLE' }); }
+    };
+    const service = new ExecutionService({ runner: { api }, store });
+    const batch = service.queueBatch({ name: '审核前置检查', projectId: 'default-project', target: 'api', caseIds: apiCases.map(({ id }) => id), cases: apiCases });
+
+    for (let attempt = 0; attempt < 50 && store.getBatch(batch.id).status !== 'skipped'; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+
+    expect(store.getBatch(batch.id)).toMatchObject({ status: 'skipped' });
+    expect(store.getBatch(batch.id).runIds.map((id) => store.getRun(id).status)).toEqual(['skipped', 'skipped']);
+  });
+
   it('persists requested mutation authorization before scheduling a run', () => {
     const store = createMemoryStore();
     const service = new ExecutionService({ runner: { execute: async () => ({}) }, store, schedule: () => {} });
