@@ -212,6 +212,39 @@ describe('execution API', () => {
     await request(app).get('/api/batches/missing/report').expect(404);
   });
 
+  it('downloads the same HTML as a single-run report with a safe filename', async () => {
+    const store = createMemoryStore();
+    store.saveRun({
+      id: 'download-run', caseId: 'deleted-case', caseName: '登录/回归', projectId: 'default-project', target: 'web',
+      status: 'passed', startedAt: null, finishedAt: null, variables: {}, steps: []
+    });
+    const app = createApp({ runner: {}, store });
+
+    const preview = await request(app).get('/api/runs/download-run/report').expect(200);
+    await request(app).get('/api/runs/download-run/report/download').expect(200)
+      .expect('content-type', /html/)
+      .expect('content-disposition', /attachment/)
+      .expect('content-disposition', /filename\*=UTF-8''/)
+      .expect((response) => {
+        expect(response.headers['content-disposition']).toContain(encodeURIComponent('登录_回归-测试报告.html'));
+        expect(response.text).toBe(preview.text);
+      });
+    await request(app).get('/api/runs/missing/report/download').expect(404);
+  });
+
+  it('downloads the same HTML as a batch report', async () => {
+    const store = createMemoryStore();
+    store.saveRun({ id: 'batch-run', caseId: 'case-1', caseName: '查询', projectId: 'default-project', target: 'api', status: 'passed', startedAt: null, finishedAt: null, variables: {}, steps: [] });
+    store.saveBatch({ id: 'download-batch', name: '批量/回归', status: 'passed', runIds: ['batch-run'] });
+    const app = createApp({ runner: {}, store });
+
+    const preview = await request(app).get('/api/batches/download-batch/report').expect(200);
+    await request(app).get('/api/batches/download-batch/report/download').expect(200)
+      .expect('content-disposition', /attachment/)
+      .expect((response) => expect(response.text).toBe(preview.text));
+    await request(app).get('/api/batches/missing/report/download').expect(404);
+  });
+
   it('filters batch history by its persisted project ID', async () => {
     const app = createApp({ runner: { execute: async () => ({}) }, store: createMemoryStore() });
     const firstProject = (await request(app).post('/api/projects').send({ name: '项目一' }).expect(201)).body;
@@ -482,6 +515,39 @@ describe('execution API', () => {
     expect(report).not.toContain('123456');
   });
 
+  it('renders a single report download link and jumps from status chips to matching steps', () => {
+    const report = renderReport({
+      id: 'run-export', status: 'failed', startedAt: '2026-08-04T00:00:00.000Z',
+      finishedAt: '2026-08-04T00:00:01.000Z', variables: {},
+      steps: [
+        { id: 'passed-step', status: 'passed', attempts: 1, logs: [] },
+        { id: 'failed-step', status: 'failed', attempts: 1, logs: [] }
+      ]
+    }, '导出用例');
+
+    expect(report).toContain('href="/api/runs/run-export/report/download"');
+    expect(report).toContain('href="#step-passed-step"');
+    expect(report).toContain('href="#step-failed-step"');
+    expect(report).toContain('status-chip skipped disabled');
+    expect(report).toContain('id="step-failed-step"');
+  });
+
+  it('renders batch status chips that link to the first matching run section', () => {
+    const report = renderBatchReport(
+      { id: 'batch-export', name: '导出批量', status: 'failed', startedAt: null, finishedAt: null },
+      [
+        { id: 'run-passed', caseName: '通过用例', status: 'passed', startedAt: null, finishedAt: null, steps: [] },
+        { id: 'run-failed', caseName: '失败用例', status: 'failed', startedAt: null, finishedAt: null, steps: [] }
+      ]
+    );
+
+    expect(report).toContain('href="/api/batches/batch-export/report/download"');
+    expect(report).toContain('href="#run-run-passed"');
+    expect(report).toContain('href="#run-run-failed"');
+    expect(report).toContain('status-chip skipped disabled');
+    expect(report).toContain('id="run-run-failed"');
+  });
+
   it('renders a batch report with Shanghai local time and ordered run details', () => {
     const report = renderBatchReport(
       { id: 'batch-1', name: '查询回归', status: 'failed', startedAt: '2026-07-18T05:40:00.000Z', finishedAt: '2026-07-18T05:41:02.000Z', caseIds: ['case-1', 'case-2'] },
@@ -492,7 +558,9 @@ describe('execution API', () => {
     );
 
     expect(report).toContain('查询回归');
-    expect(report).toContain('<strong>1</strong> 通过 · <strong>0</strong> 跳过 · <strong>1</strong> 失败');
+    expect(report).toContain('class="status-chip passed" href="#run-run-1"><strong>1</strong> 通过');
+    expect(report).toContain('class="status-chip skipped disabled" aria-disabled="true"><strong>0</strong> 跳过');
+    expect(report).toContain('class="status-chip failed" href="#run-run-2"><strong>1</strong> 失败');
     expect(report).toContain('2026-07-18 13:40:00');
     expect(report).toContain('帖子列表查询');
     expect(report).toContain('评论列表查询');

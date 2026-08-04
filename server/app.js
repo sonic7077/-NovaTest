@@ -123,6 +123,21 @@ function sanitizeModelConfig(modelConfig) {
   return publicModelConfig(modelConfig);
 }
 
+function reportFilename(name) {
+  const base = String(name || '测试报告')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim() || '测试报告';
+  return `${base}-测试报告.html`;
+}
+
+function sendHtmlDownload(res, filename, html) {
+  return res
+    .type('html')
+    .set('Content-Disposition', `attachment; filename="report.html"; filename*=UTF-8''${encodeURIComponent(filename)}`)
+    .send(html);
+}
+
 export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), caseAssetsDir = join(projectRoot, 'data/case-assets'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, modelConfig = { source: 'MIDSCENE', baseUrl: '', modelName: '', modelFamily: '', apiKey: '' }, modelConfigManager, cmsSeedCases = [], executionSchedule, authRequired = false } = {}) {
   const app = express();
   const sessions = new Map();
@@ -306,6 +321,13 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     return res.json({ ...batch, runs: batch.runIds.map((id) => store.getRun(id)).filter(Boolean) });
   });
 
+  app.get('/api/batches/:id/report/download', (req, res) => {
+    const batch = store.getBatch(req.params.id);
+    if (!batch) return res.status(404).send('batch report not found');
+    const runs = batch.runIds.map((id) => store.getRun(id)).filter(Boolean);
+    return sendHtmlDownload(res, reportFilename(batch.name), renderBatchReport(batch, runs));
+  });
+
   app.get('/api/batches/:id/report', (req, res) => {
     const batch = store.getBatch(req.params.id);
     if (!batch) return res.status(404).send('batch report not found');
@@ -335,6 +357,13 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     if (!run || basename(fileName) !== fileName || !registered.has(fileName)) return res.status(404).end();
     const filePath = join(evidenceDir, run.id, fileName);
     return existsSync(filePath) ? res.sendFile(filePath) : res.status(404).end();
+  });
+
+  app.get('/api/runs/:id/report/download', (req, res) => {
+    const run = store.getRun(req.params.id);
+    if (!run) return res.status(404).send('report not found');
+    const caseName = run.caseName || store.getCase(run.caseId)?.name || '已删除用例';
+    return sendHtmlDownload(res, reportFilename(caseName), renderReport(run, caseName));
   });
 
   app.get('/api/runs/:id/report', (req, res) => {
