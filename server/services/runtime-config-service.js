@@ -2,6 +2,7 @@ import { DEFAULT_MODEL_USER_AGENT } from './model-config-service.js';
 
 const cmsFields = ['baseUrl', 'key', 'iv', 'appKey', 'username', 'password', 'googleSecret', 'oauthId', 'oauthType', 'version', 'bundleId', 'language', 'via'];
 const lighthouseFields = ['projectName', 'email', 'password', 'totpSecret'];
+const editorialFields = ['baseUrl', 'username', 'password', 'googleSecret'];
 
 function requiredText(value, field) {
   const text = typeof value === 'string' ? value.trim() : '';
@@ -39,15 +40,28 @@ function normalizeGroup(input, fields, group, urlField) {
     : requiredText(input?.[field], `${group}.${field}`)]));
 }
 
+function normalizeOptionalGroup(input, fields, group, urlField) {
+  if (input === undefined) return undefined;
+  return normalizeGroup(input, fields, group, urlField);
+}
+
 export function normalizeRuntimeConfig(input = {}) {
+  const editorial = normalizeOptionalGroup(input.editorial, editorialFields, 'editorial', 'baseUrl');
   return {
     model: normalizeModel(input.model),
     cms: normalizeGroup(input.cms, cmsFields, 'cms', 'baseUrl'),
-    lighthouse: normalizeGroup(input.lighthouse, lighthouseFields, 'lighthouse')
+    lighthouse: normalizeGroup(input.lighthouse, lighthouseFields, 'lighthouse'),
+    ...(editorial ? { editorial } : {})
   };
 }
 
 export function runtimeConfigFromEnvironment(env = {}) {
+  const editorial = {
+    baseUrl: env.EDITORIAL_BASE_URL,
+    username: env.EDITORIAL_USERNAME,
+    password: env.EDITORIAL_PASSWORD,
+    googleSecret: env.EDITORIAL_GOOGLE_SECRET
+  };
   return normalizeRuntimeConfig({
     model: {
       baseUrl: env.MIDSCENE_MODEL_BASE_URL || env.WUJI_BASE_URL,
@@ -64,6 +78,7 @@ export function runtimeConfigFromEnvironment(env = {}) {
     lighthouse: {
       projectName: env.LIGHTHOUSE_PROJECT_NAME || '默认项目', email: env.LIGHTHOUSE_EMAIL,
       password: env.LIGHTHOUSE_PASSWORD, totpSecret: env.LIGHTHOUSE_TOTP_SECRET
-    }
+    },
+    ...(Object.values(editorial).some(Boolean) ? { editorial } : {})
   });
 }

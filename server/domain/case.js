@@ -1,5 +1,6 @@
 const stepKinds = new Set(['action', 'assert', 'query', 'apiRequest']);
 const viewports = new Set(['desktop', 'mobile']);
+const apiProtocols = new Set(['cms', 'editorial']);
 const jsonPathPattern = /^\$(?:\.[A-Za-z_$][\w$]*|\[\d+\])*$/;
 
 function validJsonPath(value) {
@@ -38,8 +39,12 @@ export function validateWebCase(input) {
     }
     if (input.target === 'api') {
       const request = step.request;
+      const protocol = request?.protocol || 'cms';
+      const validMethod = protocol === 'cms'
+        ? request?.method === 'POST'
+        : ['GET', 'POST'].includes(request?.method);
       const validAuth = request?.auth === undefined || request.auth === 'session' || request.auth === 'none';
-      if (step.kind !== 'apiRequest' || !request?.action?.trim() || request.method !== 'POST' || !['readonly', 'mutating'].includes(request.safety) || !validAuth || !validExpectedJson(request.expectedJson) || !validExtract(request.extract) || !validSelection(request.select)) throw new Error('invalid API request');
+      if (step.kind !== 'apiRequest' || !request?.action?.trim() || !apiProtocols.has(protocol) || !validMethod || !['readonly', 'mutating'].includes(request.safety) || !validAuth || !validExpectedJson(request.expectedJson) || !validExtract(request.extract) || !validSelection(request.select)) throw new Error('invalid API request');
     }
     if (input.target === 'web' && step.kind === 'apiRequest') throw new Error('invalid step');
     (step.visualChecks || []).forEach((visualCheck) => {

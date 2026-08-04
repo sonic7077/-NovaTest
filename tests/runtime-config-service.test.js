@@ -50,4 +50,15 @@ describe('runtime configuration service', () => {
 
     expect(normalizeRuntimeConfig(legacy).model.userAgent).toContain('Mozilla/5.0');
   });
+
+  it('normalizes an optional Editorial API configuration without requiring it for legacy data', () => {
+    const editorial = {
+      baseUrl: 'https://editorial.example.test/', username: 'editorial-admin', password: 'editorial-password', googleSecret: 'TOTPSECRET'
+    };
+
+    expect(normalizeRuntimeConfig({ ...completeRuntimeConfig, editorial })).toMatchObject({
+      editorial: { ...editorial, baseUrl: 'https://editorial.example.test' }
+    });
+    expect(normalizeRuntimeConfig(completeRuntimeConfig)).not.toHaveProperty('editorial');
+  });
 });

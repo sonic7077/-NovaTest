@@ -57,6 +57,18 @@ describe('web test case', () => {
     expect(testCase.steps[0].request.auth).toBe('none');
   });
 
+  it('accepts a standard Editorial GET API request', () => {
+    const testCase = validateWebCase({
+      id: 'editorial-summary', projectId: 'project-1', name: 'AI 评论概览', target: 'api',
+      baseUrl: 'https://editorial.example.test', viewport: 'desktop',
+      steps: [{ id: 'summary', kind: 'apiRequest', instruction: '读取 AI 评论概览', request: {
+        protocol: 'editorial', action: 'ai-comment/summary', method: 'GET', payload: {}, expectedStatus: 200, safety: 'readonly'
+      } }]
+    });
+
+    expect(testCase.steps[0].request.protocol).toBe('editorial');
+  });
+
   it('rejects unsupported API authentication modes', () => {
     expect(() => validateWebCase({
       id: 'bad-auth', projectId: 'project-1', name: '错误认证方式', target: 'api',
