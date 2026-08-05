@@ -61,4 +61,15 @@ describe('runtime configuration service', () => {
     });
     expect(normalizeRuntimeConfig(completeRuntimeConfig)).not.toHaveProperty('editorial');
   });
+
+  it('normalizes an optional Flywheel API configuration without requiring it for legacy data', () => {
+    const flywheel = {
+      baseUrl: 'https://flywheel.example.test/', platformKey: 'private-platform-key', platformId: 'tenant-a'
+    };
+
+    expect(normalizeRuntimeConfig({ ...completeRuntimeConfig, flywheel })).toMatchObject({
+      flywheel: { ...flywheel, baseUrl: 'https://flywheel.example.test' }
+    });
+    expect(normalizeRuntimeConfig(completeRuntimeConfig)).not.toHaveProperty('flywheel');
+  });
 });

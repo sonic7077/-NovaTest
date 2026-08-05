@@ -69,6 +69,20 @@ describe('web test case', () => {
     expect(testCase.steps[0].request.protocol).toBe('editorial');
   });
 
+  it('accepts standard Flywheel API requests for all documented HTTP methods', () => {
+    for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
+      const testCase = validateWebCase({
+        id: `flywheel-${method.toLowerCase()}`, projectId: 'project-1', name: `飞轮 ${method}`, target: 'api',
+        baseUrl: 'https://flywheel.example.test', viewport: 'desktop',
+        steps: [{ id: 'request', kind: 'apiRequest', instruction: `执行 ${method} 请求`, request: {
+          protocol: 'flywheel', action: '/api/v1/feed', method, payload: {}, expectedStatus: 200,
+          safety: method === 'GET' ? 'readonly' : 'mutating'
+        } }]
+      });
+      expect(testCase.steps[0].request.method).toBe(method);
+    }
+  });
+
   it('accepts a numeric Editorial expected-status set and rejects invalid status sets', () => {
     const request = {
       protocol: 'editorial', action: 'ai-comment/summary', method: 'GET', payload: {},

@@ -3,6 +3,7 @@ import { DEFAULT_MODEL_USER_AGENT } from './model-config-service.js';
 const cmsFields = ['baseUrl', 'key', 'iv', 'appKey', 'username', 'password', 'googleSecret', 'oauthId', 'oauthType', 'version', 'bundleId', 'language', 'via'];
 const lighthouseFields = ['projectName', 'email', 'password', 'totpSecret'];
 const editorialFields = ['baseUrl', 'username', 'password', 'googleSecret'];
+const flywheelFields = ['baseUrl', 'platformKey', 'platformId'];
 
 function requiredText(value, field) {
   const text = typeof value === 'string' ? value.trim() : '';
@@ -47,11 +48,13 @@ function normalizeOptionalGroup(input, fields, group, urlField) {
 
 export function normalizeRuntimeConfig(input = {}) {
   const editorial = normalizeOptionalGroup(input.editorial, editorialFields, 'editorial', 'baseUrl');
+  const flywheel = normalizeOptionalGroup(input.flywheel, flywheelFields, 'flywheel', 'baseUrl');
   return {
     model: normalizeModel(input.model),
     cms: normalizeGroup(input.cms, cmsFields, 'cms', 'baseUrl'),
     lighthouse: normalizeGroup(input.lighthouse, lighthouseFields, 'lighthouse'),
-    ...(editorial ? { editorial } : {})
+    ...(editorial ? { editorial } : {}),
+    ...(flywheel ? { flywheel } : {})
   };
 }
 
@@ -61,6 +64,11 @@ export function runtimeConfigFromEnvironment(env = {}) {
     username: env.EDITORIAL_USERNAME,
     password: env.EDITORIAL_PASSWORD,
     googleSecret: env.EDITORIAL_GOOGLE_SECRET
+  };
+  const flywheel = {
+    baseUrl: env.FLYWHEEL_BASE_URL,
+    platformKey: env.FLYWHEEL_PLATFORM_KEY,
+    platformId: env.FLYWHEEL_PLATFORM_ID
   };
   return normalizeRuntimeConfig({
     model: {
@@ -79,6 +87,7 @@ export function runtimeConfigFromEnvironment(env = {}) {
       projectName: env.LIGHTHOUSE_PROJECT_NAME || '默认项目', email: env.LIGHTHOUSE_EMAIL,
       password: env.LIGHTHOUSE_PASSWORD, totpSecret: env.LIGHTHOUSE_TOTP_SECRET
     },
-    ...(Object.values(editorial).some(Boolean) ? { editorial } : {})
+    ...(Object.values(editorial).some(Boolean) ? { editorial } : {}),
+    ...(Object.values(flywheel).some(Boolean) ? { flywheel } : {})
   });
 }

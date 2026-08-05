@@ -45,6 +45,21 @@ describe('SQLite store', () => {
     }
   });
 
+  it('persists an optional Flywheel API configuration with the existing runtime groups', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-flywheel-runtime-config-'));
+    try {
+      const store = createSqliteStore({ databasePath: join(directory, 'novatest.db') });
+      const flywheel = { baseUrl: 'https://flywheel.example.test', platformKey: 'private-platform-key', platformId: 'tenant-a' };
+
+      store.saveRuntimeConfig({ ...completeRuntimeConfig, flywheel });
+
+      expect(store.getRuntimeConfig()).toMatchObject({ flywheel });
+      expect(store.getRuntimeConfig().cms).toEqual(completeRuntimeConfig.cms);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('keeps the legacy model override separate from the SQLite runtime configuration', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-model-config-'));
     try {
