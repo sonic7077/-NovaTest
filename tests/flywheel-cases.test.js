@@ -40,4 +40,28 @@ describe('Flywheel API cases', () => {
     expect(source).toContain('<option value="PUT">PUT</option>');
     expect(source).toContain('<option value="DELETE">DELETE</option>');
   });
+
+  it('defines Chinese Flywheel event-tracking cases with documented payloads and isolated content setup', () => {
+    const cases = flywheelCases({ projectId: 'flywheel-project', baseUrl: 'https://flywheel.example.test', platformId: 'tenant-a' });
+    const eventCases = cases.filter((testCase) => testCase.name.startsWith('正例：飞轮埋点-'));
+    const feedbackSteps = eventCases.map((testCase) => testCase.steps.find((step) => step.request.action === '/api/v1/feedback'));
+
+    expect(eventCases.map((testCase) => testCase.name)).toEqual([
+      '正例：飞轮埋点-信息流曝光上报', '正例：飞轮埋点-有效阅读上报',
+      '正例：飞轮埋点-点赞上报', '正例：飞轮埋点-收藏上报',
+      '正例：飞轮埋点-不感兴趣上报', '正例：飞轮埋点-快速划走上报',
+      '正例：飞轮埋点-搜索结果点击上报'
+    ]);
+    expect(feedbackSteps.map((step) => step.request.payload.event)).toEqual([
+      'impression', 'read', 'like', 'favorite', 'dislike', 'skip', 'search_click'
+    ]);
+    expect(feedbackSteps.every((step) => step.request.safety === 'mutating')).toBe(true);
+    expect(eventCases.every((testCase) => testCase.steps.some((step) => step.request.action === '/api/v1/ingest')
+      && testCase.steps.some((step) => step.request.poll?.maxAttempts === 20))).toBe(true);
+    expect(feedbackSteps[0].request.payload.payload).toEqual({ position: 0 });
+    expect(feedbackSteps[1].request.payload.payload).toEqual({ dwell_ms: 8000, completion: 0.9 });
+    expect(feedbackSteps[5].request.payload.payload).toEqual({ dwell_ms: 1200 });
+    expect(eventCases.at(-1).steps.some((step) => step.request.action === '/api/v1/search')).toBe(true);
+    expect(eventCases.at(-1).steps.find((step) => step.request.action === '/api/v1/search').request.extract).toEqual({ searchedContentId: '$.items[0].content_id' });
+  });
 });
