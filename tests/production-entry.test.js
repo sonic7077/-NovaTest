@@ -11,4 +11,14 @@ describe('production entrypoint', () => {
     expect(source).not.toContain('process.env.LIGHTHOUSE_');
     expect(source).not.toContain('process.env.MIDSCENE_');
   });
+
+  it('seeds the Flywheel project only from SQLite runtime configuration', async () => {
+    const source = await readFile(new URL('../server/index.js', import.meta.url), 'utf8');
+
+    expect(source).toContain("import { seedFlywheelCases } from './seed/flywheel-cases.js'");
+    expect(source).toContain("store.saveProject({ name: '飞轮引擎' })");
+    expect(source).toContain('seedFlywheelCases(store, {');
+    expect(source).toContain('services.flywheelBaseUrl');
+    expect(source).not.toContain('process.env.FLYWHEEL_');
+  });
 });

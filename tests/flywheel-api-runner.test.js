@@ -62,6 +62,23 @@ describe('Flywheel API runner', () => {
     expect(JSON.parse(calls[0].options.body)).toEqual({ user_id: 'tenant-a-user', event: 'like' });
   });
 
+  it('provides the configured platform ID for seed-case variables without persisting the Key', async () => {
+    const calls = [];
+    const runner = new FlywheelApiRunner({
+      config,
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return response(200, { ok: true });
+      }
+    });
+
+    await runner.execute(step('/api/v1/users/{{platformId}}-novatest-{{runId}}', {
+      method: 'PUT', safety: 'mutating', payload: { region: 'CN' }
+    }), { testCase: { baseUrl: config.baseUrl }, variables: { runId: 'run-1' }, allowMutations: true });
+
+    expect(calls[0].url).toBe('https://flywheel.example.test/api/v1/users/tenant-a-novatest-run-1');
+  });
+
   it('requires mutation authorization before sending a write request', async () => {
     const runner = new FlywheelApiRunner({ config, fetchImpl: async () => { throw new Error('must not fetch'); } });
 
@@ -86,6 +103,23 @@ describe('Flywheel API runner', () => {
 
     expect(result.api.httpStatus).toBe(401);
     expect(calls[0].options.headers).not.toHaveProperty('x-platform-key');
+  });
+
+  it('uses a synthetic value for an invalid-key probe instead of the configured key', async () => {
+    const calls = [];
+    const runner = new FlywheelApiRunner({
+      config,
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return response(401, { detail: 'invalid platform key' });
+      }
+    });
+
+    await runner.execute(step('/api/v1/feed', { auth: 'invalid', expectedStatus: 401 }), {
+      testCase: { baseUrl: config.baseUrl }, variables: {}
+    });
+
+    expect(calls[0].options.headers['x-platform-key']).not.toBe(config.platformKey);
   });
 
   it('keeps the platform Key out of failed request evidence', async () => {

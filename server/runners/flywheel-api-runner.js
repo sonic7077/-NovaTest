@@ -100,32 +100,35 @@ export class FlywheelApiRunner {
   async execute(step, context) {
     const { request } = step;
     if (request.safety === 'mutating' && !context.allowMutations) throw new Error('mutating API step requires allowMutations');
-    const payload = interpolate(request.payload || {}, context.variables || {});
+    const variables = { ...(context.variables || {}), platformId: this.config.platformId };
+    const action = interpolate(request.action, variables);
+    const payload = interpolate(request.payload || {}, variables);
+    const platformKey = request.auth === 'invalid' ? 'invalid-platform-key' : this.config.platformKey;
     const startedAt = performance.now();
-    const url = flywheelUrl(context.testCase.baseUrl, request.action, payload, request.method);
+    const url = flywheelUrl(context.testCase.baseUrl, action, payload, request.method);
     const response = await this.fetchImpl(url, {
       method: request.method,
       headers: {
         accept: 'application/json',
         'user-agent': this.userAgent,
-        ...(request.auth !== 'none' ? { 'x-platform-key': this.config.platformKey } : {}),
+        ...(request.auth !== 'none' ? { 'x-platform-key': platformKey } : {}),
         ...(request.method !== 'GET' ? { 'content-type': 'application/json' } : {})
       },
       ...(request.method !== 'GET' ? { body: JSON.stringify(payload) } : {})
     });
     const body = await parseJson(response);
     const api = {
-      action: request.action,
+      action,
       method: request.method,
       httpStatus: response.status,
       durationMs: Math.round(performance.now() - startedAt),
       request: redact(payload, this.config.platformKey),
       response: redact(body, this.config.platformKey)
     };
-    if (!expectedStatusMatches(response.status, request.expectedStatus)) throw requestFailure(`API assertion failed: ${request.action}`, api);
+    if (!expectedStatusMatches(response.status, request.expectedStatus)) throw requestFailure(`API assertion failed: ${action}`, api);
 
     try {
-      assertJson(body, request.expectedJson, context.variables || {});
+      assertJson(body, request.expectedJson, variables);
       return { variables: extractVariables(body, request.extract, api), api };
     } catch (error) {
       error.api ||= api;

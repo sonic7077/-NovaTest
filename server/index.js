@@ -3,6 +3,7 @@ import { seedArkCommunityCases } from './seed/ark-community-cases.js';
 import { upgradeLighthouseTaskListCase } from './seed/lighthouse-cases.js';
 import { cmsWhitebagCases } from './seed/cms-whitebag-cases.js';
 import { seedArkAiCommentReviewCases } from './seed/ark-ai-comment-review-cases.js';
+import { seedFlywheelCases } from './seed/flywheel-cases.js';
 import { createSqliteStore } from './storage/sqlite-store.js';
 import { createRuntimeServices } from './services/runtime-services.js';
 
@@ -19,6 +20,14 @@ async function main() {
   const host = process.env.HOST || '127.0.0.1';
   if (services.cmsBaseUrl) seedArkCommunityCases(store, { baseUrl: services.cmsBaseUrl });
   if (services.editorialBaseUrl) seedArkAiCommentReviewCases(store, { baseUrl: services.editorialBaseUrl });
+  if (services.flywheelBaseUrl) {
+    const flywheelProject = store.listProjects().find((project) => project.name === '飞轮引擎') || store.saveProject({ name: '飞轮引擎' });
+    seedFlywheelCases(store, {
+      baseUrl: services.flywheelBaseUrl,
+      platformId: services.flywheelPlatformId,
+      projectId: flywheelProject.id
+    });
+  }
   createApp({ ...services, store, authRequired: true, cmsSeedCases: services.cmsBaseUrl ? cmsWhitebagCases({ baseUrl: services.cmsBaseUrl }) : [] }).listen(port, host, () => console.log(`先锋营自动化测试平台运行于 http://${host}:${port}`));
 }
 

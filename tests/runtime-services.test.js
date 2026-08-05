@@ -41,5 +41,6 @@ describe('runtime services', () => {
     expect(FlywheelRunner).toHaveBeenCalledWith({ config: flywheel });
     expect(services.flywheelRunnerStatus).toMatchObject({ ready: true });
     expect(services.flywheelBaseUrl).toBe(flywheel.baseUrl);
+    expect(services.flywheelPlatformId).toBe(flywheel.platformId);
   });
 });

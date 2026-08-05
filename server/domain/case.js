@@ -50,7 +50,8 @@ export function validateWebCase(input) {
         : protocol === 'flywheel'
           ? ['GET', 'POST', 'PUT', 'DELETE'].includes(request?.method)
           : ['GET', 'POST'].includes(request?.method);
-      const validAuth = request?.auth === undefined || request.auth === 'session' || request.auth === 'none';
+      const validAuth = request?.auth === undefined || request.auth === 'session' || request.auth === 'none'
+        || (protocol === 'flywheel' && request.auth === 'invalid');
       if (step.kind !== 'apiRequest' || !request?.action?.trim() || !apiProtocols.has(protocol) || !validMethod || !validExpectedStatus(request.expectedStatus) || !['readonly', 'mutating'].includes(request.safety) || !validAuth || !validExpectedJson(request.expectedJson) || !validExtract(request.extract) || !validSelection(request.select)) throw new Error('invalid API request');
     }
     if (input.target === 'web' && step.kind === 'apiRequest') throw new Error('invalid step');

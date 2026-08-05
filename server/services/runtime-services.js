@@ -92,6 +92,7 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
     }),
     cmsBaseUrl: config.cms.baseUrl,
     editorialBaseUrl: config.editorial?.baseUrl,
-    flywheelBaseUrl: config.flywheel?.baseUrl
+    flywheelBaseUrl: config.flywheel?.baseUrl,
+    flywheelPlatformId: config.flywheel?.platformId
   };
 }
