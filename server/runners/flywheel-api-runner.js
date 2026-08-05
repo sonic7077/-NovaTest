@@ -80,6 +80,11 @@ function expectedStatusMatches(actualStatus, expectedStatus) {
   return (Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus]).includes(actualStatus);
 }
 
+function pollSatisfied(body, poll) {
+  if (!poll) return true;
+  return poll.values.includes(jsonPathValue(body, poll.path));
+}
+
 function requestFailure(message, api) {
   const error = new Error(message);
   error.api = api;
@@ -87,10 +92,11 @@ function requestFailure(message, api) {
 }
 
 export class FlywheelApiRunner {
-  constructor({ config, fetchImpl = fetch, userAgent = USER_AGENT }) {
+  constructor({ config, fetchImpl = fetch, userAgent = USER_AGENT, sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)) }) {
     this.config = config;
     this.fetchImpl = fetchImpl;
     this.userAgent = userAgent;
+    this.sleep = sleep;
   }
 
   createSession() {
@@ -106,17 +112,24 @@ export class FlywheelApiRunner {
     const platformKey = request.auth === 'invalid' ? 'invalid-platform-key' : this.config.platformKey;
     const startedAt = performance.now();
     const url = flywheelUrl(context.testCase.baseUrl, action, payload, request.method);
-    const response = await this.fetchImpl(url, {
-      method: request.method,
-      headers: {
-        accept: 'application/json',
-        'user-agent': this.userAgent,
-        ...(request.auth !== 'none' ? { 'x-platform-key': platformKey } : {}),
-        ...(request.method !== 'GET' ? { 'content-type': 'application/json' } : {})
-      },
-      ...(request.method !== 'GET' ? { body: JSON.stringify(payload) } : {})
-    });
-    const body = await parseJson(response);
+    const maxAttempts = request.poll?.maxAttempts || 1;
+    let response;
+    let body;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      response = await this.fetchImpl(url, {
+        method: request.method,
+        headers: {
+          accept: 'application/json',
+          'user-agent': this.userAgent,
+          ...(request.auth !== 'none' ? { 'x-platform-key': platformKey } : {}),
+          ...(request.method !== 'GET' ? { 'content-type': 'application/json' } : {})
+        },
+        ...(request.method !== 'GET' ? { body: JSON.stringify(payload) } : {})
+      });
+      body = await parseJson(response);
+      if (!request.poll || !expectedStatusMatches(response.status, request.expectedStatus) || pollSatisfied(body, request.poll) || attempt === maxAttempts) break;
+      await this.sleep(request.poll.intervalMs);
+    }
     const api = {
       action,
       method: request.method,

@@ -79,6 +79,28 @@ describe('Flywheel API runner', () => {
     expect(calls[0].url).toBe('https://flywheel.example.test/api/v1/users/tenant-a-novatest-run-1');
   });
 
+  it('polls an asynchronous ingest status before extracting a content ID', async () => {
+    const calls = [];
+    const runner = new FlywheelApiRunner({
+      config,
+      sleep: async () => undefined,
+      fetchImpl: async (url) => {
+        calls.push(url);
+        return calls.length === 1
+          ? response(200, { job_id: 42, status: 'processing' })
+          : response(200, { job_id: 42, status: 'done', content_id: 'c-42' });
+      }
+    });
+
+    const result = await runner.execute(step('/api/v1/ingest/42', {
+      poll: { path: '$.status', values: ['done', 'dup', 'blocked', 'failed'], intervalMs: 1, maxAttempts: 2 },
+      extract: { contentId: '$.content_id' }
+    }), { testCase: { baseUrl: config.baseUrl }, variables: {} });
+
+    expect(calls).toHaveLength(2);
+    expect(result.variables).toEqual({ contentId: 'c-42' });
+  });
+
   it('requires mutation authorization before sending a write request', async () => {
     const runner = new FlywheelApiRunner({ config, fetchImpl: async () => { throw new Error('must not fetch'); } });
 

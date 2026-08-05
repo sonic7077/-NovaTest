@@ -12,6 +12,7 @@ describe('Flywheel API cases', () => {
     expect(cases.every((testCase) => testCase.target === 'api' && testCase.projectId === 'flywheel-project')).toBe(true);
     expect(steps.every((step) => step.request.protocol === 'flywheel')).toBe(true);
     expect(cases.some((testCase) => testCase.name === '正例：飞轮内容采集及状态回查')).toBe(true);
+    expect(cases.some((testCase) => testCase.name === '正例：飞轮内容详情、关联与行为反馈')).toBe(true);
     expect(cases.some((testCase) => testCase.name === '反例：飞轮推荐缺少用户标识')).toBe(true);
     expect(cases.some((testCase) => testCase.name === '反例：飞轮搜索超长关键词')).toBe(true);
     expect(JSON.stringify(cases)).toContain('{{platformId}}-novatest-{{runId}}');

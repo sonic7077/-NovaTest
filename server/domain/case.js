@@ -25,6 +25,14 @@ function validSelection(select) {
     && validJsonPath(select.listPath) && validJsonPath(select.idPath));
 }
 
+function validPoll(poll) {
+  return poll === undefined || (poll && typeof poll === 'object' && !Array.isArray(poll)
+    && validJsonPath(poll.path) && Array.isArray(poll.values) && poll.values.length > 0 && poll.values.length <= 10
+    && poll.values.every((value) => typeof value === 'string' && value.trim())
+    && Number.isInteger(poll.intervalMs) && poll.intervalMs >= 0 && poll.intervalMs <= 5_000
+    && Number.isInteger(poll.maxAttempts) && poll.maxAttempts >= 1 && poll.maxAttempts <= 20);
+}
+
 function validExpectedStatus(value) {
   const statuses = Array.isArray(value) ? value : [value];
   return statuses.length > 0 && statuses.every((status) => Number.isInteger(status));
@@ -52,7 +60,8 @@ export function validateWebCase(input) {
           : ['GET', 'POST'].includes(request?.method);
       const validAuth = request?.auth === undefined || request.auth === 'session' || request.auth === 'none'
         || (protocol === 'flywheel' && request.auth === 'invalid');
-      if (step.kind !== 'apiRequest' || !request?.action?.trim() || !apiProtocols.has(protocol) || !validMethod || !validExpectedStatus(request.expectedStatus) || !['readonly', 'mutating'].includes(request.safety) || !validAuth || !validExpectedJson(request.expectedJson) || !validExtract(request.extract) || !validSelection(request.select)) throw new Error('invalid API request');
+      const validRequestPoll = protocol === 'flywheel' ? validPoll(request.poll) : request.poll === undefined;
+      if (step.kind !== 'apiRequest' || !request?.action?.trim() || !apiProtocols.has(protocol) || !validMethod || !validExpectedStatus(request.expectedStatus) || !['readonly', 'mutating'].includes(request.safety) || !validAuth || !validExpectedJson(request.expectedJson) || !validExtract(request.extract) || !validSelection(request.select) || !validRequestPoll) throw new Error('invalid API request');
     }
     if (input.target === 'web' && step.kind === 'apiRequest') throw new Error('invalid step');
     (step.visualChecks || []).forEach((visualCheck) => {

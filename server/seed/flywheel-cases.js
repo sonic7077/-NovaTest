@@ -12,6 +12,7 @@ function requestStep(id, instruction, action, options = {}) {
       safety: options.safety || 'readonly',
       ...(options.expectedJson ? { expectedJson: options.expectedJson } : {}),
       ...(options.extract ? { extract: options.extract } : {}),
+      ...(options.poll ? { poll: options.poll } : {}),
       ...(options.auth ? { auth: options.auth } : {})
     }
   };
@@ -62,6 +63,35 @@ export function flywheelCases({ projectId, baseUrl }) {
           expectedJson: [{ path: '$.job_id', exists: true }], extract: { jobId: '$.job_id' }
         }),
         requestStep('flywheel-ingest-status', '查询内容采集异步任务状态', '/api/v1/ingest/{{jobId}}', { expectedJson: statusExists })
+      ]
+    }),
+    flywheelCase({
+      id: 'flywheel-content-feedback',
+      name: '正例：飞轮内容详情、关联与行为反馈',
+      projectId,
+      baseUrl,
+      steps: [
+        requestStep('flywheel-content-ingest', '提交用于详情、关联和反馈验证的项目专属内容', '/api/v1/ingest', {
+          method: 'POST', safety: 'mutating', expectedStatus: successStatuses,
+          payload: { source: 'text', text: 'NovaTest 飞轮内容闭环验证 {{platformId}}-novatest-{{runId}}', author_id: testUserId },
+          expectedJson: [{ path: '$.job_id', exists: true }], extract: { jobId: '$.job_id' }
+        }),
+        requestStep('flywheel-content-status', '轮询内容采集状态直到终态', '/api/v1/ingest/{{jobId}}', {
+          expectedJson: statusExists,
+          poll: { path: '$.status', values: ['done', 'dup', 'blocked', 'failed'], intervalMs: 1_000, maxAttempts: 20 },
+          extract: { contentId: '$.content_id' }
+        }),
+        requestStep('flywheel-content-detail', '查询刚采集内容的详情', '/api/v1/content/{{contentId}}', {
+          expectedJson: [{ path: '$.content_id', equalsVariable: 'contentId' }]
+        }),
+        requestStep('flywheel-content-related', '查询刚采集内容的关联内容', '/api/v1/content/{{contentId}}/related', {
+          payload: { size: 6 }, expectedJson: itemsExists
+        }),
+        requestStep('flywheel-content-feedback', '上报刚采集内容的正向行为反馈', '/api/v1/feedback', {
+          method: 'POST', safety: 'mutating',
+          payload: { user_id: testUserId, content_id: '{{contentId}}', session_id: '{{runId}}', event: 'like' },
+          expectedJson: [{ path: '$.ok', equals: true }]
+        })
       ]
     }),
     oneStepCase({ id: 'user-upsert', name: '正例：飞轮用户建档', action: `/api/v1/users/${testUserId}`, projectId, baseUrl, method: 'PUT', safety: 'mutating', payload: { onboarding_tags: ['自动化测试', '质量工程'], region: 'CN' }, expectedJson: [{ path: '$.ok', equals: true }] }),

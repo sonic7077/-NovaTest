@@ -98,6 +98,21 @@ describe('web test case', () => {
     expect(() => validateWebCase({ ...testCase, steps: [{ ...testCase.steps[0], request: { ...request, expectedStatus: [403, '404'] } }] })).toThrow('invalid API request');
   });
 
+  it('accepts bounded Flywheel status polling and rejects malformed polling definitions', () => {
+    const request = {
+      protocol: 'flywheel', action: '/api/v1/ingest/42', method: 'GET', payload: {}, expectedStatus: 200,
+      safety: 'readonly', poll: { path: '$.status', values: ['done', 'failed'], intervalMs: 500, maxAttempts: 4 }
+    };
+    const testCase = validateWebCase({
+      id: 'flywheel-poll', projectId: 'project-1', name: '采集状态轮询', target: 'api',
+      baseUrl: 'https://flywheel.example.test', viewport: 'desktop',
+      steps: [{ id: 'status', kind: 'apiRequest', instruction: '查询状态', request }]
+    });
+
+    expect(testCase.steps[0].request.poll.maxAttempts).toBe(4);
+    expect(() => validateWebCase({ ...testCase, steps: [{ ...testCase.steps[0], request: { ...request, poll: { path: 'status', values: [], intervalMs: -1, maxAttempts: 99 } } }] })).toThrow('invalid API request');
+  });
+
   it('rejects unsupported API authentication modes', () => {
     expect(() => validateWebCase({
       id: 'bad-auth', projectId: 'project-1', name: '错误认证方式', target: 'api',
