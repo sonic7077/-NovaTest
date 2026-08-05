@@ -27,4 +27,19 @@ describe('runtime services', () => {
     expect(services.cmsRunnerStatus).toMatchObject({ ready: false, message: 'SQLite runtime configuration is unavailable' });
     await expect(services.runner.web.execute()).rejects.toThrow('SQLite runtime configuration is unavailable');
   });
+
+  it('constructs a Flywheel runner only when SQLite includes Flywheel configuration', async () => {
+    const flywheel = { baseUrl: 'https://flywheel.example.test', platformKey: 'private-platform-key', platformId: 'tenant-a' };
+    const FlywheelRunner = vi.fn(function FlywheelRunner({ config }) { this.config = config; this.execute = vi.fn(); });
+    const createWebRunner = vi.fn(async () => ({ execute: vi.fn() }));
+
+    const services = await createRuntimeServices({
+      runtimeConfig: { ...completeRuntimeConfig, flywheel }, store: { saveRuntimeConfig: vi.fn() },
+      createWebRunner, FlywheelRunner
+    });
+
+    expect(FlywheelRunner).toHaveBeenCalledWith({ config: flywheel });
+    expect(services.flywheelRunnerStatus).toMatchObject({ ready: true });
+    expect(services.flywheelBaseUrl).toBe(flywheel.baseUrl);
+  });
 });

@@ -1,5 +1,6 @@
 import { CmsApiRunner } from '../runners/cms-api-runner.js';
 import { EditorialApiRunner } from '../runners/editorial-api-runner.js';
+import { FlywheelApiRunner } from '../runners/flywheel-api-runner.js';
 import { CompositeApiRunner } from '../runners/composite-api-runner.js';
 import { createProductionRunner } from '../runners/production-runner.js';
 import { normalizeRuntimeConfig } from './runtime-config-service.js';
@@ -10,7 +11,7 @@ function unavailableRunner(message) {
   return { execute: async () => { throw new Error(message); } };
 }
 
-export async function createRuntimeServices({ runtimeConfig, store, createWebRunner = createProductionRunner, CmsRunner = CmsApiRunner, EditorialRunner = EditorialApiRunner, ApiRunner = CompositeApiRunner } = {}) {
+export async function createRuntimeServices({ runtimeConfig, store, createWebRunner = createProductionRunner, CmsRunner = CmsApiRunner, EditorialRunner = EditorialApiRunner, FlywheelRunner = FlywheelApiRunner, ApiRunner = CompositeApiRunner } = {}) {
   let config;
   try {
     config = normalizeRuntimeConfig(runtimeConfig || store?.getRuntimeConfig?.());
@@ -22,6 +23,7 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
       runner: { web: unavailableRunner(message), api: unavailableRunner(message) },
       runnerStatus: { ready: false, message },
       cmsRunnerStatus: { ready: false, message },
+      flywheelRunnerStatus: { ready: false, message },
       modelConfigManager: createModelConfigManager({ store, runtimeConfig: undefined, createRunner: createWebRunner, runner: { replace: async () => undefined }, runnerStatus: { ready: false, message } }),
       cmsBaseUrl: undefined
     };
@@ -61,13 +63,26 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
       editorialRunnerStatus.message = error.message;
     }
   }
-  const apiRunner = new ApiRunner({ cms: cmsRunner, editorial: editorialRunner });
+  const flywheelRunnerStatus = { ready: false, message: 'Flywheel API runner is not configured' };
+  let flywheelRunner = unavailableRunner(flywheelRunnerStatus.message);
+  if (config.flywheel) {
+    try {
+      flywheelRunner = new FlywheelRunner({ config: config.flywheel });
+      flywheelRunnerStatus.ready = true;
+      flywheelRunnerStatus.message = 'Flywheel API runner is ready';
+    } catch (error) {
+      flywheelRunner = unavailableRunner(error.message);
+      flywheelRunnerStatus.message = error.message;
+    }
+  }
+  const apiRunner = new ApiRunner({ cms: cmsRunner, editorial: editorialRunner, flywheel: flywheelRunner });
 
   return {
     runner: { web: reloadableWebRunner, api: apiRunner },
     runnerStatus,
     cmsRunnerStatus,
     editorialRunnerStatus,
+    flywheelRunnerStatus,
     modelConfigManager: createModelConfigManager({
       store,
       runtimeConfig: config,
@@ -76,6 +91,7 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
       runnerStatus
     }),
     cmsBaseUrl: config.cms.baseUrl,
-    editorialBaseUrl: config.editorial?.baseUrl
+    editorialBaseUrl: config.editorial?.baseUrl,
+    flywheelBaseUrl: config.flywheel?.baseUrl
   };
 }

@@ -1,6 +1,6 @@
 export class CompositeApiRunner {
-  constructor({ cms, editorial }) {
-    this.runners = { cms, editorial };
+  constructor({ cms, editorial, flywheel }) {
+    this.runners = { cms, editorial, flywheel };
   }
 
   createSession() {
