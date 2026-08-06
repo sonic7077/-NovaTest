@@ -73,6 +73,16 @@ describe('Flywheel API cases', () => {
     expect(testCase.steps[0].request).toMatchObject({ action: '/api/v1/users/{{platformId}}-novatest-{{runId}}', method: 'PUT', safety: 'mutating' });
     expect(testCase.steps[0].request.randomSelection).toMatchObject({ variable: 'selectedInterests', minCount: 1, maxCount: 3 });
     expect(testCase.steps[1].request).toMatchObject({ action: '/api/v1/feed', method: 'GET', safety: 'readonly', payload: { size: 20 } });
-    expect(testCase.steps[1].request.recommendationPolicy).toMatchObject({ requestedSize: 20, maxItems: 20, headGuard: 2, minHitRatio: 0.3, maxHitRatio: 0.8, exploreRatio: 0.15 });
+    expect(testCase.steps[1].request.recommendationPolicy).toMatchObject({ requestedSize: 20, minItems: 10, maxItems: 20, headGuard: 2, minHitRatio: 0.3, maxHitRatio: 0.8, exploreRatio: 0.15 });
+  });
+
+  it('defines ten stable taxonomy-driven recommendation groups', () => {
+    const cases = flywheelCases({ projectId: 'flywheel-project', baseUrl: 'https://flywheel.example.test', platformId: 'tenant-a' });
+    const groups = cases.filter((item) => item.id === 'flywheel-recommendation-policy' || /^flywheel-recommendation-policy-\d{2}$/.test(item.id));
+    expect(groups).toHaveLength(10);
+    expect(groups.map((item) => item.steps[0].request.randomSelection.salt)).toEqual(Array.from({ length: 10 }, (_, index) => `group-${String(index + 1).padStart(2, '0')}`));
+    expect(groups.every((item) => Array.isArray(item.steps) && item.steps.length === 2)).toBe(true);
+    expect(groups.every((item) => item.steps[1].request.payload.size === 20 && item.steps[1].request.recommendationPolicy.minItems === 10)).toBe(true);
+    expect(groups.map((item) => item.name)).toContain('正例：飞轮推荐策略-兴趣组10/10');
   });
 });

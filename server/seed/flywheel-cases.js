@@ -131,22 +131,27 @@ export function flywheelCases({ projectId, baseUrl }) {
         })
       ]
     }),
-    flywheelCase({
-      id: 'flywheel-recommendation-policy',
-      name: '正例：飞轮推荐策略-随机兴趣前20条分析',
-      projectId,
-      baseUrl,
-      steps: [
-        requestStep('flywheel-recommendation-policy-user', '随机选择1至3个兴趣并创建隔离推荐用户画像', `/api/v1/users/${testUserId}`, {
-          method: 'PUT', safety: 'mutating', payload: { onboarding_tags: '{{selectedInterests}}', region: 'CN' },
-          expectedJson: [{ path: '$.ok', equals: true }],
-          randomSelection: { variable: 'selectedInterests', values: interestOptions, minCount: 1, maxCount: 3 }
-        }),
-        requestStep('flywheel-recommendation-policy-feed', '获取前20条推荐并按当前参数分析兴趣命中、探索与去重', '/api/v1/feed', {
-          payload: { user_id: testUserId, session_id: '{{runId}}', size: 20 }, expectedJson: itemsExists,
-          recommendationPolicy: { selectedTagsVariable: 'selectedInterests', requestedSize: 20, maxItems: 20, headGuard: 2, minHitRatio: 0.3, maxHitRatio: 0.8, exploreRatio: 0.15, requireUniqueContentIds: true }
-        })
-      ]
+    ...Array.from({ length: 10 }, (_, index) => {
+      const group = index + 1;
+      const suffix = group === 1 ? '' : `-${String(group).padStart(2, '0')}`;
+      const label = group === 1 ? '随机兴趣前20条分析' : `兴趣组${String(group).padStart(2, '0')}/10`;
+      return flywheelCase({
+        id: `flywheel-recommendation-policy${suffix}`,
+        name: `正例：飞轮推荐策略-${label}`,
+        projectId,
+        baseUrl,
+        steps: [
+          requestStep(`flywheel-recommendation-policy${suffix}-user`, '随机选择1至3个兴趣并创建隔离推荐用户画像', `/api/v1/users/${testUserId}`, {
+            method: 'PUT', safety: 'mutating', payload: { onboarding_tags: '{{selectedInterests}}', region: 'CN' },
+            expectedJson: [{ path: '$.ok', equals: true }],
+            randomSelection: { variable: 'selectedInterests', values: interestOptions, minCount: 1, maxCount: 3, salt: `group-${String(group).padStart(2, '0')}` }
+          }),
+          requestStep(`flywheel-recommendation-policy${suffix}-feed`, '获取前20条推荐并按当前参数分析兴趣命中、探索与去重', '/api/v1/feed', {
+            payload: { user_id: testUserId, session_id: '{{runId}}', size: 20 }, expectedJson: itemsExists,
+            recommendationPolicy: { selectedTagsVariable: 'selectedInterests', requestedSize: 20, minItems: 10, maxItems: 20, headGuard: 2, minHitRatio: 0.3, maxHitRatio: 0.8, exploreRatio: 0.15, requireUniqueContentIds: true }
+          })
+        ]
+      });
     }),
     eventTrackingCase({ id: 'impression', name: '正例：飞轮埋点-信息流曝光上报', event: 'impression', payload: { position: 0 }, projectId, baseUrl }),
     eventTrackingCase({ id: 'read', name: '正例：飞轮埋点-有效阅读上报', event: 'read', payload: { dwell_ms: 8000, completion: 0.9 }, projectId, baseUrl }),
