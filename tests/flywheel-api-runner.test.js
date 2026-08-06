@@ -77,6 +77,21 @@ describe('Flywheel API runner', () => {
     expect(result.api.analysis.exploration.status).toBe('unobservable');
   });
 
+  it('fails recommendation analysis when fewer than minItems are returned', async () => {
+    const runner = new FlywheelApiRunner({ config, fetchImpl: async () => response(200, { items: recommendationItems(['热门', '热门', '最新', '探索', '探索', '探索', '探索', '探索', '探索'], 9) }) });
+    await expect(runner.execute(step('/api/v1/feed', { recommendationPolicy: { ...policy(), minItems: 10 } }), {
+      testCase: { baseUrl: config.baseUrl }, variables: { selectedInterests: ['热门', '最新'] }
+    })).rejects.toMatchObject({ message: expect.stringContaining('at least 10') });
+  });
+
+  it('uses a different deterministic interest combination for different salts', async () => {
+    const runner = new FlywheelApiRunner({ config, fetchImpl: async () => response(200, { ok: true }) });
+    const request = { method: 'PUT', safety: 'mutating', payload: { onboarding_tags: '{{selectedInterests}}' }, randomSelection: { variable: 'selectedInterests', values: ['热门', '最新', '精选', '偷拍'], minCount: 1, maxCount: 3 } };
+    const selected = [];
+    for (const salt of ['group-01', 'group-02']) selected.push((await runner.execute(step('/api/v1/users/u', { ...request, randomSelection: { ...request.randomSelection, salt } }), { testCase: { baseUrl: config.baseUrl }, variables: { runId: 'same' }, allowMutations: true })).variables.selectedInterests);
+    expect(selected[0]).not.toEqual(selected[1]);
+  });
+
   it.each([
     ['fails when the first two results do not match selected interests', recommendationItems(['探索', '热门', '热门', '探索', '探索', '探索', '探索', '探索', '探索', '探索'])],
     ['fails when hit ratio is below the configured floor', recommendationItems(['探索', '探索', '探索', '探索', '探索', '探索', '探索', '探索', '热门', '探索'])],

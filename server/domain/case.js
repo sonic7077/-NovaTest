@@ -51,7 +51,9 @@ function validRecommendationPolicy(policy) {
   const ratio = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
   return typeof policy.selectedTagsVariable === 'string' && policy.selectedTagsVariable.trim()
     && Number.isInteger(policy.requestedSize) && policy.requestedSize >= 1 && policy.requestedSize <= 50
+    && (policy.minItems === undefined || (Number.isInteger(policy.minItems) && policy.minItems >= 1 && policy.minItems <= 50))
     && Number.isInteger(policy.maxItems) && policy.maxItems >= 1 && policy.maxItems <= 50
+    && (policy.minItems === undefined || policy.minItems <= policy.maxItems)
     && Number.isInteger(policy.headGuard) && policy.headGuard >= 0 && policy.headGuard <= policy.maxItems
     && ratio(policy.minHitRatio) && ratio(policy.maxHitRatio) && policy.minHitRatio <= policy.maxHitRatio
     && typeof policy.requireUniqueContentIds === 'boolean'

@@ -40,7 +40,7 @@ function selectRandomValues(selection, variables) {
   if (!selection) return {};
   if (selection.variable in variables) return { [selection.variable]: variables[selection.variable] };
   const available = [...selection.values];
-  let seed = stableSeed(variables.runId);
+  let seed = stableSeed(`${variables.runId || ''}:${selection.salt || ''}`);
   const count = selection.minCount + (seed % (selection.maxCount - selection.minCount + 1));
   const selected = [];
   while (selected.length < count) {
@@ -73,6 +73,7 @@ function recommendationAnalysis(body, policy, variables) {
     selectedTags,
     requestedSize: policy.requestedSize,
     itemCount,
+    minItems: policy.minItems,
     dataShortfall: itemCount > 0 && itemCount < policy.requestedSize,
     hitCount,
     hitRatio,
@@ -86,6 +87,7 @@ function recommendationAnalysis(body, policy, variables) {
   if (analysis.dataShortfall) analysis.warnings = [`推荐结果少于请求数量：${itemCount}/${policy.requestedSize}`];
   const hardFailures = [
     itemCount === 0 ? 'recommendation response is empty' : null,
+    policy.minItems !== undefined && itemCount < policy.minItems ? `recommendation response has ${itemCount} items, at least ${policy.minItems} required` : null,
     itemCount > policy.maxItems ? `recommendation response exceeds ${policy.maxItems} items` : null,
     headGuardPassed === false ? `first ${policy.headGuard} recommendations do not match selected interests` : null,
     !analysis.interestFloor.passed ? `interest hit ratio ${hitRatio} is below ${policy.minHitRatio}` : null,

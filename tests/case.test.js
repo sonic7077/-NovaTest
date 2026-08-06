@@ -45,6 +45,16 @@ describe('web test case', () => {
     expect(() => validateWebCase({ ...testCase, steps: [{ ...testCase.steps[0], request: { ...request, recommendationPolicy: { ...request.recommendationPolicy, minHitRatio: 1.2 } } }] })).toThrow('invalid API request');
   });
 
+  it('validates a minimum recommendation item threshold', () => {
+    const request = {
+      protocol: 'flywheel', action: '/api/v1/feed', method: 'GET', payload: {}, expectedStatus: 200, safety: 'readonly',
+      recommendationPolicy: { selectedTagsVariable: 'selectedInterests', requestedSize: 20, minItems: 10, maxItems: 20, headGuard: 2, minHitRatio: 0.3, maxHitRatio: 0.8, requireUniqueContentIds: true }
+    };
+    const testCase = validateWebCase({ id: 'minimum-feed', projectId: 'p', name: '推荐数量', target: 'api', baseUrl: 'https://flywheel.example.test', viewport: 'desktop', steps: [{ id: 'feed', kind: 'apiRequest', instruction: '读取推荐', request }] });
+    expect(testCase.steps[0].request.recommendationPolicy.minItems).toBe(10);
+    expect(() => validateWebCase({ ...testCase, steps: [{ ...testCase.steps[0], request: { ...request, recommendationPolicy: { ...request.recommendationPolicy, minItems: 0 } } }] })).toThrow('invalid API request');
+  });
+
   it('accepts case-scoped visual baselines and rejects invalid ones', () => {
     const testCase = validateWebCase({
       id: 'case-1', projectId: 'project-1', name: '登录', target: 'web', baseUrl: 'https://example.test', viewport: 'desktop',
