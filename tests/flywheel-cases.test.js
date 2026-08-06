@@ -64,4 +64,15 @@ describe('Flywheel API cases', () => {
     expect(eventCases.at(-1).steps.some((step) => step.request.action === '/api/v1/search')).toBe(true);
     expect(eventCases.at(-1).steps.find((step) => step.request.action === '/api/v1/search').request.extract).toEqual({ searchedContentId: '$.items[0].content_id' });
   });
+
+  it('defines a taxonomy-driven recommendation policy analysis case', () => {
+    const cases = flywheelCases({ projectId: 'flywheel-project', baseUrl: 'https://flywheel.example.test', platformId: 'tenant-a' });
+    const testCase = cases.find((item) => item.id === 'flywheel-recommendation-policy');
+    expect(testCase).toMatchObject({ name: '正例：飞轮推荐策略-随机兴趣前20条分析', target: 'api', projectId: 'flywheel-project' });
+    expect(testCase.steps).toHaveLength(2);
+    expect(testCase.steps[0].request).toMatchObject({ action: '/api/v1/users/{{platformId}}-novatest-{{runId}}', method: 'PUT', safety: 'mutating' });
+    expect(testCase.steps[0].request.randomSelection).toMatchObject({ variable: 'selectedInterests', minCount: 1, maxCount: 3 });
+    expect(testCase.steps[1].request).toMatchObject({ action: '/api/v1/feed', method: 'GET', safety: 'readonly', payload: { size: 20 } });
+    expect(testCase.steps[1].request.recommendationPolicy).toMatchObject({ requestedSize: 20, maxItems: 20, headGuard: 2, minHitRatio: 0.3, maxHitRatio: 0.8, exploreRatio: 0.15 });
+  });
 });
