@@ -21,6 +21,30 @@ describe('web test case', () => {
     expect(() => interpolate('{{missing}}', {})).toThrow('missing variable: missing');
   });
 
+  it('preserves array values for full placeholders and validates bounded random selections', () => {
+    expect(interpolate('{{selectedInterests}}', { selectedInterests: ['热门', '最新'] })).toEqual(['热门', '最新']);
+    const request = {
+      protocol: 'flywheel', action: '/api/v1/users/u-1', method: 'PUT', payload: { onboarding_tags: '{{selectedInterests}}' },
+      expectedStatus: 200, safety: 'mutating', randomSelection: {
+        variable: 'selectedInterests', values: ['热门', '最新', '精选'], minCount: 1, maxCount: 3
+      }
+    };
+    const testCase = validateWebCase({ id: 'random-interests', projectId: 'project-1', name: '随机兴趣建档', target: 'api', baseUrl: 'https://flywheel.example.test', viewport: 'desktop', steps: [{ id: 'upsert', kind: 'apiRequest', instruction: '保存随机兴趣', request }] });
+    expect(testCase.steps[0].request.randomSelection.maxCount).toBe(3);
+    expect(() => validateWebCase({ ...testCase, steps: [{ ...testCase.steps[0], request: { ...request, randomSelection: { ...request.randomSelection, values: ['重复', '重复'] } } }] })).toThrow('invalid API request');
+    expect(() => validateWebCase({ ...testCase, steps: [{ ...testCase.steps[0], request: { ...request, randomSelection: { ...request.randomSelection, minCount: 0 } } }] })).toThrow('invalid API request');
+  });
+
+  it('validates Flywheel recommendation policy thresholds', () => {
+    const request = {
+      protocol: 'flywheel', action: '/api/v1/feed', method: 'GET', payload: {}, expectedStatus: 200, safety: 'readonly',
+      recommendationPolicy: { selectedTagsVariable: 'selectedInterests', requestedSize: 20, maxItems: 20, headGuard: 2, minHitRatio: 0.3, maxHitRatio: 0.8, requireUniqueContentIds: true }
+    };
+    const testCase = validateWebCase({ id: 'feed-policy', projectId: 'project-1', name: '推荐策略', target: 'api', baseUrl: 'https://flywheel.example.test', viewport: 'desktop', steps: [{ id: 'feed', kind: 'apiRequest', instruction: '分析推荐', request }] });
+    expect(testCase.steps[0].request.recommendationPolicy.maxHitRatio).toBe(0.8);
+    expect(() => validateWebCase({ ...testCase, steps: [{ ...testCase.steps[0], request: { ...request, recommendationPolicy: { ...request.recommendationPolicy, minHitRatio: 1.2 } } }] })).toThrow('invalid API request');
+  });
+
   it('accepts case-scoped visual baselines and rejects invalid ones', () => {
     const testCase = validateWebCase({
       id: 'case-1', projectId: 'project-1', name: '登录', target: 'web', baseUrl: 'https://example.test', viewport: 'desktop',
