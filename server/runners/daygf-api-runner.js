@@ -156,7 +156,11 @@ export class DaygfApiRunner {
     const isSessionRequest = request.auth !== 'none' && request.auth !== 'invalid';
     if (isSessionRequest) await this.authenticate(context.testCase.baseUrl, session);
 
-    const token = request.auth === 'invalid' ? 'invalid-token' : session.token;
+    const token = request.auth === 'invalid'
+      ? 'invalid-token'
+      : request.auth === 'none'
+        ? undefined
+        : session.token;
     const startedAt = performance.now();
     const url = restUrl(context.testCase.baseUrl, request.action, payload, request.method);
     const response = await this.fetchImpl(url, {

@@ -29,6 +29,20 @@ describe('Daygf API cases', () => {
     ]));
   });
 
+  it('models business rejections and tolerant reads with their actual contracts', () => {
+    const byId = Object.fromEntries(daygfCases({ projectId: 'daygf-project', baseUrl: 'https://daygf.example.test' })
+      .map((testCase) => [testCase.id, testCase]));
+
+    expect(byId['daygf-content-12'].steps[0].request).toMatchObject({
+      auth: 'none', expectedStatus: 200, expectedJson: [{ path: '$.ok', equals: false }]
+    });
+    expect(byId['daygf-content-10'].steps[0].request).toMatchObject({
+      auth: 'none', expectedStatus: 200, expectedJson: [{ path: '$.ok', equals: true }]
+    });
+    expect(byId['daygf-profile-08'].steps[0].request).toMatchObject({ auth: 'none', expectedStatus: 401 });
+    expect(byId['daygf-shop-08'].steps[0].request).toMatchObject({ auth: 'none', expectedStatus: 401 });
+  });
+
   it('upserts the full matrix into the 一日女友 project without duplicating cases', () => {
     const store = createMemoryStore();
     const project = store.saveProject({ name: '一日女友' });

@@ -57,6 +57,25 @@ describe('Daygf API runner', () => {
     expect(calls).toEqual(['https://daygf.example.test/api/me']);
   });
 
+  it('keeps a no-token probe anonymous when a shared session already has a token', async () => {
+    const calls = [];
+    const runner = new DaygfApiRunner({
+      config,
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return response(401, { ok: false });
+      }
+    });
+    const context = {
+      testCase: { baseUrl: config.baseUrl }, variables: {}, apiSession: { token: 'private-jwt' }
+    };
+
+    await runner.execute(step('/api/me', { auth: 'none', expectedStatus: 401 }), context);
+
+    expect(calls[0].options.headers).not.toHaveProperty('x-token');
+    expect(calls[0].options.headers).not.toHaveProperty('authorization');
+  });
+
   it('serializes GET query values and JSON request bodies', async () => {
     const calls = [];
     const runner = new DaygfApiRunner({
