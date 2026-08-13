@@ -1,6 +1,6 @@
 import { createApp } from './app.js';
 import { seedArkCommunityCases } from './seed/ark-community-cases.js';
-import { upgradeLighthouseTaskListCase } from './seed/lighthouse-cases.js';
+import { upgradeLighthouseReadonlyCase, upgradeLighthouseTaskListCase } from './seed/lighthouse-cases.js';
 import { cmsWhitebagCases } from './seed/cms-whitebag-cases.js';
 import { seedArkAiCommentReviewCases } from './seed/ark-ai-comment-review-cases.js';
 import { seedFlywheelCases } from './seed/flywheel-cases.js';
@@ -15,6 +15,7 @@ async function main() {
     webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' }
   });
   upgradeLighthouseTaskListCase(store);
+  upgradeLighthouseReadonlyCase(store);
   const services = await createRuntimeServices({ runtimeConfig, store });
   const port = Number(process.env.PORT || 4173);
   const host = process.env.HOST || '127.0.0.1';

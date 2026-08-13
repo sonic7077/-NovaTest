@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { shouldUseLighthouseLogin } from '../domain/project-auth.js';
@@ -10,7 +11,7 @@ const requiredSettings = [
   'MIDSCENE_MODEL_API_KEY',
   'MIDSCENE_MODEL_NAME'
 ];
-const defaultReplanningCycleLimit = 40;
+const defaultReplanningCycleLimit = 8;
 const minReplanningCycleLimit = 1;
 const maxReplanningCycleLimit = 80;
 
@@ -31,9 +32,22 @@ export function midsceneConfigFromModel(modelConfig = {}) {
   };
 }
 
-export function resolveBrowserLaunchOptions(env) {
+function systemChromeCandidates(platform) {
+  if (platform === 'darwin') {
+    return [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary'
+    ];
+  }
+  if (platform === 'linux') return ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/snap/bin/chromium'];
+  return [];
+}
+
+export function resolveBrowserLaunchOptions(env, { platform = process.platform, exists = existsSync } = {}) {
   const executablePath = String(env.PLAYWRIGHT_EXECUTABLE_PATH || '').trim();
-  return executablePath ? { headless: true, executablePath } : { headless: true };
+  if (executablePath) return { headless: true, executablePath };
+  const systemChrome = systemChromeCandidates(platform).find((candidate) => exists(candidate));
+  return systemChrome ? { headless: true, executablePath: systemChrome } : { headless: true };
 }
 
 export function resolveMidsceneReplanningCycleLimit(env) {
@@ -88,10 +102,18 @@ export function createBrowserFactory({ launch }) {
   };
 }
 
-export function createLighthouseBeforeFirstStep({ credentials, login = loginLighthouse } = {}) {
+export function createLighthouseBeforeFirstStep({ credentials, login = loginLighthouse, selectCompany } = {}) {
   return async (page, context) => {
     if (!shouldUseLighthouseLogin(context.project, context.testCase)) return;
+    if (selectCompany) return login(page, credentials, { selectCompany });
     await login(page, credentials);
+  };
+}
+
+export function createLighthouseCompanySelector(agentFactory) {
+  return async (page) => {
+    const agent = agentFactory(page);
+    await agent.aiAct('检查当前登录流程页面。仅当页面显示“选择公司”并存在名称为“无极”的公司选项时，依据当前页面视觉内容点击“无极”；若已进入其他页面则不要操作。');
   };
 }
 
@@ -106,11 +128,13 @@ export async function createProductionRunner({ modelConfig, lighthouseCredential
   overrideAIConfig(midsceneConfig);
   await mkdir(screenshotDir, { recursive: true });
   const browser = createBrowserFactory({ launch: () => chromium.launch(resolveBrowserLaunchOptions(env)) });
+  const agentFactory = createMidsceneAgentFactory(PlaywrightAgent, env);
+  const selectLighthouseCompany = createLighthouseCompanySelector(agentFactory);
 
   return createWebRunner({
     browser,
-    agentFactory: createMidsceneAgentFactory(PlaywrightAgent, env),
-    beforeFirstStep: beforeFirstStep || createLighthouseBeforeFirstStep({ credentials: lighthouseCredentials }),
+    agentFactory,
+    beforeFirstStep: beforeFirstStep || createLighthouseBeforeFirstStep({ credentials: lighthouseCredentials, selectCompany: selectLighthouseCompany }),
     screenshotDir,
     resolveAssetPath: (assetPath) => resolveCaseAssetPath(assetPath, caseAssetsDir)
   });

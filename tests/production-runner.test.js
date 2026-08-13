@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assertMidsceneConfig, createBrowserFactory, createLighthouseBeforeFirstStep, createMidsceneAgentFactory, midsceneConfigFromModel, resolveBrowserLaunchOptions, resolveCaseAssetPath, resolveMidsceneReplanningCycleLimit } from '../server/runners/production-runner.js';
+import { assertMidsceneConfig, createBrowserFactory, createLighthouseBeforeFirstStep, createLighthouseCompanySelector, createMidsceneAgentFactory, midsceneConfigFromModel, resolveBrowserLaunchOptions, resolveCaseAssetPath, resolveMidsceneReplanningCycleLimit } from '../server/runners/production-runner.js';
 
 describe('Midscene configuration', () => {
   it('reports every missing model setting before starting a browser', () => {
@@ -19,12 +19,12 @@ describe('Midscene configuration', () => {
       .toEqual({ MIDSCENE_MODEL_BASE_URL: 'https://model.example/api', MIDSCENE_MODEL_NAME: 'vision', MIDSCENE_MODEL_FAMILY: 'gemini', MIDSCENE_MODEL_API_KEY: 'private-key', MIDSCENE_MODEL_INIT_CONFIG_JSON: '{"defaultHeaders":{"User-Agent":"Mozilla/5.0 NovaTest"}}' });
   });
 
-  it('uses a bounded replanning limit and falls back to 40 for invalid configuration', () => {
-    expect(resolveMidsceneReplanningCycleLimit({})).toBe(40);
+  it('uses a bounded replanning limit and falls back to 8 for invalid configuration', () => {
+    expect(resolveMidsceneReplanningCycleLimit({})).toBe(8);
     expect(resolveMidsceneReplanningCycleLimit({ MIDSCENE_REPLANNING_CYCLE_LIMIT: '56' })).toBe(56);
-    expect(resolveMidsceneReplanningCycleLimit({ MIDSCENE_REPLANNING_CYCLE_LIMIT: '0' })).toBe(40);
-    expect(resolveMidsceneReplanningCycleLimit({ MIDSCENE_REPLANNING_CYCLE_LIMIT: '81' })).toBe(40);
-    expect(resolveMidsceneReplanningCycleLimit({ MIDSCENE_REPLANNING_CYCLE_LIMIT: '4.5' })).toBe(40);
+    expect(resolveMidsceneReplanningCycleLimit({ MIDSCENE_REPLANNING_CYCLE_LIMIT: '0' })).toBe(8);
+    expect(resolveMidsceneReplanningCycleLimit({ MIDSCENE_REPLANNING_CYCLE_LIMIT: '81' })).toBe(8);
+    expect(resolveMidsceneReplanningCycleLimit({ MIDSCENE_REPLANNING_CYCLE_LIMIT: '4.5' })).toBe(8);
   });
 
   it('passes the resolved replanning limit to every Midscene agent', () => {
@@ -43,6 +43,15 @@ describe('Midscene configuration', () => {
   it('uses a locally configured Chromium executable when the bundled cache is unavailable', () => {
     expect(resolveBrowserLaunchOptions({ PLAYWRIGHT_EXECUTABLE_PATH: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' }))
       .toEqual({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
+  });
+
+  it('falls back to an installed system Chrome when the bundled browser is unavailable', () => {
+    const executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+    expect(resolveBrowserLaunchOptions({}, {
+      platform: 'darwin',
+      exists: (candidate) => candidate === executablePath
+    })).toEqual({ headless: true, executablePath });
   });
 
   it('resolves only normalized case asset paths inside the configured asset directory', () => {
@@ -106,5 +115,30 @@ describe('Midscene configuration', () => {
 
     expect(login).toHaveBeenCalledTimes(1);
     expect(login).toHaveBeenCalledWith(page, credentials);
+  });
+
+  it('passes the visual company selector into Lighthouse login', async () => {
+    const credentials = { email: 'person@example.test', password: 'private-value', totpSecret: 'seed' };
+    const login = vi.fn(async () => {});
+    const selectCompany = vi.fn(async () => {});
+    const beforeFirstStep = createLighthouseBeforeFirstStep({ credentials, login, selectCompany });
+    const page = {};
+
+    await beforeFirstStep(page, {
+      project: { webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' } },
+      testCase: { target: 'web', baseUrl: 'https://dt.chenmoyuan.tech/dashboard/tasks/my' }
+    });
+
+    expect(login).toHaveBeenCalledWith(page, credentials, { selectCompany });
+  });
+
+  it('uses Midscene visual recognition to select 无极 from the company page', async () => {
+    const aiAct = vi.fn(async () => {});
+    const page = { id: 'company-page' };
+    const selectCompany = createLighthouseCompanySelector(() => ({ aiAct }));
+
+    await selectCompany(page);
+
+    expect(aiAct).toHaveBeenCalledWith(expect.stringContaining('名称为“无极”的公司选项'));
   });
 });
