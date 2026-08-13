@@ -44,6 +44,10 @@ function statusLabel(status) {
   return status === 'skipped' ? '前置数据不足' : String(status).toUpperCase();
 }
 
+function statusGroupLabel(status) {
+  return { failed: '失败', skipped: '跳过', passed: '通过' }[status] || statusLabel(status);
+}
+
 function resultAnchor(prefix, id) {
   return `${prefix}-${encodeURIComponent(String(id))}`;
 }
@@ -59,7 +63,10 @@ function statusChip(status, count, targetId) {
 function statusSummary(items, anchorPrefix) {
   return ['passed', 'skipped', 'failed'].map((status) => {
     const matches = items.filter((item) => item.status === status);
-    return statusChip(status, matches.length, matches[0] ? resultAnchor(anchorPrefix, matches[0].id) : '');
+    const targetId = anchorPrefix === 'batch-status'
+      ? `batch-status-${status}`
+      : matches[0] ? resultAnchor(anchorPrefix, matches[0].id) : '';
+    return statusChip(status, matches.length, targetId);
   }).join('');
 }
 
@@ -92,7 +99,12 @@ export function renderReport(run, caseName) {
 }
 
 export function renderBatchReport(batch, runs) {
-  const runSections = runs.map((run) => `<section id="${escapeHtml(resultAnchor('run', run.id))}" class="run-section"><h2>${escapeHtml(run.caseName || run.caseId)}</h2><p>运行状态：<strong class="${run.status}">${escapeHtml(statusLabel(run.status))}</strong></p><p>开始：${escapeHtml(formatLocalTime(run.startedAt))}<br>结束：${escapeHtml(formatLocalTime(run.finishedAt))}</p>${runTable(run)}</section>`).join('');
+  const runSection = (run) => `<section id="${escapeHtml(resultAnchor('run', run.id))}" class="run-section"><h3>${escapeHtml(run.caseName || run.caseId)}</h3><p>运行状态：<strong class="${run.status}">${escapeHtml(statusLabel(run.status))}</strong></p><p>开始：${escapeHtml(formatLocalTime(run.startedAt))}<br>结束：${escapeHtml(formatLocalTime(run.finishedAt))}</p>${runTable(run)}</section>`;
+  const runSections = ['failed', 'skipped', 'passed'].map((status) => {
+    const groupedRuns = runs.filter((run) => run.status === status);
+    if (!groupedRuns.length) return '';
+    return `<section id="batch-status-${status}" class="batch-status-group ${status}"><h2>${escapeHtml(statusGroupLabel(status))}用例（${groupedRuns.length}）</h2>${groupedRuns.map(runSection).join('')}</section>`;
+  }).join('');
   const downloadUrl = `/api/batches/${encodeURIComponent(batch.id)}/report/download`;
-  return documentMarkup(batch.name, `<div class="report-actions"><h1>${escapeHtml(batch.name)}</h1><a class="report-download" href="${downloadUrl}">导出 HTML 报告</a></div><p>批量状态：<strong class="${batch.status}">${escapeHtml(statusLabel(batch.status))}</strong></p><div class="summary"><span><strong>${runs.length}</strong> 个用例</span>${statusSummary(runs, 'run')}<span>开始：${escapeHtml(formatLocalTime(batch.startedAt))}</span><span>结束：${escapeHtml(formatLocalTime(batch.finishedAt))}</span></div>${runSections}`);
+  return documentMarkup(batch.name, `<div class="report-actions"><h1>${escapeHtml(batch.name)}</h1><a class="report-download" href="${downloadUrl}">导出 HTML 报告</a></div><p>批量状态：<strong class="${batch.status}">${escapeHtml(statusLabel(batch.status))}</strong></p><div class="summary"><span><strong>${runs.length}</strong> 个用例</span>${statusSummary(runs, 'batch-status')}<span>开始：${escapeHtml(formatLocalTime(batch.startedAt))}</span><span>结束：${escapeHtml(formatLocalTime(batch.finishedAt))}</span></div>${runSections}`);
 }

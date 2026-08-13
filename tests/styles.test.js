@@ -113,7 +113,12 @@ describe('test console stylesheet', () => {
     expect(script).toContain('function getExecutionConclusion(');
     expect(script).toContain('async function loadExecutionDetail(');
     expect(script).toContain('function renderExecutionDetail(');
+    expect(script).toContain('detail.task.plannedStepCount || steps.length');
+    expect(script).toContain('detail.task.plannedCaseCount || detail.task.caseIds?.length');
+    expect(script).toContain('summary.append(conclusionIcon, conclusionCopy, conclusionState, actions);');
+    expect(script).not.toContain('container.append(actions);');
     expect(stylesheet).toContain('.execution-conclusion');
+    expect(stylesheet).toContain('.execution-conclusion-actions');
     expect(stylesheet).toContain('.model-config-grid');
     expect(html).toContain('id="modelConfigForm"');
     expect(html).toContain('id="modelApiKey"');

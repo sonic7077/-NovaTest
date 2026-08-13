@@ -1,6 +1,13 @@
 import { BatchService, resolveBatchStatus } from './batch-service.js';
 import { RunService } from './run-service.js';
 
+function batchPlan(cases) {
+  return {
+    plannedCaseCount: cases.length,
+    plannedStepCount: cases.reduce((total, testCase) => total + testCase.steps.length, 0)
+  };
+}
+
 function failRun(run, error) {
   const activeStep = run.steps.find((step) => ['queued', 'running'].includes(step.status));
   if (activeStep) {
@@ -36,6 +43,7 @@ export class ExecutionService {
       projectId,
       target: target || cases[0]?.target || null,
       caseIds: [...caseIds],
+      ...batchPlan(cases),
       status: 'queued',
       runIds: [],
       startedAt: null,

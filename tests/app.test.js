@@ -532,7 +532,7 @@ describe('execution API', () => {
     expect(report).toContain('id="step-failed-step"');
   });
 
-  it('renders batch status chips that link to the first matching run section', () => {
+  it('renders batch status chips that link to matching result sections', () => {
     const report = renderBatchReport(
       { id: 'batch-export', name: '导出批量', status: 'failed', startedAt: null, finishedAt: null },
       [
@@ -542,10 +542,27 @@ describe('execution API', () => {
     );
 
     expect(report).toContain('href="/api/batches/batch-export/report/download"');
-    expect(report).toContain('href="#run-run-passed"');
-    expect(report).toContain('href="#run-run-failed"');
+    expect(report).toContain('href="#batch-status-passed"');
+    expect(report).toContain('href="#batch-status-failed"');
     expect(report).toContain('status-chip skipped disabled');
     expect(report).toContain('id="run-run-failed"');
+  });
+
+  it('groups batch report runs by final status while retaining order within each group', () => {
+    const report = renderBatchReport({ id: 'batch-grouped', name: '状态归类', status: 'failed' }, [
+      { id: 'pass-first', caseName: '通过一', status: 'passed', steps: [] },
+      { id: 'fail-first', caseName: '失败一', status: 'failed', steps: [] },
+      { id: 'skip-first', caseName: '跳过一', status: 'skipped', steps: [] },
+      { id: 'pass-second', caseName: '通过二', status: 'passed', steps: [] }
+    ]);
+
+    expect(report).toContain('id="batch-status-failed"');
+    expect(report).toContain('id="batch-status-skipped"');
+    expect(report).toContain('id="batch-status-passed"');
+    expect(report.indexOf('失败用例（1）')).toBeLessThan(report.indexOf('跳过用例（1）'));
+    expect(report.indexOf('跳过用例（1）')).toBeLessThan(report.indexOf('通过用例（2）'));
+    expect(report.indexOf('通过一')).toBeLessThan(report.indexOf('通过二'));
+    expect(report).toContain('href="#batch-status-failed"');
   });
 
   it('renders a batch report with Shanghai local time and ordered run details', () => {
@@ -558,9 +575,9 @@ describe('execution API', () => {
     );
 
     expect(report).toContain('查询回归');
-    expect(report).toContain('class="status-chip passed" href="#run-run-1"><strong>1</strong> 通过');
+    expect(report).toContain('class="status-chip passed" href="#batch-status-passed"><strong>1</strong> 通过');
     expect(report).toContain('class="status-chip skipped disabled" aria-disabled="true"><strong>0</strong> 跳过');
-    expect(report).toContain('class="status-chip failed" href="#run-run-2"><strong>1</strong> 失败');
+    expect(report).toContain('class="status-chip failed" href="#batch-status-failed"><strong>1</strong> 失败');
     expect(report).toContain('2026-07-18 13:40:00');
     expect(report).toContain('帖子列表查询');
     expect(report).toContain('评论列表查询');

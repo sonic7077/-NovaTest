@@ -1,5 +1,12 @@
 import { RunService } from './run-service.js';
 
+function batchPlan(cases) {
+  return {
+    plannedCaseCount: cases.length,
+    plannedStepCount: cases.reduce((total, testCase) => total + testCase.steps.length, 0)
+  };
+}
+
 export function resolveBatchStatus(runs) {
   if (runs.every((run) => run?.status === 'passed')) return 'passed';
   if (runs.length > 0 && runs.every((run) => run?.status === 'skipped')) return 'skipped';
@@ -20,6 +27,7 @@ export class BatchService {
       target: cases[0]?.target || null,
       name,
       caseIds: [...caseIds],
+      ...batchPlan(cases),
       status: 'running',
       runIds: [],
       startedAt: new Date().toISOString(),

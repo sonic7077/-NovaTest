@@ -1162,9 +1162,10 @@ function renderExecutionDetail(detail) {
   const steps = detail.runs.flatMap((run) => (run.steps || []).map((step) => ({ ...step, caseName: run.caseName })));
   const completedSteps = steps.filter((step) => ['passed', 'failed', 'skipped'].includes(step.status)).length;
   const passedSteps = steps.filter((step) => step.status === 'passed').length;
-  const totalCases = detail.runs.length || detail.task.caseIds?.length || 1;
+  const totalCases = detail.task.plannedCaseCount || detail.task.caseIds?.length || detail.runs.length || 1;
+  const totalSteps = detail.task.plannedStepCount || steps.length;
   const completedCases = detail.runs.filter((run) => ['passed', 'failed', 'skipped'].includes(run.status)).length;
-  const percent = steps.length ? Math.round(completedSteps / steps.length * 100) : 0;
+  const percent = totalSteps ? Math.round(completedSteps / totalSteps * 100) : 0;
   container.innerHTML = '';
 
   const summary = document.createElement('section');
@@ -1173,10 +1174,16 @@ function renderExecutionDetail(detail) {
   const conclusionCopy = document.createElement('div'); const conclusionTitle = document.createElement('strong'); const conclusionDescription = document.createElement('p');
   conclusionTitle.textContent = conclusion.title; conclusionDescription.textContent = conclusion.description; conclusionCopy.append(conclusionTitle, conclusionDescription);
   const conclusionState = document.createElement('span'); conclusionState.className = 'execution-state'; conclusionState.textContent = detail.task.target === 'api' ? '接口测试' : 'Web UI';
-  summary.append(conclusionIcon, conclusionCopy, conclusionState);
+  const reportUrl = executionReportUrl(detail);
+  const actions = document.createElement('div'); actions.className = 'execution-conclusion-actions';
+  if (reportUrl) {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'run-button'; button.innerHTML = '<i data-lucide="file-text"></i>查看测试报告'; button.onclick = () => window.open(reportUrl, '_blank', 'noopener');
+    actions.append(button);
+  }
+  summary.append(conclusionIcon, conclusionCopy, conclusionState, actions);
   const progress = document.createElement('section');
   progress.className = 'execution-progress-summary';
-  progress.innerHTML = `<div class="execution-progress-ring" style="--progress:${percent}%"><b>${percent}%</b><span>步骤完成</span></div><div class="execution-stat"><b>${completedCases}/${totalCases}</b><span>完成用例</span></div><div class="execution-stat"><b>${passedSteps}/${steps.length}</b><span>通过步骤</span></div><div class="execution-stat"><b>${formatExecutionDuration(detail.task.startedAt, detail.task.finishedAt)}</b><span>执行耗时</span></div>`;
+  progress.innerHTML = `<div class="execution-progress-ring" style="--progress:${percent}%"><b>${percent}%</b><span>步骤完成</span></div><div class="execution-stat"><b>${completedCases}/${totalCases}</b><span>完成用例</span></div><div class="execution-stat"><b>${passedSteps}/${totalSteps}</b><span>通过步骤</span></div><div class="execution-stat"><b>${formatExecutionDuration(detail.task.startedAt, detail.task.finishedAt)}</b><span>执行耗时</span></div>`;
   const timeline = document.createElement('section');
   timeline.className = 'execution-timeline';
   const heading = document.createElement('h3'); heading.textContent = '执行过程'; timeline.append(heading);
@@ -1194,12 +1201,6 @@ function renderExecutionDetail(detail) {
     item.append(icon, copy); timeline.append(item);
   });
   container.append(summary, progress, timeline);
-  const reportUrl = executionReportUrl(detail);
-  if (reportUrl) {
-    const actions = document.createElement('div'); actions.className = 'execution-detail-actions';
-    const button = document.createElement('button'); button.type = 'button'; button.className = 'run-button'; button.innerHTML = '<i data-lucide="file-text"></i>查看测试报告'; button.onclick = () => window.open(reportUrl, '_blank', 'noopener');
-    actions.append(button); container.append(actions);
-  }
   renderIcons();
 }
 

@@ -422,12 +422,12 @@ describe('SQLite store', () => {
       });
       store.saveRun({ id: 'passed-run', caseId: webCase.id, caseName: webCase.name, projectId, target: 'web', status: 'passed', startedAt: '2026-07-18T10:00:00.000Z', finishedAt: '2026-07-18T10:01:00.000Z', variables: {}, steps: [] });
       store.saveRun({ id: 'failed-run', caseId: webCase.id, caseName: '接口配置', projectId, target: 'api', status: 'failed', startedAt: '2026-07-19T10:00:00.000Z', finishedAt: '2026-07-19T10:00:30.000Z', variables: {}, steps: [{ id: 'config', status: 'failed', attempts: 2, error: 'status mismatch', logs: [] }] });
-      store.saveBatch({ id: 'batch-1', projectId, target: 'web', name: 'Web 回归', caseIds: [webCase.id], status: 'running', allowMutations: true, runIds: ['running-run'], startedAt: '2026-07-19T11:58:00.000Z', finishedAt: null });
+      store.saveBatch({ id: 'batch-1', projectId, target: 'web', name: 'Web 回归', caseIds: [webCase.id], status: 'running', allowMutations: true, plannedCaseCount: 3, plannedStepCount: 5, runIds: ['running-run'], startedAt: '2026-07-19T11:58:00.000Z', finishedAt: null });
 
       const reloaded = createSqliteStore({ databasePath });
       expect(reloaded.getRun('running-run')).toMatchObject({ projectId, target: 'web', allowMutations: true, steps: [{ status: 'passed' }, { status: 'queued' }] });
-      expect(reloaded.getBatch('batch-1')).toMatchObject({ projectId, target: 'web', allowMutations: true });
-      expect(reloaded.listExecutions({ projectId }).find((execution) => execution.id === 'batch-1')).toMatchObject({ id: 'batch-1', totalCases: 1, completedSteps: 1, totalSteps: 2, status: 'running' });
+      expect(reloaded.getBatch('batch-1')).toMatchObject({ projectId, target: 'web', allowMutations: true, plannedCaseCount: 3, plannedStepCount: 5 });
+      expect(reloaded.listExecutions({ projectId }).find((execution) => execution.id === 'batch-1')).toMatchObject({ id: 'batch-1', totalCases: 3, completedSteps: 1, totalSteps: 5, status: 'running' });
       expect(reloaded.getDashboard({ range: '7d', now })).toMatchObject({ completedRuns: 2, passedRuns: 1, failedRuns: 1, automatedCaseCount: 1 });
       expect(reloaded.listReports({ projectId, range: '7d', now }).map((report) => report.id)).toEqual(['failed-run', 'passed-run']);
 

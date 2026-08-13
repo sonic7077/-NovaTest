@@ -46,6 +46,8 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
       project_id TEXT REFERENCES projects(id),
       name TEXT NOT NULL,
       status TEXT NOT NULL,
+      planned_case_count INTEGER NOT NULL DEFAULT 0,
+      planned_step_count INTEGER NOT NULL DEFAULT 0,
       started_at TEXT,
       finished_at TEXT,
       created_at TEXT NOT NULL
@@ -290,6 +292,15 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
 
   migrateMutationAuthorizationSchema();
 
+  function migrateBatchPlanSchema() {
+    const columns = db.prepare('PRAGMA table_info(test_batches)').all().map((column) => column.name);
+    if (!columns.includes('planned_case_count')) db.exec('ALTER TABLE test_batches ADD COLUMN planned_case_count INTEGER NOT NULL DEFAULT 0');
+    if (!columns.includes('planned_step_count')) db.exec('ALTER TABLE test_batches ADD COLUMN planned_step_count INTEGER NOT NULL DEFAULT 0');
+    if (db.prepare('PRAGMA user_version').get().user_version < 14) db.exec('PRAGMA user_version = 14');
+  }
+
+  migrateBatchPlanSchema();
+
   function migrateRunVisualCheckSchema() {
     const columns = db.prepare('PRAGMA table_info(run_steps)').all().map((column) => column.name);
     if (!columns.includes('visual_checks_json')) db.exec("ALTER TABLE run_steps ADD COLUMN visual_checks_json TEXT NOT NULL DEFAULT '[]'");
@@ -489,6 +500,8 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
       caseIds,
       status: row.status,
       allowMutations: Boolean(row.allowMutations),
+      plannedCaseCount: Number(row.plannedCaseCount || 0),
+      plannedStepCount: Number(row.plannedStepCount || 0),
       runIds,
       startedAt: row.startedAt,
       finishedAt: row.finishedAt
@@ -499,17 +512,19 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     const projectId = batch.projectId || defaultProject().id;
     if (!db.prepare('SELECT 1 FROM projects WHERE id = ?').get(projectId)) throw new Error('project not found');
     db.prepare(`
-      INSERT INTO test_batches (id, project_id, target, name, status, allow_mutations, started_at, finished_at, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO test_batches (id, project_id, target, name, status, allow_mutations, planned_case_count, planned_step_count, started_at, finished_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         project_id = excluded.project_id,
         target = excluded.target,
         name = excluded.name,
         status = excluded.status,
         allow_mutations = excluded.allow_mutations,
+        planned_case_count = excluded.planned_case_count,
+        planned_step_count = excluded.planned_step_count,
         started_at = excluded.started_at,
         finished_at = excluded.finished_at
-    `).run(batch.id, projectId, batch.target || null, batch.name, batch.status, Number(Boolean(batch.allowMutations)), batch.startedAt, batch.finishedAt, batch.startedAt || new Date().toISOString());
+    `).run(batch.id, projectId, batch.target || null, batch.name, batch.status, Number(Boolean(batch.allowMutations)), Number(batch.plannedCaseCount || 0), Number(batch.plannedStepCount || 0), batch.startedAt, batch.finishedAt, batch.startedAt || new Date().toISOString());
     db.prepare('DELETE FROM batch_cases WHERE batch_id = ?').run(batch.id);
     const insertCase = db.prepare('INSERT INTO batch_cases (batch_id, case_id, position) VALUES (?, ?, ?)');
     batch.caseIds.forEach((caseId, position) => insertCase.run(batch.id, caseId, position));
@@ -633,9 +648,9 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     const batches = db.prepare(`
       SELECT b.id, b.project_id AS projectId, p.name AS projectName, b.target, b.name, b.status,
         b.started_at AS startedAt, b.finished_at AS finishedAt,
-        (SELECT COUNT(*) FROM batch_cases WHERE batch_id = b.id) AS totalCases,
+        CASE WHEN b.planned_case_count > 0 THEN b.planned_case_count ELSE (SELECT COUNT(*) FROM batch_cases WHERE batch_id = b.id) END AS totalCases,
         (SELECT COUNT(*) FROM test_runs WHERE batch_id = b.id AND status IN ('passed', 'failed', 'skipped')) AS completedCases,
-        (SELECT COUNT(*) FROM run_steps JOIN test_runs ON test_runs.id = run_steps.run_id WHERE test_runs.batch_id = b.id) AS totalSteps,
+        CASE WHEN b.planned_step_count > 0 THEN b.planned_step_count ELSE (SELECT COUNT(*) FROM run_steps JOIN test_runs ON test_runs.id = run_steps.run_id WHERE test_runs.batch_id = b.id) END AS totalSteps,
         (SELECT COUNT(*) FROM run_steps JOIN test_runs ON test_runs.id = run_steps.run_id WHERE test_runs.batch_id = b.id AND run_steps.status IN ('passed', 'failed', 'skipped')) AS completedSteps,
         (SELECT case_name FROM test_runs WHERE batch_id = b.id AND status IN ('queued', 'running') ORDER BY batch_position, id LIMIT 1) AS currentCaseName
       FROM test_batches AS b
@@ -789,14 +804,14 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     saveBatch,
     getBatch(id) {
       return hydrateBatch(db.prepare(`
-        SELECT id, project_id AS projectId, target, name, status, allow_mutations AS allowMutations, started_at AS startedAt, finished_at AS finishedAt
+        SELECT id, project_id AS projectId, target, name, status, allow_mutations AS allowMutations, planned_case_count AS plannedCaseCount, planned_step_count AS plannedStepCount, started_at AS startedAt, finished_at AS finishedAt
         FROM test_batches
         WHERE id = ?
       `).get(id));
     },
     listBatches(projectId = '') {
       return db.prepare(`
-        SELECT id, project_id AS projectId, target, name, status, allow_mutations AS allowMutations, started_at AS startedAt, finished_at AS finishedAt
+        SELECT id, project_id AS projectId, target, name, status, allow_mutations AS allowMutations, planned_case_count AS plannedCaseCount, planned_step_count AS plannedStepCount, started_at AS startedAt, finished_at AS finishedAt
         FROM test_batches
         ${projectId ? 'WHERE project_id = ?' : ''}
         ORDER BY created_at, id

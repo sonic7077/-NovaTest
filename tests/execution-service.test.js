@@ -22,6 +22,25 @@ async function waitForTerminal(store, id) {
 }
 
 describe('ExecutionService', () => {
+  it('fixes batch case and step totals before any run is created', () => {
+    const store = createMemoryStore();
+    const service = new ExecutionService({ runner: {}, store, schedule: () => {} });
+    const second = {
+      ...webCase,
+      id: 'case-2',
+      steps: [...webCase.steps, { id: 's2', kind: 'action', instruction: '检查结果' }]
+    };
+
+    const batch = service.queueBatch({
+      name: '固定总量', projectId: 'default-project', target: 'web',
+      caseIds: [webCase.id, second.id], cases: [webCase, second]
+    });
+
+    expect(batch).toMatchObject({ plannedCaseCount: 2, plannedStepCount: 3, runIds: [] });
+    expect(store.listExecutions().find((item) => item.id === batch.id))
+      .toMatchObject({ totalCases: 2, totalSteps: 3, completedCases: 0, completedSteps: 0 });
+  });
+
   it('returns a queued batch before a runner step resolves', async () => {
     const store = createMemoryStore();
     let release;
