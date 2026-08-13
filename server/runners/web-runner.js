@@ -28,7 +28,7 @@ function visualReason(result) {
 }
 
 export function createWebRunner({ browser, agentFactory, beforeFirstStep, screenshotDir = 'data/evidence', resolveAssetPath } = {}) {
-  async function openSession(context) {
+  async function openSession(context, step) {
     if (context.page) return context.page;
     const session = browser.openPage
       ? await browser.openPage({ viewport: context.viewport })
@@ -42,6 +42,13 @@ export function createWebRunner({ browser, agentFactory, beforeFirstStep, screen
         context.webLoginStarted = true;
       }
     } catch (error) {
+      if (step) {
+        try {
+          error.evidence = await capture(session.page, step, context, 'failed');
+        } catch (captureError) {
+          error.evidenceWarning = `截图保存失败：${captureError.message}`;
+        }
+      }
       try { await session.close(); } catch {}
       delete context.page;
       delete context.webSession;
@@ -67,7 +74,7 @@ export function createWebRunner({ browser, agentFactory, beforeFirstStep, screen
     async execute(step, context) {
       if (!supportedKinds.has(step.kind)) throw new Error(`unsupported web step kind: ${step.kind}`);
 
-      const page = await openSession(context);
+      const page = await openSession(context, step);
       const agent = agentFactory(page);
       try {
         const visualChecks = step.visualChecks || [];

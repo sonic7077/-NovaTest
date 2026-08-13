@@ -98,6 +98,29 @@ describe('web runner', () => {
     expect(closeSecond).toHaveBeenCalledTimes(1);
   });
 
+  it('attaches failed screenshot evidence when shared login fails before the first step', async () => {
+    const screenshots = [];
+    const page = {
+      goto: async () => {},
+      screenshot: async ({ path }) => { screenshots.push(path); return path; }
+    };
+    const runner = createWebRunner({
+      browser: { openPage: async () => ({ page, close: async () => {} }) },
+      agentFactory: () => ({ aiAct: async () => {} }),
+      beforeFirstStep: async () => { throw new Error('Lighthouse login failed'); },
+      screenshotDir: 'evidence'
+    });
+
+    await expect(runner.execute(
+      { id: 'verify-task-list', kind: 'action', instruction: '确认任务列表' },
+      { runId: 'run-1', attempt: 1, testCase: { baseUrl: 'https://example.test' } }
+    )).rejects.toMatchObject({
+      message: 'Lighthouse login failed',
+      evidence: { path: 'run-1/verify-task-list-attempt-1.png', attempt: 1, phase: 'failed' }
+    });
+    expect(screenshots).toEqual(['evidence/run-1/verify-task-list-attempt-1.png']);
+  });
+
   it('writes success evidence to its run directory', async () => {
     const screenshots = [];
     const runner = createWebRunner({
