@@ -117,6 +117,20 @@ describe('web test case', () => {
     }
   });
 
+  it('accepts a Daygf REST request and rejects unsupported authentication', () => {
+    const input = {
+      id: 'daygf-me', projectId: 'daygf-project', name: '当前用户', target: 'api',
+      baseUrl: 'https://daygf.example.test', viewport: 'desktop',
+      steps: [{ id: 'me', kind: 'apiRequest', instruction: '查询当前用户', request: {
+        protocol: 'daygf', action: '/api/me', method: 'GET', payload: {}, expectedStatus: 200,
+        safety: 'readonly', expectedJson: [{ path: '$.ok', exists: true }]
+      }}]
+    };
+
+    expect(validateWebCase(input).steps[0].request.protocol).toBe('daygf');
+    expect(() => validateWebCase({ ...input, steps: [{ ...input.steps[0], request: { ...input.steps[0].request, auth: 'password' } }] })).toThrow('invalid API request');
+  });
+
   it('accepts a numeric Editorial expected-status set and rejects invalid status sets', () => {
     const request = {
       protocol: 'editorial', action: 'ai-comment/summary', method: 'GET', payload: {},

@@ -29,6 +29,9 @@ export function buildRequestBody(payload, config, timestamp = Math.floor(Date.no
 }
 
 function redactByKey(value, secretKey) {
+  if (typeof value === 'string') {
+    return value.replace(/([?&](?:auth(?:entication)?[_-]?key|token|access[_-]?token|refresh[_-]?token|signature|sign)=)[^&#\s]*/gi, '$1********');
+  }
   if (Array.isArray(value)) return value.map((item) => redactByKey(item, secretKey));
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, secretKey.test(key) ? SECRET_MASK : redactByKey(item, secretKey)]));

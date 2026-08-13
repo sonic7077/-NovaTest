@@ -72,4 +72,15 @@ describe('runtime configuration service', () => {
     });
     expect(normalizeRuntimeConfig(completeRuntimeConfig)).not.toHaveProperty('flywheel');
   });
+
+  it('normalizes an optional Daygf API configuration without requiring it for legacy data', () => {
+    const daygf = {
+      baseUrl: 'https://daygf.example.test/', username: 'daygf-user', password: 'daygf-password'
+    };
+
+    expect(normalizeRuntimeConfig({ ...completeRuntimeConfig, daygf })).toMatchObject({
+      daygf: { ...daygf, baseUrl: 'https://daygf.example.test' }
+    });
+    expect(normalizeRuntimeConfig(completeRuntimeConfig)).not.toHaveProperty('daygf');
+  });
 });

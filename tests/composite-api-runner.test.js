@@ -35,4 +35,24 @@ describe('Composite API runner', () => {
     expect(flywheel.execute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ apiSession: { protocol: 'flywheel' } }));
     expect(result.variables).toEqual({ sessionProtocol: 'flywheel' });
   });
+
+  it('routes Daygf requests to an isolated Daygf session', async () => {
+    const cms = { createSession: vi.fn(() => ({ protocol: 'cms' })), execute: vi.fn() };
+    const editorial = { createSession: vi.fn(() => ({ protocol: 'editorial' })), execute: vi.fn() };
+    const flywheel = { createSession: vi.fn(() => ({ protocol: 'flywheel' })), execute: vi.fn() };
+    const daygf = {
+      createSession: vi.fn(() => ({ protocol: 'daygf' })),
+      execute: vi.fn(async (_step, context) => ({ variables: { sessionProtocol: context.apiSession.protocol } }))
+    };
+    const runner = new CompositeApiRunner({ cms, editorial, flywheel, daygf });
+    const context = { apiSession: runner.createSession() };
+
+    const result = await runner.execute({ request: { protocol: 'daygf' } }, context);
+
+    expect(cms.execute).not.toHaveBeenCalled();
+    expect(editorial.execute).not.toHaveBeenCalled();
+    expect(flywheel.execute).not.toHaveBeenCalled();
+    expect(daygf.execute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ apiSession: { protocol: 'daygf' } }));
+    expect(result.variables).toEqual({ sessionProtocol: 'daygf' });
+  });
 });

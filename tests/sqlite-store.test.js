@@ -60,6 +60,21 @@ describe('SQLite store', () => {
     }
   });
 
+  it('persists optional Daygf configuration with the existing runtime groups', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-daygf-runtime-config-'));
+    try {
+      const store = createSqliteStore({ databasePath: join(directory, 'novatest.db') });
+      const daygf = { baseUrl: 'https://daygf.example.test', username: 'daygf-user', password: 'daygf-password' };
+
+      store.saveRuntimeConfig({ ...completeRuntimeConfig, daygf });
+
+      expect(store.getRuntimeConfig()).toMatchObject({ daygf });
+      expect(store.getRuntimeConfig().cms).toEqual(completeRuntimeConfig.cms);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('keeps the legacy model override separate from the SQLite runtime configuration', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-model-config-'));
     try {

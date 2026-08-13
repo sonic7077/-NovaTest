@@ -3,6 +3,7 @@ import { createMemoryStore } from '../server/app.js';
 import { BatchService } from '../server/services/batch-service.js';
 import { decryptPayload, encryptPayload } from '../server/services/cms-crypto.js';
 import { CmsApiRunner } from '../server/runners/cms-api-runner.js';
+import { DaygfApiRunner } from '../server/runners/daygf-api-runner.js';
 
 const firstCase = {
   id: 'case-1',
@@ -115,6 +116,35 @@ describe('BatchService', () => {
     expect(batch).toMatchObject({ status: 'passed', allowMutations: true });
     expect(contexts.every((context) => context.allowMutations)).toBe(true);
     expect(new Set(contexts.map((context) => context.selectedApiIds))).toHaveLength(1);
+  });
+
+  it('shares one Daygf login session and persists redacted API evidence across API runs', async () => {
+    const calls = [];
+    const runner = new DaygfApiRunner({
+      config: { baseUrl: 'https://daygf.example.test', username: 'daygf-user', password: 'daygf-password' },
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        if (url.endsWith('/api/login')) return { ok: true, status: 200, json: async () => ({ ok: true, token: 'private-jwt', refresh_token: 'private-refresh' }) };
+        return { ok: true, status: 200, json: async () => ({ ok: true, items: [] }) };
+      }
+    });
+    const cases = ['/api/me', '/api/profile/data'].map((action, index) => ({
+      id: `daygf-${index + 1}`, projectId: 'default-project', name: action, target: 'api', baseUrl: 'https://daygf.example.test', viewport: 'desktop',
+      steps: [{ id: `step-${index + 1}`, kind: 'apiRequest', instruction: action, request: { protocol: 'daygf', action, method: 'GET', payload: {}, expectedStatus: 200, safety: 'readonly' } }]
+    }));
+    const store = createMemoryStore();
+
+    const batch = await new BatchService({ runner: { api: runner }, store }).start({
+      name: 'Daygf 只读冒烟', projectId: 'default-project', caseIds: cases.map((testCase) => testCase.id), cases
+    });
+
+    expect(calls.map(({ url }) => new URL(url).pathname)).toEqual(['/api/login', '/api/me', '/api/profile/data']);
+    expect(batch.status).toBe('passed');
+    const saved = batch.runIds.flatMap((id) => store.getRun(id).steps.map((step) => step.api));
+    const evidence = JSON.stringify(saved);
+    expect(evidence).not.toContain('daygf-password');
+    expect(evidence).not.toContain('private-jwt');
+    expect(evidence).not.toContain('private-refresh');
   });
 
   it('resolves each Web UI case project for a batch run', async () => {

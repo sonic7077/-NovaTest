@@ -21,4 +21,13 @@ describe('production entrypoint', () => {
     expect(source).toContain('services.flywheelBaseUrl');
     expect(source).not.toContain('process.env.FLYWHEEL_');
   });
+
+  it('seeds the Daygf project only from SQLite runtime configuration', async () => {
+    const source = await readFile(new URL('../server/index.js', import.meta.url), 'utf8');
+
+    expect(source).toContain("import { seedDaygfCases } from './seed/daygf-cases.js'");
+    expect(source).toContain("store.saveProject({ name: '一日女友' })");
+    expect(source).toContain('services.daygfBaseUrl');
+    expect(source).not.toContain('process.env.DAYGF_');
+  });
 });

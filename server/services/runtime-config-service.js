@@ -4,6 +4,7 @@ const cmsFields = ['baseUrl', 'key', 'iv', 'appKey', 'username', 'password', 'go
 const lighthouseFields = ['projectName', 'email', 'password', 'totpSecret'];
 const editorialFields = ['baseUrl', 'username', 'password', 'googleSecret'];
 const flywheelFields = ['baseUrl', 'platformKey', 'platformId'];
+const daygfFields = ['baseUrl', 'username', 'password'];
 
 function requiredText(value, field) {
   const text = typeof value === 'string' ? value.trim() : '';
@@ -49,12 +50,14 @@ function normalizeOptionalGroup(input, fields, group, urlField) {
 export function normalizeRuntimeConfig(input = {}) {
   const editorial = normalizeOptionalGroup(input.editorial, editorialFields, 'editorial', 'baseUrl');
   const flywheel = normalizeOptionalGroup(input.flywheel, flywheelFields, 'flywheel', 'baseUrl');
+  const daygf = normalizeOptionalGroup(input.daygf, daygfFields, 'daygf', 'baseUrl');
   return {
     model: normalizeModel(input.model),
     cms: normalizeGroup(input.cms, cmsFields, 'cms', 'baseUrl'),
     lighthouse: normalizeGroup(input.lighthouse, lighthouseFields, 'lighthouse'),
     ...(editorial ? { editorial } : {}),
-    ...(flywheel ? { flywheel } : {})
+    ...(flywheel ? { flywheel } : {}),
+    ...(daygf ? { daygf } : {})
   };
 }
 
@@ -69,6 +72,11 @@ export function runtimeConfigFromEnvironment(env = {}) {
     baseUrl: env.FLYWHEEL_BASE_URL,
     platformKey: env.FLYWHEEL_PLATFORM_KEY,
     platformId: env.FLYWHEEL_PLATFORM_ID
+  };
+  const daygf = {
+    baseUrl: env.DAYGF_BASE_URL,
+    username: env.DAYGF_USERNAME,
+    password: env.DAYGF_PASSWORD
   };
   return normalizeRuntimeConfig({
     model: {
@@ -88,6 +96,7 @@ export function runtimeConfigFromEnvironment(env = {}) {
       password: env.LIGHTHOUSE_PASSWORD, totpSecret: env.LIGHTHOUSE_TOTP_SECRET
     },
     ...(Object.values(editorial).some(Boolean) ? { editorial } : {}),
-    ...(Object.values(flywheel).some(Boolean) ? { flywheel } : {})
+    ...(Object.values(flywheel).some(Boolean) ? { flywheel } : {}),
+    ...(Object.values(daygf).some(Boolean) ? { daygf } : {})
   });
 }

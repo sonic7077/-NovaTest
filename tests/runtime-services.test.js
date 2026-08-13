@@ -43,4 +43,19 @@ describe('runtime services', () => {
     expect(services.flywheelBaseUrl).toBe(flywheel.baseUrl);
     expect(services.flywheelPlatformId).toBe(flywheel.platformId);
   });
+
+  it('constructs a Daygf runner only when SQLite includes Daygf configuration', async () => {
+    const daygf = { baseUrl: 'https://daygf.example.test', username: 'daygf-user', password: 'daygf-password' };
+    const DaygfRunner = vi.fn(function DaygfRunner({ config }) { this.config = config; this.execute = vi.fn(); });
+    const createWebRunner = vi.fn(async () => ({ execute: vi.fn() }));
+
+    const services = await createRuntimeServices({
+      runtimeConfig: { ...completeRuntimeConfig, daygf }, store: { saveRuntimeConfig: vi.fn() },
+      createWebRunner, DaygfRunner
+    });
+
+    expect(DaygfRunner).toHaveBeenCalledWith({ config: daygf });
+    expect(services.daygfRunnerStatus).toMatchObject({ ready: true });
+    expect(services.daygfBaseUrl).toBe(daygf.baseUrl);
+  });
 });

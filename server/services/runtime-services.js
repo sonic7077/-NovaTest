@@ -1,6 +1,7 @@
 import { CmsApiRunner } from '../runners/cms-api-runner.js';
 import { EditorialApiRunner } from '../runners/editorial-api-runner.js';
 import { FlywheelApiRunner } from '../runners/flywheel-api-runner.js';
+import { DaygfApiRunner } from '../runners/daygf-api-runner.js';
 import { CompositeApiRunner } from '../runners/composite-api-runner.js';
 import { createProductionRunner } from '../runners/production-runner.js';
 import { normalizeRuntimeConfig } from './runtime-config-service.js';
@@ -11,7 +12,7 @@ function unavailableRunner(message) {
   return { execute: async () => { throw new Error(message); } };
 }
 
-export async function createRuntimeServices({ runtimeConfig, store, createWebRunner = createProductionRunner, CmsRunner = CmsApiRunner, EditorialRunner = EditorialApiRunner, FlywheelRunner = FlywheelApiRunner, ApiRunner = CompositeApiRunner } = {}) {
+export async function createRuntimeServices({ runtimeConfig, store, createWebRunner = createProductionRunner, CmsRunner = CmsApiRunner, EditorialRunner = EditorialApiRunner, FlywheelRunner = FlywheelApiRunner, DaygfRunner = DaygfApiRunner, ApiRunner = CompositeApiRunner } = {}) {
   let config;
   try {
     config = normalizeRuntimeConfig(runtimeConfig || store?.getRuntimeConfig?.());
@@ -24,6 +25,7 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
       runnerStatus: { ready: false, message },
       cmsRunnerStatus: { ready: false, message },
       flywheelRunnerStatus: { ready: false, message },
+      daygfRunnerStatus: { ready: false, message },
       modelConfigManager: createModelConfigManager({ store, runtimeConfig: undefined, createRunner: createWebRunner, runner: { replace: async () => undefined }, runnerStatus: { ready: false, message } }),
       cmsBaseUrl: undefined
     };
@@ -75,7 +77,19 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
       flywheelRunnerStatus.message = error.message;
     }
   }
-  const apiRunner = new ApiRunner({ cms: cmsRunner, editorial: editorialRunner, flywheel: flywheelRunner });
+  const daygfRunnerStatus = { ready: false, message: 'Daygf API runner is not configured' };
+  let daygfRunner = unavailableRunner(daygfRunnerStatus.message);
+  if (config.daygf) {
+    try {
+      daygfRunner = new DaygfRunner({ config: config.daygf });
+      daygfRunnerStatus.ready = true;
+      daygfRunnerStatus.message = 'Daygf API runner is ready';
+    } catch (error) {
+      daygfRunner = unavailableRunner(error.message);
+      daygfRunnerStatus.message = error.message;
+    }
+  }
+  const apiRunner = new ApiRunner({ cms: cmsRunner, editorial: editorialRunner, flywheel: flywheelRunner, daygf: daygfRunner });
 
   return {
     runner: { web: reloadableWebRunner, api: apiRunner },
@@ -83,6 +97,7 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
     cmsRunnerStatus,
     editorialRunnerStatus,
     flywheelRunnerStatus,
+    daygfRunnerStatus,
     modelConfigManager: createModelConfigManager({
       store,
       runtimeConfig: config,
@@ -93,6 +108,7 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
     cmsBaseUrl: config.cms.baseUrl,
     editorialBaseUrl: config.editorial?.baseUrl,
     flywheelBaseUrl: config.flywheel?.baseUrl,
-    flywheelPlatformId: config.flywheel?.platformId
+    flywheelPlatformId: config.flywheel?.platformId,
+    daygfBaseUrl: config.daygf?.baseUrl
   };
 }
