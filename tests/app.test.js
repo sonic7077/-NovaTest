@@ -53,8 +53,12 @@ describe('execution API', () => {
       accounts: Array.from({ length: 100 }, (_, index) => ({ username: `vu-${index}`, password: 'private-password' }))
     }).expect(201);
     expect(JSON.stringify(pool.body)).not.toContain('private-password');
-    await request(app).post(`/api/performance/assets/${created.body.id}/runs`).expect(202)
+    const run = await request(app).post(`/api/performance/assets/${created.body.id}/runs`).expect(202)
       .expect(({ body }) => expect(body).toMatchObject({ status: 'queued', projectId: project.id }));
+    await request(app).get(`/api/performance/runs/${run.body.id}/report`).expect(200).expect('content-type', /html/)
+      .expect(({ text }) => expect(text).toContain('登录浏览点赞基线'));
+    await request(app).get(`/api/performance/runs/${run.body.id}/report/download`).expect(200)
+      .expect('content-disposition', /attachment/);
   });
 
   it('protects platform APIs and supports login, profile updates, password changes and logout', async () => {

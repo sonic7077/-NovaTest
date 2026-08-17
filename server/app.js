@@ -13,6 +13,7 @@ import { hashPasswordSync, publicUser, validatePasswordChange, validateProfile, 
 import { createCaseAssetService } from './services/case-asset-service.js';
 import { publicModelConfig } from './services/model-config-service.js';
 import { PerformanceService } from './services/performance-service.js';
+import { renderPerformanceReport } from './services/performance-report-service.js';
 
 export function createMemoryStore() {
   const cases = new Map();
@@ -152,7 +153,7 @@ export function createMemoryStore() {
     getPerformanceRun(id) { return structuredClone(performanceRuns.get(id)); },
     listPerformanceRuns({ projectId = '', status = '' } = {}) {
       return [...performanceRuns.values()].filter((run) => (!projectId || run.projectId === projectId) && (!status || run.status === status))
-        .map((run) => structuredClone(run));
+        .map((run) => ({ ...structuredClone(run), projectName: projects.get(run.projectId)?.name, reportUrl: `/api/performance/runs/${encodeURIComponent(run.id)}/report` }));
     },
     appendPerformanceSample(id, sample) {
       const run = performanceRuns.get(id);
@@ -315,6 +316,16 @@ export function createApp({ runner, performanceRunner = { run: async () => { thr
   app.get('/api/performance/runs/:id', (req, res) => {
     const run = store.getPerformanceRun(req.params.id);
     return run ? res.json(run) : res.status(404).json({ error: 'performance run not found' });
+  });
+  app.get('/api/performance/runs/:id/report/download', (req, res) => {
+    const run = store.getPerformanceRun(req.params.id);
+    if (!run) return res.status(404).send('performance report not found');
+    return sendHtmlDownload(res, reportFilename(run.name), renderPerformanceReport(run, store.getPerformanceAsset(run.assetId)));
+  });
+  app.get('/api/performance/runs/:id/report', (req, res) => {
+    const run = store.getPerformanceRun(req.params.id);
+    if (!run) return res.status(404).send('performance report not found');
+    return res.type('html').send(renderPerformanceReport(run, store.getPerformanceAsset(run.assetId)));
   });
   app.post('/api/performance/runs/:id/stop', (req, res) => {
     try { return res.json(performanceService.stop(req.params.id)); }

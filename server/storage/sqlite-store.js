@@ -912,10 +912,11 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     const parameters = [];
     if (projectId) { conditions.push('project_id = ?'); parameters.push(projectId); }
     if (status) { conditions.push('status = ?'); parameters.push(status); }
-    return db.prepare(`SELECT id, asset_id AS assetId, project_id AS projectId, name, status, summary_json AS summaryJson, error,
-      started_at AS startedAt, finished_at AS finishedAt, created_at AS createdAt FROM performance_runs
-      ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''} ORDER BY created_at DESC, id DESC`)
-      .all(...parameters).map((row) => ({ ...row, summary: JSON.parse(row.summaryJson) }));
+    return db.prepare(`SELECT performance_runs.id, asset_id AS assetId, performance_runs.project_id AS projectId, performance_runs.name, status, summary_json AS summaryJson, error,
+      started_at AS startedAt, finished_at AS finishedAt, performance_runs.created_at AS createdAt, projects.name AS projectName FROM performance_runs
+      LEFT JOIN projects ON projects.id = performance_runs.project_id
+      ${conditions.length ? `WHERE ${conditions.map((condition) => condition.replaceAll('project_id', 'performance_runs.project_id').replaceAll('status', 'performance_runs.status')).join(' AND ')}` : ''} ORDER BY performance_runs.created_at DESC, performance_runs.id DESC`)
+      .all(...parameters).map((row) => ({ ...row, summary: JSON.parse(row.summaryJson), reportUrl: `/api/performance/runs/${encodeURIComponent(row.id)}/report` }));
   }
 
   return {
