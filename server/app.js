@@ -5,13 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { basename, join } from 'node:path';
 import multer from 'multer';
 import { validateWebCase } from './domain/case.js';
-import { publicAccountPool, validateAccountPool } from './domain/performance.js';
+import { publicAccountPool, validateAccountPool, validatePerformanceAsset } from './domain/performance.js';
 import { normalizeProjectWebAuth } from './domain/project-auth.js';
 import { renderBatchReport, renderReport } from './services/report-service.js';
 import { ExecutionService } from './services/execution-service.js';
 import { hashPasswordSync, publicUser, validatePasswordChange, validateProfile, verifyPassword } from './services/auth-service.js';
 import { createCaseAssetService } from './services/case-asset-service.js';
 import { publicModelConfig } from './services/model-config-service.js';
+import { PerformanceService } from './services/performance-service.js';
 
 export function createMemoryStore() {
   const cases = new Map();
@@ -129,6 +130,9 @@ export function createMemoryStore() {
       const pool = performancePools.get(id);
       return pool && publicAccountPool(pool);
     },
+    listPerformanceAccountPools(projectId = '') {
+      return [...performancePools.values()].filter((pool) => !projectId || pool.projectId === projectId).map(publicAccountPool);
+    },
     getPerformanceAccountPoolCredentials(id) { return structuredClone(performancePools.get(id)?.accounts); },
     savePerformanceAsset(asset) {
       if (!asset?.projectId || !projects.has(asset.projectId) || !asset?.name?.trim() || !asset?.protocol || !asset?.config) throw new Error('invalid performance asset');
@@ -146,6 +150,10 @@ export function createMemoryStore() {
       return structuredClone(saved);
     },
     getPerformanceRun(id) { return structuredClone(performanceRuns.get(id)); },
+    listPerformanceRuns({ projectId = '', status = '' } = {}) {
+      return [...performanceRuns.values()].filter((run) => (!projectId || run.projectId === projectId) && (!status || run.status === status))
+        .map((run) => structuredClone(run));
+    },
     appendPerformanceSample(id, sample) {
       const run = performanceRuns.get(id);
       if (!run) return undefined;
@@ -177,12 +185,13 @@ function sendHtmlDownload(res, filename, html) {
     .send(html);
 }
 
-export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), caseAssetsDir = join(projectRoot, 'data/case-assets'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, modelConfig = { source: 'MIDSCENE', baseUrl: '', modelName: '', modelFamily: '', apiKey: '' }, modelConfigManager, cmsSeedCases = [], executionSchedule, authRequired = false } = {}) {
+export function createApp({ runner, performanceRunner = { run: async () => { throw new Error('k6 runner is unavailable'); } }, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), caseAssetsDir = join(projectRoot, 'data/case-assets'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, modelConfig = { source: 'MIDSCENE', baseUrl: '', modelName: '', modelFamily: '', apiKey: '' }, modelConfigManager, cmsSeedCases = [], executionSchedule, performanceSchedule, authRequired = false } = {}) {
   const app = express();
   const sessions = new Map();
   if (authRequired) store.ensureDefaultAdmin(hashPasswordSync('admin123'));
   store.failInterruptedExecutions?.('服务重启导致任务中断');
   const executionService = new ExecutionService({ runner, store, ...(executionSchedule ? { schedule: executionSchedule } : {}) });
+  const performanceService = new PerformanceService({ store, runner: performanceRunner, ...(performanceSchedule ? { schedule: performanceSchedule } : {}) });
   cmsSeedCases.forEach((testCase) => {
     if (!store.getCase(testCase.id)) store.saveCase(testCase);
   });
@@ -269,6 +278,47 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     if (!project) return res.status(404).json({ error: 'project not found' });
     if (project.caseCount > 0) return res.status(409).json({ error: 'project contains test cases' });
     return store.deleteProject(project.id) ? res.status(204).end() : res.status(404).json({ error: 'project not found' });
+  });
+
+  function savePublicPerformanceAsset(input, id) {
+    const asset = validatePerformanceAsset(input);
+    if (id && !store.getPerformanceAsset(id)) throw new Error('performance asset not found');
+    return store.savePerformanceAsset({
+      id, projectId: asset.projectId, name: asset.name, protocol: asset.protocol,
+      config: { ...asset, id: undefined }
+    });
+  }
+
+  app.get('/api/performance/pools', (req, res) => res.json(store.listPerformanceAccountPools(req.query.projectId || '')));
+  app.post('/api/performance/pools', (req, res) => {
+    try { return res.status(201).json(store.savePerformanceAccountPool(req.body)); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
+  });
+  app.get('/api/performance/assets', (req, res) => res.json(store.listPerformanceAssets(req.query.projectId || '')));
+  app.post('/api/performance/assets', (req, res) => {
+    try { return res.status(201).json(savePublicPerformanceAsset(req.body)); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
+  });
+  app.get('/api/performance/assets/:id', (req, res) => {
+    const asset = store.getPerformanceAsset(req.params.id);
+    return asset ? res.json(asset) : res.status(404).json({ error: 'performance asset not found' });
+  });
+  app.put('/api/performance/assets/:id', (req, res) => {
+    try { return res.json(savePublicPerformanceAsset(req.body, req.params.id)); }
+    catch (error) { return res.status(error.message === 'performance asset not found' ? 404 : 400).json({ error: error.message }); }
+  });
+  app.post('/api/performance/assets/:id/runs', (req, res) => {
+    try { return res.status(202).json(performanceService.queue(req.params.id)); }
+    catch (error) { return res.status(error.code === 'PRECONDITION' ? 409 : error.message === 'performance asset not found' ? 404 : 400).json({ error: error.message }); }
+  });
+  app.get('/api/performance/runs', (req, res) => res.json(store.listPerformanceRuns({ projectId: req.query.projectId || '', status: req.query.status || '' })));
+  app.get('/api/performance/runs/:id', (req, res) => {
+    const run = store.getPerformanceRun(req.params.id);
+    return run ? res.json(run) : res.status(404).json({ error: 'performance run not found' });
+  });
+  app.post('/api/performance/runs/:id/stop', (req, res) => {
+    try { return res.json(performanceService.stop(req.params.id)); }
+    catch (error) { return res.status(error.message === 'performance run not found' ? 404 : 400).json({ error: error.message }); }
   });
 
   function validateProjectCase(input) {

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp, createMemoryStore } from '../server/app.js';
+import { DEFAULT_DAYGF_SCENARIO } from '../server/domain/performance.js';
 import { renderBatchReport, renderReport } from '../server/services/report-service.js';
 import { cmsWhitebagCases } from '../server/seed/cms-whitebag-cases.js';
 
@@ -35,6 +36,27 @@ async function waitForTerminal(app, path) {
 }
 
 describe('execution API', () => {
+  it('creates public performance assets and rejects runs until the selected pool is sufficient', async () => {
+    const app = createApp({ runner: {}, store: createMemoryStore(), performanceSchedule: () => {} });
+    const project = (await request(app).post('/api/projects').send({ name: '一日女友性能' }).expect(201)).body;
+    const asset = {
+      projectId: project.id, name: '登录浏览点赞基线', protocol: 'daygf', baseUrl: 'https://daygf.example.test', accountPoolId: 'pool-1',
+      dataset: { postIds: [101], historyContentIds: [201] }, securityProbe: { enabled: false, postId: 999 }, ...DEFAULT_DAYGF_SCENARIO
+    };
+
+    const created = await request(app).post('/api/performance/assets').send(asset).expect(201);
+    expect(created.body).toMatchObject({ projectId: project.id, protocol: 'daygf' });
+    await request(app).post(`/api/performance/assets/${created.body.id}/runs`).expect(409);
+
+    const pool = await request(app).post('/api/performance/pools').send({
+      id: 'pool-1', projectId: project.id, name: '100 VU 账号池',
+      accounts: Array.from({ length: 100 }, (_, index) => ({ username: `vu-${index}`, password: 'private-password' }))
+    }).expect(201);
+    expect(JSON.stringify(pool.body)).not.toContain('private-password');
+    await request(app).post(`/api/performance/assets/${created.body.id}/runs`).expect(202)
+      .expect(({ body }) => expect(body).toMatchObject({ status: 'queued', projectId: project.id }));
+  });
+
   it('protects platform APIs and supports login, profile updates, password changes and logout', async () => {
     const app = createApp({ runner: {}, store: createMemoryStore(), authRequired: true });
     const agent = request.agent(app);

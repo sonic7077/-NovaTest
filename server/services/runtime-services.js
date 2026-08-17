@@ -7,6 +7,7 @@ import { createProductionRunner } from '../runners/production-runner.js';
 import { normalizeRuntimeConfig } from './runtime-config-service.js';
 import { createModelConfigManager } from './model-config-manager.js';
 import { createReloadableWebRunner } from './reloadable-web-runner.js';
+import { K6PerformanceRunner } from '../runners/k6-performance-runner.js';
 
 function unavailableRunner(message) {
   return { execute: async () => { throw new Error(message); } };
@@ -26,6 +27,7 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
       cmsRunnerStatus: { ready: false, message },
       flywheelRunnerStatus: { ready: false, message },
       daygfRunnerStatus: { ready: false, message },
+      performanceRunner: new K6PerformanceRunner(),
       modelConfigManager: createModelConfigManager({ store, runtimeConfig: undefined, createRunner: createWebRunner, runner: { replace: async () => undefined }, runnerStatus: { ready: false, message } }),
       cmsBaseUrl: undefined
     };
@@ -98,6 +100,7 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
     editorialRunnerStatus,
     flywheelRunnerStatus,
     daygfRunnerStatus,
+    performanceRunner: new K6PerformanceRunner(),
     modelConfigManager: createModelConfigManager({
       store,
       runtimeConfig: config,

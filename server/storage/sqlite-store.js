@@ -846,6 +846,12 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     return row ? JSON.parse(row.accountsJson) : undefined;
   }
 
+  function listPerformanceAccountPools(projectId = '') {
+    return db.prepare(`SELECT id, project_id AS projectId, name, accounts_json AS accountsJson, created_at AS createdAt, updated_at AS updatedAt
+      FROM performance_account_pools ${projectId ? 'WHERE project_id = ?' : ''} ORDER BY created_at, id`)
+      .all(...(projectId ? [projectId] : [])).map((row) => publicAccountPool({ ...row, accounts: JSON.parse(row.accountsJson) }));
+  }
+
   function savePerformanceAsset(asset) {
     if (!asset?.projectId || !asset?.name?.trim() || !asset?.protocol || !asset?.config || typeof asset.config !== 'object') throw new Error('invalid performance asset');
     assertProject(asset.projectId);
@@ -899,6 +905,17 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     const samples = db.prepare('SELECT sample_json AS sampleJson FROM performance_run_samples WHERE run_id = ? ORDER BY position').all(id)
       .map(({ sampleJson }) => JSON.parse(sampleJson));
     return { ...row, summary: JSON.parse(row.summaryJson), samples };
+  }
+
+  function listPerformanceRuns({ projectId = '', status = '' } = {}) {
+    const conditions = [];
+    const parameters = [];
+    if (projectId) { conditions.push('project_id = ?'); parameters.push(projectId); }
+    if (status) { conditions.push('status = ?'); parameters.push(status); }
+    return db.prepare(`SELECT id, asset_id AS assetId, project_id AS projectId, name, status, summary_json AS summaryJson, error,
+      started_at AS startedAt, finished_at AS finishedAt, created_at AS createdAt FROM performance_runs
+      ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''} ORDER BY created_at DESC, id DESC`)
+      .all(...parameters).map((row) => ({ ...row, summary: JSON.parse(row.summaryJson) }));
   }
 
   return {
@@ -963,11 +980,13 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     savePerformanceAccountPool,
     getPerformanceAccountPool,
     getPerformanceAccountPoolCredentials,
+    listPerformanceAccountPools,
     savePerformanceAsset,
     getPerformanceAsset,
     listPerformanceAssets,
     savePerformanceRun,
     getPerformanceRun,
+    listPerformanceRuns,
     appendPerformanceSample,
     failInterruptedExecutions
   };
