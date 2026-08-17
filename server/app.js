@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { basename, join } from 'node:path';
 import multer from 'multer';
 import { validateWebCase } from './domain/case.js';
+import { publicAccountPool, validateAccountPool } from './domain/performance.js';
 import { normalizeProjectWebAuth } from './domain/project-auth.js';
 import { renderBatchReport, renderReport } from './services/report-service.js';
 import { ExecutionService } from './services/execution-service.js';
@@ -16,6 +17,9 @@ export function createMemoryStore() {
   const cases = new Map();
   const runs = new Map();
   const batches = new Map();
+  const performancePools = new Map();
+  const performanceAssets = new Map();
+  const performanceRuns = new Map();
   const users = new Map();
   let modelConfig;
   const projects = new Map([['default-project', { id: 'default-project', name: '默认项目', webAuth: undefined, createdAt: '1970-01-01T00:00:00.000Z', updatedAt: '1970-01-01T00:00:00.000Z' }]]);
@@ -113,6 +117,41 @@ export function createMemoryStore() {
     ensureDefaultAdmin,
     getModelConfig() { return modelConfig; },
     saveModelConfig(config) { modelConfig = { ...config }; return modelConfig; },
+    savePerformanceAccountPool(pool) {
+      const valid = validateAccountPool(pool);
+      if (!projects.has(valid.projectId)) throw new Error('project not found');
+      const timestamp = new Date().toISOString();
+      const saved = { ...valid, id: valid.id || crypto.randomUUID(), createdAt: valid.createdAt || timestamp, updatedAt: timestamp };
+      performancePools.set(saved.id, saved);
+      return publicAccountPool(saved);
+    },
+    getPerformanceAccountPool(id) {
+      const pool = performancePools.get(id);
+      return pool && publicAccountPool(pool);
+    },
+    getPerformanceAccountPoolCredentials(id) { return structuredClone(performancePools.get(id)?.accounts); },
+    savePerformanceAsset(asset) {
+      if (!asset?.projectId || !projects.has(asset.projectId) || !asset?.name?.trim() || !asset?.protocol || !asset?.config) throw new Error('invalid performance asset');
+      const timestamp = new Date().toISOString();
+      const saved = { ...asset, id: asset.id || crypto.randomUUID(), createdAt: asset.createdAt || timestamp, updatedAt: timestamp };
+      performanceAssets.set(saved.id, saved);
+      return structuredClone(saved);
+    },
+    getPerformanceAsset(id) { return structuredClone(performanceAssets.get(id)); },
+    listPerformanceAssets(projectId = '') { return [...performanceAssets.values()].filter((asset) => !projectId || asset.projectId === projectId).map((asset) => structuredClone(asset)); },
+    savePerformanceRun(run) {
+      const existing = performanceRuns.get(run.id);
+      const saved = { ...existing, ...run, summary: { ...(existing?.summary || {}), ...(run.summary || {}) }, samples: existing?.samples || [] };
+      performanceRuns.set(saved.id, saved);
+      return structuredClone(saved);
+    },
+    getPerformanceRun(id) { return structuredClone(performanceRuns.get(id)); },
+    appendPerformanceSample(id, sample) {
+      const run = performanceRuns.get(id);
+      if (!run) return undefined;
+      run.samples.push(structuredClone(sample));
+      return structuredClone(run);
+    },
     failInterruptedExecutions
   };
 }

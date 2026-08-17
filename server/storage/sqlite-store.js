@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, readFileSync, renameSync } from 'node:fs';
 import { normalizeProjectWebAuth } from '../domain/project-auth.js';
+import { publicAccountPool, validateAccountPool } from '../domain/performance.js';
 import { normalizeRuntimeConfig } from '../services/runtime-config-service.js';
 
 const schema = `
@@ -308,6 +309,51 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
   }
 
   migrateRunVisualCheckSchema();
+
+  function migratePerformanceSchema() {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS performance_account_pools (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        name TEXT NOT NULL,
+        accounts_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS performance_assets (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        name TEXT NOT NULL,
+        protocol TEXT NOT NULL,
+        config_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS performance_runs (
+        id TEXT PRIMARY KEY,
+        asset_id TEXT NOT NULL REFERENCES performance_assets(id),
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        summary_json TEXT NOT NULL DEFAULT '{}',
+        error TEXT,
+        started_at TEXT,
+        finished_at TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS performance_run_samples (
+        run_id TEXT NOT NULL REFERENCES performance_runs(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        sample_json TEXT NOT NULL,
+        PRIMARY KEY (run_id, position)
+      );
+      CREATE INDEX IF NOT EXISTS performance_assets_project_idx ON performance_assets(project_id);
+      CREATE INDEX IF NOT EXISTS performance_runs_project_idx ON performance_runs(project_id, finished_at);
+    `);
+    if (db.prepare('PRAGMA user_version').get().user_version < 15) db.exec('PRAGMA user_version = 15');
+  }
+
+  migratePerformanceSchema();
 
   function hydrateUser(row) {
     if (!row) return undefined;
@@ -769,6 +815,92 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     });
   }
 
+  function assertProject(projectId) {
+    if (!db.prepare('SELECT 1 FROM projects WHERE id = ?').get(projectId)) throw new Error('project not found');
+  }
+
+  function savePerformanceAccountPool(pool) {
+    const valid = validateAccountPool(pool);
+    assertProject(valid.projectId);
+    const timestamp = new Date().toISOString();
+    const saved = { ...valid, id: valid.id || crypto.randomUUID(), createdAt: valid.createdAt || timestamp, updatedAt: timestamp };
+    db.prepare(`INSERT INTO performance_account_pools (id, project_id, name, accounts_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET project_id = excluded.project_id, name = excluded.name, accounts_json = excluded.accounts_json, updated_at = excluded.updated_at`)
+      .run(saved.id, saved.projectId, saved.name, JSON.stringify(saved.accounts), saved.createdAt, saved.updatedAt);
+    return publicAccountPool(saved);
+  }
+
+  function performancePoolRow(id) {
+    return db.prepare(`SELECT id, project_id AS projectId, name, accounts_json AS accountsJson, created_at AS createdAt, updated_at AS updatedAt
+      FROM performance_account_pools WHERE id = ?`).get(id);
+  }
+
+  function getPerformanceAccountPool(id) {
+    const row = performancePoolRow(id);
+    return row ? publicAccountPool({ ...row, accounts: JSON.parse(row.accountsJson) }) : undefined;
+  }
+
+  function getPerformanceAccountPoolCredentials(id) {
+    const row = performancePoolRow(id);
+    return row ? JSON.parse(row.accountsJson) : undefined;
+  }
+
+  function savePerformanceAsset(asset) {
+    if (!asset?.projectId || !asset?.name?.trim() || !asset?.protocol || !asset?.config || typeof asset.config !== 'object') throw new Error('invalid performance asset');
+    assertProject(asset.projectId);
+    const timestamp = new Date().toISOString();
+    const saved = { ...asset, id: asset.id || crypto.randomUUID(), createdAt: asset.createdAt || timestamp, updatedAt: timestamp };
+    db.prepare(`INSERT INTO performance_assets (id, project_id, name, protocol, config_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET project_id = excluded.project_id, name = excluded.name, protocol = excluded.protocol, config_json = excluded.config_json, updated_at = excluded.updated_at`)
+      .run(saved.id, saved.projectId, saved.name, saved.protocol, JSON.stringify(saved.config), saved.createdAt, saved.updatedAt);
+    return saved;
+  }
+
+  function hydratePerformanceAsset(row) {
+    if (!row) return undefined;
+    const { configJson, ...asset } = row;
+    return { ...asset, config: JSON.parse(configJson) };
+  }
+
+  function getPerformanceAsset(id) {
+    return hydratePerformanceAsset(db.prepare(`SELECT id, project_id AS projectId, name, protocol, config_json AS configJson, created_at AS createdAt, updated_at AS updatedAt
+      FROM performance_assets WHERE id = ?`).get(id));
+  }
+
+  function listPerformanceAssets(projectId = '') {
+    return db.prepare(`SELECT id, project_id AS projectId, name, protocol, config_json AS configJson, created_at AS createdAt, updated_at AS updatedAt
+      FROM performance_assets ${projectId ? 'WHERE project_id = ?' : ''} ORDER BY created_at, id`)
+      .all(...(projectId ? [projectId] : [])).map(hydratePerformanceAsset);
+  }
+
+  function savePerformanceRun(run) {
+    if (!run?.id || !run?.assetId || !run?.projectId || !run?.name || !run?.status) throw new Error('invalid performance run');
+    assertProject(run.projectId);
+    const createdAt = run.createdAt || new Date().toISOString();
+    db.prepare(`INSERT INTO performance_runs (id, asset_id, project_id, name, status, summary_json, error, started_at, finished_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET status = excluded.status, summary_json = excluded.summary_json, error = excluded.error, started_at = excluded.started_at, finished_at = excluded.finished_at`)
+      .run(run.id, run.assetId, run.projectId, run.name, run.status, JSON.stringify(run.summary || {}), run.error || null, run.startedAt || null, run.finishedAt || null, createdAt);
+    return getPerformanceRun(run.id);
+  }
+
+  function appendPerformanceSample(runId, sample) {
+    const position = db.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS position FROM performance_run_samples WHERE run_id = ?').get(runId).position;
+    db.prepare('INSERT INTO performance_run_samples (run_id, position, sample_json) VALUES (?, ?, ?)').run(runId, position, JSON.stringify(sample));
+    return getPerformanceRun(runId);
+  }
+
+  function getPerformanceRun(id) {
+    const row = db.prepare(`SELECT id, asset_id AS assetId, project_id AS projectId, name, status, summary_json AS summaryJson, error,
+      started_at AS startedAt, finished_at AS finishedAt, created_at AS createdAt FROM performance_runs WHERE id = ?`).get(id);
+    if (!row) return undefined;
+    const samples = db.prepare('SELECT sample_json AS sampleJson FROM performance_run_samples WHERE run_id = ? ORDER BY position').all(id)
+      .map(({ sampleJson }) => JSON.parse(sampleJson));
+    return { ...row, summary: JSON.parse(row.summaryJson), samples };
+  }
+
   return {
     saveCase,
     getCase(id) { return hydrateCase(selectCase.get(id)); },
@@ -828,6 +960,15 @@ export function createSqliteStore({ databasePath, legacyJsonPath }) {
     saveModelConfig,
     getRuntimeConfig,
     saveRuntimeConfig,
+    savePerformanceAccountPool,
+    getPerformanceAccountPool,
+    getPerformanceAccountPoolCredentials,
+    savePerformanceAsset,
+    getPerformanceAsset,
+    listPerformanceAssets,
+    savePerformanceRun,
+    getPerformanceRun,
+    appendPerformanceSample,
     failInterruptedExecutions
   };
 }
