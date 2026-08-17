@@ -212,6 +212,31 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
 .login-screen { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 24px; background: #f3f7f4; }.login-screen[hidden] { display: none; }.login-card { display: grid; width: min(100%, 390px); gap: 14px; padding: 30px; background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 16px 36px #173b2a18; }.login-card h1 { margin: 10px 0 0; font-size: 22px; }.login-card p { margin: 0; color: var(--muted); font-size: 12px; }.login-card label, .profile-form label { display: grid; gap: 6px; color: #61716a; font-size: 11px; font-weight: 800; }.login-card input, .profile-form input { height: 38px; padding: 0 10px; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 5px; font: inherit; }.login-card small { color: #75847e; font-size: 10px; text-align: center; }.login-brand { display: flex; align-items: center; gap: 9px; color: #1e342b; font-size: 15px; }.form-error { color: #b74444 !important; }.profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 440px)); gap: 18px; margin: 0 42px 38px; }.profile-panel { padding: 21px; }.profile-form { display: grid; gap: 14px; margin-top: 20px; }.profile-form .run-button, .profile-form .secondary-button { justify-self: start; margin-top: 4px; }.logout-button { display: inline-flex; align-items: center; gap: 7px; padding: 0; margin-top: 24px; color: #b74444; background: none; border: 0; font-weight: 800; }.logout-button svg { width: 15px; }
 .assets { margin: 0 42px 38px; padding: 21px; }
 .route-view[hidden] { display: none; }
+.performance-layout { max-width: 1120px; margin: 0 42px 38px; }
+.performance-form { padding: 22px; }
+.performance-form-grid, .performance-threshold-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.performance-form label, .performance-threshold-grid label { display: grid; gap: 6px; color: #75847e; font-size: 11px; font-weight: 800; }
+.performance-form input, .performance-form select, .performance-threshold-grid input { width: 100%; height: 38px; padding: 0 10px; color: #31423b; background: #fff; border: 1px solid #dce5e1; border-radius: 5px; font: inherit; outline: 0; }
+.performance-form small { color: var(--muted); font-size: 10px; font-weight: 500; }
+.performance-config-section { padding-top: 18px; margin-top: 18px; border-top: 1px solid var(--line); }
+.performance-stage-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.performance-stage-grid span { padding: 11px; color: #3c5a4d; background: #f4faf6; border: 1px solid #dcebe1; border-radius: 5px; font-size: 11px; font-weight: 700; }
+.performance-probe { display: grid !important; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 9px !important; padding-top: 18px; margin-top: 18px; border-top: 1px solid var(--line); }
+.performance-probe input[type="checkbox"] { width: 16px; height: 16px; padding: 0; accent-color: var(--green); }
+.performance-probe input[type="number"] { grid-column: 2; }
+.performance-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 20px 0; }
+.performance-metrics > div { padding: 12px; background: #f8fbf9; border: 1px solid #e1e9e5; border-radius: 5px; }
+.performance-metrics span, .performance-metrics b { display: block; }
+.performance-metrics span { color: var(--muted); font-size: 10px; font-weight: 700; }
+.performance-metrics b { margin-top: 5px; color: #31423b; font-size: 18px; }
+.performance-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 16px; border-top: 1px solid var(--line); }
+.performance-verdicts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+.performance-verdicts span { padding: 5px 8px; border-radius: 4px; font-size: 11px; font-weight: 800; }
+.performance-verdicts .passed { color: #178457; background: #e8f8ef; }
+.performance-verdicts .failed { color: #bd3f3f; background: #ffebeb; }
+.performance-samples { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.performance-samples h3 { margin: 0 0 10px; font-size: 13px; }
+.performance-samples p { padding: 9px 0; margin: 0; color: #586961; border-bottom: 1px solid #edf1ef; font: 11px "DM Mono", monospace; }
 .asset-toolbar { display: grid; grid-template-columns: minmax(260px, 1fr) 180px 36px; align-items: center; gap: 9px; margin-top: 18px; }
 .back-link { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 7px; color: #527667; text-decoration: none; font-size: 11px; font-weight: 800; }
 .back-link svg { width: 14px; }
@@ -362,6 +387,9 @@ h1 { margin: 0; font-size: 25px; font-weight: 800; }
 }
 
 @media (max-width: 760px) {
+  .performance-layout { margin-right: 20px; margin-left: 20px; }
+  .performance-form-grid, .performance-threshold-grid, .performance-stage-grid, .performance-metrics { grid-template-columns: 1fr; }
+  .performance-probe { grid-template-columns: auto minmax(0, 1fr); }
   .execution-conclusion { grid-template-columns: 36px minmax(0, 1fr) auto; }.execution-conclusion-actions { grid-column: 2 / -1; justify-content: flex-start; }
   .model-config-panel { margin-right: 20px; margin-left: 20px; }
   .model-config-grid { grid-template-columns: 1fr; }

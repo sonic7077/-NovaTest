@@ -15,6 +15,8 @@ let activeProjectId = null;
 let activeProjectName = '';
 let dashboardRange = '7d';
 let executionPollId;
+let performancePollId;
+let editingPerformanceAssetId = null;
 let currentRouteView = 'dashboard';
 let selectedExecutionId = null;
 let handledExecutionFocusId = '';
@@ -92,15 +94,21 @@ function updateEditorBreadcrumb() {
 function renderRoute() {
   const route = location.hash || '#/dashboard';
   const projectRoute = /^#\/projects\/([^/]+)\/assets(?:\/([^/]+))?$/.exec(route);
-  const view = route === '#/dashboard' ? 'dashboard' : (route === '#/profile' ? 'profile' : (route === '#/model-config' ? 'model-config' : (route === '#/executions' || route.startsWith('#/executions?') ? 'executions' : (route === '#/reports' ? 'reports' : (route === '#/assets' ? 'projects-list' : (projectRoute ? (projectRoute[2] ? 'asset-editor' : 'assets-list') : 'asset-editor'))))));
+  const performanceAssetRoute = /^#\/performance-assets(?:\/([^/]+))?$/.exec(route);
+  const performanceRunRoute = /^#\/performance-runs\/([^/]+)$/.exec(route);
+  const view = route === '#/dashboard' ? 'dashboard' : (route === '#/profile' ? 'profile' : (route === '#/model-config' ? 'model-config' : (route === '#/executions' || route.startsWith('#/executions?') ? 'executions' : (route === '#/reports' ? 'reports' : (performanceRunRoute ? 'performance-run' : (performanceAssetRoute ? (performanceAssetRoute[1] ? 'performance-editor' : 'performance-assets') : (route === '#/assets' ? 'projects-list' : (projectRoute ? (projectRoute[2] ? 'asset-editor' : 'assets-list') : 'asset-editor'))))))));
   currentRouteView = view;
   if (view !== 'executions') stopExecutionPolling();
+  if (view !== 'performance-run') stopPerformancePolling();
   document.querySelectorAll('.route-view').forEach((element) => { element.hidden = element.dataset.routeView !== view; });
-  document.querySelectorAll('.nav-item[href^="#/"]').forEach((link) => link.classList.toggle('active', link.getAttribute('href') === (view === 'dashboard' ? '#/dashboard' : view === 'executions' ? '#/executions' : view === 'reports' ? '#/reports' : view === 'model-config' ? '#/model-config' : '#/assets')));
+  document.querySelectorAll('.nav-item[href^="#/"]').forEach((link) => link.classList.toggle('active', link.getAttribute('href') === (view === 'dashboard' ? '#/dashboard' : view === 'executions' ? '#/executions' : view === 'reports' ? '#/reports' : view === 'model-config' ? '#/model-config' : (view.startsWith('performance') ? '#/performance-assets' : '#/assets'))));
   if (view === 'dashboard') $('#breadcrumb').innerHTML = '工作台 <i data-lucide="chevron-right"></i> <span>执行概览</span>';
   else if (view === 'projects-list') $('#breadcrumb').innerHTML = '测试资产 <i data-lucide="chevron-right"></i> <span>项目目录</span>';
   else if (view === 'executions') $('#breadcrumb').innerHTML = '执行中心 <i data-lucide="chevron-right"></i> <span>任务队列</span>';
   else if (view === 'reports') $('#breadcrumb').innerHTML = '质量报告 <i data-lucide="chevron-right"></i> <span>报告历史</span>';
+  else if (view === 'performance-assets') $('#breadcrumb').innerHTML = '性能测试 <i data-lucide="chevron-right"></i> <span>场景资产</span>';
+  else if (view === 'performance-editor') $('#breadcrumb').innerHTML = '性能测试 <i data-lucide="chevron-right"></i> <span>场景编排</span>';
+  else if (view === 'performance-run') $('#breadcrumb').innerHTML = '性能测试 <i data-lucide="chevron-right"></i> <span>执行详情</span>';
   else if (view === 'model-config') $('#breadcrumb').innerHTML = 'AI 模型配置 <i data-lucide="chevron-right"></i> <span>当前配置</span>';
   else if (view === 'profile') $('#breadcrumb').innerHTML = '个人信息 <i data-lucide="chevron-right"></i> <span>账户设置</span>';
   else updateEditorBreadcrumb();
@@ -108,6 +116,9 @@ function renderRoute() {
   if (view === 'dashboard') loadDashboard();
   if (view === 'executions') loadProjectFilters(readExecutionFocus(route).projectId).then(() => loadExecutions()).catch((error) => showToast(error.message, true));
   if (view === 'reports') loadProjectFilters().then(() => loadReports()).catch((error) => showToast(error.message, true));
+  if (view === 'performance-assets') loadPerformanceProjects().then(() => loadPerformanceAssets()).catch((error) => showToast(error.message, true));
+  if (view === 'performance-editor') loadPerformanceEditor(performanceAssetRoute?.[1]).catch((error) => showToast(error.message, true));
+  if (view === 'performance-run') loadPerformanceRun(decodeURIComponent(performanceRunRoute[1])).catch((error) => showToast(error.message, true));
   if (view === 'model-config') loadModelConfig().catch((error) => showToast(error.message, true));
   if (view === 'projects-list') loadProjects().catch((error) => showToast(error.message, true));
   if (projectRoute) {
@@ -1244,6 +1255,166 @@ function startExecutionPolling() {
 
 function stopExecutionPolling() { if (executionPollId) window.clearInterval(executionPollId); executionPollId = undefined; }
 
+const defaultPerformanceStages = [
+  { vus: 20, durationSeconds: 180 }, { vus: 50, durationSeconds: 300 },
+  { vus: 100, durationSeconds: 300 }, { vus: 20, durationSeconds: 120 }
+];
+
+function parsePerformanceIds(value, label) {
+  const ids = String(value).split(',').map((item) => Number(item.trim())).filter(Boolean);
+  if (!ids.length || ids.some((id) => !Number.isInteger(id) || id < 1)) throw new Error(`${label}必须填写正整数 ID，并以英文逗号分隔`);
+  return [...new Set(ids)];
+}
+
+function performanceAssetPayload() {
+  return {
+    projectId: $('#performanceAssetProject').value,
+    name: $('#performanceAssetName').value.trim(), protocol: 'daygf', baseUrl: $('#performanceBaseUrl').value.trim(), accountPoolId: $('#performancePool').value,
+    dataset: { postIds: parsePerformanceIds($('#performancePostIds').value, '动态测试帖子'), historyContentIds: parsePerformanceIds($('#performanceHistoryIds').value, '浏览记录内容') },
+    stages: defaultPerformanceStages,
+    thresholds: {
+      loginSuccessRate: Number($('#performanceLoginRate').value), readSuccessRate: Number($('#performanceReadRate').value), writeSuccessRate: Number($('#performanceWriteRate').value),
+      readP95Ms: Number($('#performanceReadP95').value), writeP95Ms: Number($('#performanceWriteP95').value), serverErrorRate: Number($('#performanceServerErrorRate').value)
+    },
+    securityProbe: { enabled: $('#performanceProbeEnabled').checked, postId: Number($('#performanceProbePostId').value) || 1 }
+  };
+}
+
+async function loadPerformanceProjects(selectedProjectId = '') {
+  const response = await fetch('/api/projects');
+  if (!response.ok) throw new Error('无法读取测试项目');
+  const projects = await response.json();
+  ['#performanceProject', '#performanceAssetProject'].forEach((selector) => {
+    const select = $(selector); if (!select) return;
+    const current = selectedProjectId || select.value;
+    select.innerHTML = selector === '#performanceProject' ? '<option value="">全部项目</option>' : '';
+    projects.forEach((project) => {
+      const option = document.createElement('option'); option.value = project.id; option.textContent = project.name; select.append(option);
+    });
+    select.value = projects.some((project) => project.id === current) ? current : (selector === '#performanceProject' ? '' : projects[0]?.id || '');
+  });
+  return projects;
+}
+
+async function loadPerformancePools(projectId, selectedPoolId = '') {
+  const select = $('#performancePool');
+  if (!projectId) { select.innerHTML = '<option value="">请先选择项目</option>'; return; }
+  const response = await fetch(`/api/performance/pools?projectId=${encodeURIComponent(projectId)}`);
+  if (!response.ok) throw new Error('无法读取性能账号池');
+  const pools = await response.json();
+  select.innerHTML = pools.length ? '' : '<option value="">当前项目没有可用账号池</option>';
+  pools.forEach((pool) => {
+    const option = document.createElement('option'); option.value = pool.id; option.textContent = `${pool.name} · ${pool.accountCount} 个账号`; select.append(option);
+  });
+  select.value = pools.some((pool) => pool.id === selectedPoolId) ? selectedPoolId : pools[0]?.id || '';
+  $('#performancePoolHint').textContent = pools.length ? '账号池凭据仅在服务端受控 SQLite 中使用。' : '请先在受控部署数据包中配置当前项目的预置账号池。';
+}
+
+async function loadPerformanceAssets() {
+  const projectId = $('#performanceProject').value;
+  const response = await fetch(`/api/performance/assets${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`);
+  if (!response.ok) throw new Error('无法读取性能场景');
+  const assets = await response.json();
+  const list = $('#performanceAssetList');
+  if (!assets.length) { list.innerHTML = '<tr><td colspan="5" class="empty-state">当前筛选下没有性能场景。</td></tr>'; return; }
+  list.innerHTML = '';
+  assets.forEach((asset) => {
+    const row = document.createElement('tr');
+    const pool = document.createElement('td'); pool.textContent = asset.config.accountPoolId ? '已绑定' : '未绑定';
+    const maximum = Math.max(...asset.config.stages.map((stage) => stage.vus));
+    row.innerHTML = `<td><b>${asset.name}</b><small>${asset.config.baseUrl}</small></td><td>${asset.projectId}</td>`;
+    const maxCell = document.createElement('td'); maxCell.textContent = `${maximum} VU`;
+    const actions = document.createElement('td'); actions.className = 'case-row-actions';
+    const run = document.createElement('button'); run.className = 'case-open'; run.type = 'button'; run.title = '执行性能场景'; run.innerHTML = '<i data-lucide="play"></i>'; run.onclick = () => runPerformanceAsset(asset.id).catch((error) => showToast(error.message, true));
+    const edit = document.createElement('a'); edit.className = 'case-open'; edit.title = '编辑性能场景'; edit.href = `#/performance-assets/${encodeURIComponent(asset.id)}`; edit.innerHTML = '<i data-lucide="pencil"></i>';
+    actions.append(run, edit); row.append(pool, maxCell, actions); list.append(row);
+  });
+  renderIcons();
+}
+
+async function loadPerformanceEditor(assetId) {
+  editingPerformanceAssetId = assetId && assetId !== 'new' ? decodeURIComponent(assetId) : null;
+  let asset;
+  if (editingPerformanceAssetId) {
+    const response = await fetch(`/api/performance/assets/${encodeURIComponent(editingPerformanceAssetId)}`);
+    if (!response.ok) throw new Error('无法读取性能场景');
+    asset = await response.json();
+  }
+  const config = asset?.config;
+  await loadPerformanceProjects(asset?.projectId || '');
+  $('#performanceEditorTitle').textContent = asset ? `编辑性能场景 · ${asset.name}` : '新建性能场景';
+  $('#performanceAssetName').value = asset?.name || '';
+  $('#performanceBaseUrl').value = config?.baseUrl || '';
+  $('#performancePostIds').value = config?.dataset?.postIds?.join(', ') || '';
+  $('#performanceHistoryIds').value = config?.dataset?.historyContentIds?.join(', ') || '';
+  $('#performanceLoginRate').value = config?.thresholds?.loginSuccessRate ?? 0.995;
+  $('#performanceReadRate').value = config?.thresholds?.readSuccessRate ?? 0.995;
+  $('#performanceWriteRate').value = config?.thresholds?.writeSuccessRate ?? 0.99;
+  $('#performanceReadP95').value = config?.thresholds?.readP95Ms ?? 1500;
+  $('#performanceWriteP95').value = config?.thresholds?.writeP95Ms ?? 2000;
+  $('#performanceServerErrorRate').value = config?.thresholds?.serverErrorRate ?? 0.001;
+  $('#performanceProbeEnabled').checked = Boolean(config?.securityProbe?.enabled);
+  $('#performanceProbePostId').value = config?.securityProbe?.postId || '';
+  await loadPerformancePools($('#performanceAssetProject').value, config?.accountPoolId || '');
+}
+
+async function savePerformanceAsset(event) {
+  event.preventDefault();
+  const payload = performanceAssetPayload();
+  const url = editingPerformanceAssetId ? `/api/performance/assets/${encodeURIComponent(editingPerformanceAssetId)}` : '/api/performance/assets';
+  const response = await fetch(url, { method: editingPerformanceAssetId ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  if (!response.ok) throw new Error((await response.json()).error || '性能场景保存失败');
+  const asset = await response.json();
+  showToast('性能场景已保存');
+  location.hash = `#/performance-assets/${encodeURIComponent(asset.id)}`;
+}
+
+async function runPerformanceAsset(assetId) {
+  const response = await fetch(`/api/performance/assets/${encodeURIComponent(assetId)}/runs`, { method: 'POST' });
+  if (!response.ok) throw new Error((await response.json()).error || '性能任务提交失败');
+  const run = await response.json();
+  location.hash = `#/performance-runs/${encodeURIComponent(run.id)}`;
+  showToast('性能任务已提交');
+}
+
+function renderPerformanceRun(run) {
+  const container = $('#performanceRunDetail');
+  const summary = run.summary || {};
+  const lastSample = run.samples?.at(-1);
+  const active = ['queued', 'running', 'stopping'].includes(run.status);
+  container.innerHTML = `<div class="panel-head"><div><h2>${run.name}</h2><p>${run.status.toUpperCase()} · ${run.projectName || run.projectId}</p></div><span class="batch-status ${run.status}">${run.status.toUpperCase()}</span></div><div class="performance-metrics"><div><span>请求数</span><b>${summary.requests ?? lastSample?.requests ?? 0}</b></div><div><span>失败数</span><b>${summary.failures ?? lastSample?.failures ?? 0}</b></div><div><span>P95</span><b>${summary.p95Ms ?? lastSample?.p95Ms ?? '--'} ms</b></div><div><span>活动 VU</span><b>${lastSample?.activeVus ?? '--'}</b></div></div>`;
+  const actions = document.createElement('div'); actions.className = 'performance-actions';
+  if (active) { const stop = document.createElement('button'); stop.className = 'secondary-button'; stop.type = 'button'; stop.innerHTML = '<i data-lucide="square"></i>停止任务'; stop.onclick = () => stopPerformanceRun(run.id).catch((error) => showToast(error.message, true)); actions.append(stop); }
+  const report = document.createElement('button'); report.className = 'run-button'; report.type = 'button'; report.innerHTML = '<i data-lucide="file-text"></i>查看性能报告'; report.onclick = () => window.open(`/api/performance/runs/${encodeURIComponent(run.id)}/report`, '_blank', 'noopener'); actions.append(report);
+  const verdicts = document.createElement('div'); verdicts.className = 'performance-verdicts';
+  (summary.verdicts || []).forEach((verdict) => { const item = document.createElement('span'); item.className = verdict.passed ? 'passed' : 'failed'; item.textContent = `${verdict.name} · ${verdict.passed ? '通过' : '失败'}`; verdicts.append(item); });
+  const samples = document.createElement('div'); samples.className = 'performance-samples'; samples.innerHTML = '<h3>阶段采样</h3>';
+  (run.samples || []).forEach((sample) => { const item = document.createElement('p'); item.textContent = `${sample.phase || '执行中'} · ${sample.activeVus ?? '--'} VU · ${sample.requests ?? 0} 请求 · P95 ${sample.p95Ms ?? '--'} ms`; samples.append(item); });
+  if (!(run.samples || []).length) samples.innerHTML += '<p class="empty-state">等待 k6 返回首个聚合指标。</p>';
+  container.append(actions, verdicts, samples); renderIcons();
+}
+
+async function loadPerformanceRun(id) {
+  const response = await fetch(`/api/performance/runs/${encodeURIComponent(id)}`);
+  if (!response.ok) throw new Error('无法读取性能执行详情');
+  const run = await response.json();
+  renderPerformanceRun(run);
+  if (['queued', 'running', 'stopping'].includes(run.status)) startPerformancePolling(id); else stopPerformancePolling();
+}
+
+async function stopPerformanceRun(id) {
+  const response = await fetch(`/api/performance/runs/${encodeURIComponent(id)}/stop`, { method: 'POST' });
+  if (!response.ok) throw new Error((await response.json()).error || '停止性能任务失败');
+  await loadPerformanceRun(id);
+}
+
+function startPerformancePolling(id) {
+  if (performancePollId) return;
+  performancePollId = window.setInterval(() => { if (document.hidden || currentRouteView !== 'performance-run') stopPerformancePolling(); else loadPerformanceRun(id).catch((error) => showToast(error.message, true)); }, 1500);
+}
+
+function stopPerformancePolling() { if (performancePollId) window.clearInterval(performancePollId); performancePollId = undefined; }
+
 async function loadProjectFilters(requestedProjectId = '') {
   const response = await fetch('/api/projects');
   if (!response.ok) throw new Error('无法读取测试项目');
@@ -1264,6 +1435,16 @@ async function loadProjectFilters(requestedProjectId = '') {
 }
 
 async function loadReports() {
+  if ($('#reportTarget').value === 'performance') {
+    const query = new URLSearchParams();
+    if ($('#reportProject').value) query.set('projectId', $('#reportProject').value);
+    if ($('#reportStatus').value) query.set('status', $('#reportStatus').value);
+    const response = await fetch(`/api/performance/runs?${query}`);
+    if (!response.ok) throw new Error('无法读取性能报告');
+    const reports = (await response.json()).filter((run) => ['passed', 'failed', 'stopped'].includes(run.status));
+    renderQualityList($('#reportList'), reports, (report) => `${report.name} · ${report.status.toUpperCase()} · ${report.summary?.requests ?? 0} 请求 · P95 ${report.summary?.p95Ms ?? '--'} ms`, true);
+    return;
+  }
   const query = new URLSearchParams({ range: $('#reportRange').value });
   if ($('#reportProject').value) query.set('projectId', $('#reportProject').value);
   if ($('#reportStatus').value) query.set('status', $('#reportStatus').value);
@@ -1299,6 +1480,9 @@ $('#executionStatus').addEventListener('change', () => loadExecutions().catch((e
 $('#executionTarget').addEventListener('change', () => loadExecutions().catch((error) => showToast(error.message, true)));
 $('#reportProject').addEventListener('change', () => loadReports().catch((error) => showToast(error.message, true)));
 ['#reportStatus', '#reportTarget', '#reportRange'].forEach((selector) => $(selector).addEventListener('change', () => loadReports().catch((error) => showToast(error.message, true))));
+$('#performanceProject').addEventListener('change', () => loadPerformanceAssets().catch((error) => showToast(error.message, true)));
+$('#performanceAssetProject').addEventListener('change', () => loadPerformancePools($('#performanceAssetProject').value).catch((error) => showToast(error.message, true)));
+$('#performanceAssetForm').addEventListener('submit', (event) => savePerformanceAsset(event).catch((error) => showToast(error.message, true)));
 $('#loginForm').addEventListener('submit', (event) => handleLogin(event).catch(() => { $('#loginError').textContent = '登录失败，请稍后重试。'; $('#loginError').hidden = false; }));
 $('#profileForm').addEventListener('submit', (event) => saveProfile(event).catch((error) => showToast(error.message, true)));
 $('#passwordForm').addEventListener('submit', (event) => changePassword(event).catch((error) => showToast(error.message, true)));
