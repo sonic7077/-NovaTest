@@ -103,6 +103,30 @@ describe('web test case', () => {
     expect(testCase.steps[0].request.protocol).toBe('editorial');
   });
 
+  it('accepts a BY public API request with an expected business code', () => {
+    const testCase = validateWebCase({
+      id: 'by-members', projectId: 'by-project', name: '会员列表', target: 'api',
+      baseUrl: 'https://by.example.test', viewport: 'desktop',
+      steps: [{ id: 'members', kind: 'apiRequest', instruction: '查询会员', request: {
+        protocol: 'by', action: '/c-api/v1/members', method: 'GET', payload: { page: 1 },
+        expectedStatus: 200, expectedCode: 0, safety: 'readonly', auth: 'none'
+      } }]
+    });
+
+    expect(testCase.steps[0].request.protocol).toBe('by');
+  });
+
+  it('rejects a BY request without a numeric expected business code', () => {
+    expect(() => validateWebCase({
+      id: 'by-invalid', projectId: 'by-project', name: '异常', target: 'api',
+      baseUrl: 'https://by.example.test', viewport: 'desktop',
+      steps: [{ id: 'bad', kind: 'apiRequest', instruction: '查询', request: {
+        protocol: 'by', action: '/c-api/v1/members', method: 'GET', payload: {},
+        expectedStatus: 200, expectedCode: '0', safety: 'readonly', auth: 'none'
+      } }]
+    })).toThrow('invalid API request');
+  });
+
   it('accepts standard Flywheel API requests for all documented HTTP methods', () => {
     for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
       const testCase = validateWebCase({
