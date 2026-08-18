@@ -5,6 +5,7 @@ import { cmsWhitebagCases } from './seed/cms-whitebag-cases.js';
 import { seedArkAiCommentReviewCases } from './seed/ark-ai-comment-review-cases.js';
 import { seedFlywheelCases } from './seed/flywheel-cases.js';
 import { seedDaygfCases } from './seed/daygf-cases.js';
+import { seedByCases } from './seed/by-cases.js';
 import { createSqliteStore } from './storage/sqlite-store.js';
 import { createRuntimeServices } from './services/runtime-services.js';
 
@@ -34,6 +35,8 @@ async function main() {
     const daygfProject = store.listProjects().find((project) => project.name === '一日女友') || store.saveProject({ name: '一日女友' });
     seedDaygfCases(store, { baseUrl: services.daygfBaseUrl, projectId: daygfProject.id });
   }
+  const byProject = store.listProjects().find((project) => project.name === 'BY项目') || store.saveProject({ name: 'BY项目' });
+  seedByCases(store, { projectId: byProject.id, baseUrl: 'https://by.chenmoyuan.tech' });
   createApp({ ...services, store, authRequired: true, cmsSeedCases: services.cmsBaseUrl ? cmsWhitebagCases({ baseUrl: services.cmsBaseUrl }) : [] }).listen(port, host, () => console.log(`先锋营自动化测试平台运行于 http://${host}:${port}`));
 }
 
