@@ -70,4 +70,17 @@ describe('BY API runner', () => {
       byContext()
     )).rejects.toMatchObject({ code: 'PRECONDITION_UNAVAILABLE', message: '前置数据不足：无法提取 memberPubId' });
   });
+
+  it('interpolates a public identifier into a chained detail path', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      expect(url).toBe('https://by.example.test/c-api/v1/members/public-1');
+      return response(200, { code: 0, msg: 'ok', data: { pubId: 'public-1' } });
+    });
+    const runner = new ByApiRunner({ fetchImpl });
+
+    await runner.execute(
+      byStep('/c-api/v1/members/{{memberPubId}}', { expectedJson: [{ path: '$.data.pubId', equalsVariable: 'memberPubId' }] }),
+      byContext({ variables: { memberPubId: 'public-1' } })
+    );
+  });
 });

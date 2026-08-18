@@ -112,9 +112,11 @@ export class ByApiRunner {
     const { request } = step;
     if (request.safety === 'mutating' && !context.allowMutations) throw new Error('mutating API step requires allowMutations');
 
-    const payload = interpolate(request.payload || {}, context.variables || {});
+    const variables = context.variables || {};
+    const action = interpolate(request.action, variables);
+    const payload = interpolate(request.payload || {}, variables);
     const startedAt = performance.now();
-    const response = await this.fetchImpl(byUrl(context.testCase.baseUrl, request.action, payload, request.method), {
+    const response = await this.fetchImpl(byUrl(context.testCase.baseUrl, action, payload, request.method), {
       method: request.method,
       headers: {
         accept: 'application/json',
@@ -124,13 +126,13 @@ export class ByApiRunner {
       ...(request.method === 'POST' ? { body: JSON.stringify(payload) } : {})
     });
     const body = await parseJson(response);
-    const api = apiEvidence({ action: request.action, method: request.method, response, body, startedAt, payload });
+    const api = apiEvidence({ action, method: request.method, response, body, startedAt, payload });
 
-    if (!expectedMatches(response.status, request.expectedStatus)) throw requestFailure(`API assertion failed: ${request.action}`, api);
-    if (!expectedMatches(body?.code, request.expectedCode)) throw requestFailure(`BY business assertion failed: ${request.action}`, api);
+    if (!expectedMatches(response.status, request.expectedStatus)) throw requestFailure(`API assertion failed: ${action}`, api);
+    if (!expectedMatches(body?.code, request.expectedCode)) throw requestFailure(`BY business assertion failed: ${action}`, api);
 
     try {
-      assertJson(body, request.expectedJson, context.variables || {});
+      assertJson(body, request.expectedJson, variables);
       return { variables: extractVariables(body, request.extract, api), api };
     } catch (error) {
       error.api ||= api;
