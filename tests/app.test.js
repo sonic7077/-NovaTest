@@ -290,9 +290,11 @@ describe('execution API', () => {
   it('lists persisted execution, dashboard, and report summaries', async () => {
     const store = createMemoryStore();
     store.saveCase(webCase);
+    const startedAt = new Date(Date.now() - 20_000).toISOString();
+    const finishedAt = new Date(Date.now() - 10_000).toISOString();
     store.saveRun({
       id: 'failed-run', caseId: webCase.id, caseName: webCase.name, projectId: 'default-project', target: 'web', status: 'failed',
-      startedAt: '2026-07-19T10:00:00.000Z', finishedAt: '2026-07-19T10:00:10.000Z', variables: {},
+      startedAt, finishedAt, variables: {},
       steps: [{ id: 's1', status: 'failed', attempts: 2, error: '页面未就绪', logs: [] }]
     });
     const app = createApp({ runner: {}, store });
@@ -539,6 +541,21 @@ describe('execution API', () => {
     expect(report).not.toContain('synthetic-token');
     expect(report).not.toContain('synthetic-password');
     expect(report).not.toContain('123456');
+  });
+
+  it('renders BY business-code evidence with redacted contact data', () => {
+    const report = renderReport({
+      id: 'by-run', status: 'failed', startedAt: null, variables: {}, steps: [{
+        id: 'report', status: 'failed', attempts: 1, error: 'BY business assertion failed', api: {
+          action: '/c-api/v1/reports', method: 'POST', httpStatus: 200, businessStatus: 40000, durationMs: 15,
+          request: { contact: 'private' }, response: { code: 40000, data: { contact: 'private' } }
+        }
+      }]
+    }, 'BY 举报校验');
+
+    expect(report).toContain('业务状态 40000');
+    expect(report).toContain('********');
+    expect(report).not.toContain('private');
   });
 
   it('renders a single report download link and jumps from status chips to matching steps', () => {
