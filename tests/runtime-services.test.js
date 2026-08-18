@@ -58,4 +58,17 @@ describe('runtime services', () => {
     expect(services.daygfRunnerStatus).toMatchObject({ ready: true });
     expect(services.daygfBaseUrl).toBe(daygf.baseUrl);
   });
+
+  it('constructs a BY runner without runtime credentials', async () => {
+    const ByRunner = vi.fn(function ByRunner() { this.execute = vi.fn(); });
+    const createWebRunner = vi.fn(async () => ({ execute: vi.fn() }));
+
+    const services = await createRuntimeServices({
+      runtimeConfig: completeRuntimeConfig, store: { saveRuntimeConfig: vi.fn() },
+      createWebRunner, ByRunner
+    });
+
+    expect(ByRunner).toHaveBeenCalledWith();
+    expect(services.byRunnerStatus).toMatchObject({ ready: true });
+  });
 });

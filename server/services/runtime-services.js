@@ -2,6 +2,7 @@ import { CmsApiRunner } from '../runners/cms-api-runner.js';
 import { EditorialApiRunner } from '../runners/editorial-api-runner.js';
 import { FlywheelApiRunner } from '../runners/flywheel-api-runner.js';
 import { DaygfApiRunner } from '../runners/daygf-api-runner.js';
+import { ByApiRunner } from '../runners/by-api-runner.js';
 import { CompositeApiRunner } from '../runners/composite-api-runner.js';
 import { createProductionRunner } from '../runners/production-runner.js';
 import { normalizeRuntimeConfig } from './runtime-config-service.js';
@@ -13,7 +14,7 @@ function unavailableRunner(message) {
   return { execute: async () => { throw new Error(message); } };
 }
 
-export async function createRuntimeServices({ runtimeConfig, store, createWebRunner = createProductionRunner, CmsRunner = CmsApiRunner, EditorialRunner = EditorialApiRunner, FlywheelRunner = FlywheelApiRunner, DaygfRunner = DaygfApiRunner, ApiRunner = CompositeApiRunner } = {}) {
+export async function createRuntimeServices({ runtimeConfig, store, createWebRunner = createProductionRunner, CmsRunner = CmsApiRunner, EditorialRunner = EditorialApiRunner, FlywheelRunner = FlywheelApiRunner, DaygfRunner = DaygfApiRunner, ByRunner = ByApiRunner, ApiRunner = CompositeApiRunner } = {}) {
   let config;
   try {
     config = normalizeRuntimeConfig(runtimeConfig || store?.getRuntimeConfig?.());
@@ -25,6 +26,7 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
       runner: { web: unavailableRunner(message), api: unavailableRunner(message) },
       runnerStatus: { ready: false, message },
       cmsRunnerStatus: { ready: false, message },
+      byRunnerStatus: { ready: false, message },
       flywheelRunnerStatus: { ready: false, message },
       daygfRunnerStatus: { ready: false, message },
       performanceRunner: new K6PerformanceRunner(),
@@ -91,13 +93,24 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
       daygfRunnerStatus.message = error.message;
     }
   }
-  const apiRunner = new ApiRunner({ cms: cmsRunner, editorial: editorialRunner, flywheel: flywheelRunner, daygf: daygfRunner });
+  const byRunnerStatus = { ready: false, message: 'BY public API runner is unavailable' };
+  let byRunner;
+  try {
+    byRunner = new ByRunner();
+    byRunnerStatus.ready = true;
+    byRunnerStatus.message = 'BY public API runner is ready';
+  } catch (error) {
+    byRunner = unavailableRunner(error.message);
+    byRunnerStatus.message = error.message;
+  }
+  const apiRunner = new ApiRunner({ cms: cmsRunner, editorial: editorialRunner, flywheel: flywheelRunner, daygf: daygfRunner, by: byRunner });
 
   return {
     runner: { web: reloadableWebRunner, api: apiRunner },
     runnerStatus,
     cmsRunnerStatus,
     editorialRunnerStatus,
+    byRunnerStatus,
     flywheelRunnerStatus,
     daygfRunnerStatus,
     performanceRunner: new K6PerformanceRunner(),

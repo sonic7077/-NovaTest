@@ -55,4 +55,20 @@ describe('Composite API runner', () => {
     expect(daygf.execute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ apiSession: { protocol: 'daygf' } }));
     expect(result.variables).toEqual({ sessionProtocol: 'daygf' });
   });
+
+  it('routes BY requests to an isolated BY session', async () => {
+    const cms = { createSession: vi.fn(() => ({ protocol: 'cms' })), execute: vi.fn() };
+    const by = {
+      createSession: vi.fn(() => ({ protocol: 'by' })),
+      execute: vi.fn(async (_step, context) => ({ variables: { sessionProtocol: context.apiSession.protocol } }))
+    };
+    const runner = new CompositeApiRunner({ cms, by });
+    const context = { apiSession: runner.createSession() };
+
+    const result = await runner.execute({ request: { protocol: 'by' } }, context);
+
+    expect(cms.execute).not.toHaveBeenCalled();
+    expect(by.execute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ apiSession: { protocol: 'by' } }));
+    expect(result.variables).toEqual({ sessionProtocol: 'by' });
+  });
 });
