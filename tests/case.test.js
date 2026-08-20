@@ -127,6 +127,21 @@ describe('web test case', () => {
     })).toThrow('invalid API request');
   });
 
+  it('accepts a BY admin request and rejects unsafe paths or DELETE', () => {
+    const base = {
+      id: 'by-admin-auth-info', projectId: 'by-project', name: '后台当前账号查询',
+      target: 'api', baseUrl: 'https://by.example.test', viewport: 'desktop',
+      steps: [{ id: 'info', kind: 'apiRequest', instruction: '查询当前账号', request: {
+        protocol: 'byAdmin', action: '/admin-api/v1/auth/info', method: 'GET', payload: {},
+        expectedStatus: 200, safety: 'readonly', auth: 'session'
+      } }]
+    };
+
+    expect(() => validateWebCase(base)).not.toThrow();
+    expect(() => validateWebCase({ ...base, steps: [{ ...base.steps[0], request: { ...base.steps[0].request, method: 'DELETE' } }] })).toThrow('invalid API request');
+    expect(() => validateWebCase({ ...base, steps: [{ ...base.steps[0], request: { ...base.steps[0].request, action: '/c-api/v1/members' } }] })).toThrow('invalid API request');
+  });
+
   it('accepts standard Flywheel API requests for all documented HTTP methods', () => {
     for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
       const testCase = validateWebCase({

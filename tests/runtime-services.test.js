@@ -71,4 +71,18 @@ describe('runtime services', () => {
     expect(ByRunner).toHaveBeenCalledWith();
     expect(services.byRunnerStatus).toMatchObject({ ready: true });
   });
+
+  it('constructs a BY admin runner with optional SQLite credentials', async () => {
+    const byAdmin = { baseUrl: 'https://by.example.test', username: 'operator', password: 'private', totpSecret: 'JBSWY3DPEHPK3PXP' };
+    const ByAdminRunner = vi.fn(function ByAdminRunner({ config }) { this.config = config; this.execute = vi.fn(); });
+    const createWebRunner = vi.fn(async () => ({ execute: vi.fn() }));
+
+    const services = await createRuntimeServices({
+      runtimeConfig: { ...completeRuntimeConfig, byAdmin }, store: { saveRuntimeConfig: vi.fn() },
+      createWebRunner, ByAdminRunner
+    });
+
+    expect(ByAdminRunner).toHaveBeenCalledWith({ config: byAdmin });
+    expect(services.byAdminRunnerStatus).toMatchObject({ ready: true });
+  });
 });

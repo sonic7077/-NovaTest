@@ -56,6 +56,14 @@ export class RunService {
       for (const step of testCase.steps) {
       const stepRun = run.steps.find((item) => item.id === step.id) || { id: step.id, status: 'queued', attempts: 0, logs: [], screenshots: [] };
       if (!run.steps.includes(stepRun)) run.steps.push(stepRun);
+      if (step.request?.skipReason && !executionContext.allowMutations) {
+        stepRun.status = 'skipped';
+        stepRun.error = step.request.skipReason;
+        run.status = 'skipped';
+        run.finishedAt = new Date().toISOString();
+        publish();
+        return run;
+      }
       stepRun.status = 'running';
 
       for (let attempt = 1; attempt <= 2; attempt += 1) {

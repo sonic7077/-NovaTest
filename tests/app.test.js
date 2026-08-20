@@ -646,7 +646,8 @@ describe('execution API', () => {
 
   it('lists skipped single-run reports for prerequisite outcomes', async () => {
     const store = createMemoryStore();
-    store.saveRun({ id: 'skipped-run', caseId: 'case-1', caseName: '用户资料审核', projectId: 'default-project', target: 'api', status: 'skipped', startedAt: '2026-07-20T00:00:00.000Z', finishedAt: '2026-07-20T00:00:01.000Z', variables: {}, steps: [] });
+    const now = new Date();
+    store.saveRun({ id: 'skipped-run', caseId: 'case-1', caseName: '用户资料审核', projectId: 'default-project', target: 'api', status: 'skipped', startedAt: new Date(now.getTime() - 1_000).toISOString(), finishedAt: now.toISOString(), variables: {}, steps: [] });
     const app = createApp({ runner: {}, store });
 
     await request(app).get('/api/reports?range=30d').expect(200).expect(({ body }) => {

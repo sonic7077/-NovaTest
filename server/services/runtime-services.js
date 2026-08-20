@@ -3,6 +3,7 @@ import { EditorialApiRunner } from '../runners/editorial-api-runner.js';
 import { FlywheelApiRunner } from '../runners/flywheel-api-runner.js';
 import { DaygfApiRunner } from '../runners/daygf-api-runner.js';
 import { ByApiRunner } from '../runners/by-api-runner.js';
+import { ByAdminApiRunner } from '../runners/by-admin-api-runner.js';
 import { CompositeApiRunner } from '../runners/composite-api-runner.js';
 import { createProductionRunner } from '../runners/production-runner.js';
 import { normalizeRuntimeConfig } from './runtime-config-service.js';
@@ -14,7 +15,7 @@ function unavailableRunner(message) {
   return { execute: async () => { throw new Error(message); } };
 }
 
-export async function createRuntimeServices({ runtimeConfig, store, createWebRunner = createProductionRunner, CmsRunner = CmsApiRunner, EditorialRunner = EditorialApiRunner, FlywheelRunner = FlywheelApiRunner, DaygfRunner = DaygfApiRunner, ByRunner = ByApiRunner, ApiRunner = CompositeApiRunner } = {}) {
+export async function createRuntimeServices({ runtimeConfig, store, createWebRunner = createProductionRunner, CmsRunner = CmsApiRunner, EditorialRunner = EditorialApiRunner, FlywheelRunner = FlywheelApiRunner, DaygfRunner = DaygfApiRunner, ByRunner = ByApiRunner, ByAdminRunner = ByAdminApiRunner, ApiRunner = CompositeApiRunner } = {}) {
   let config;
   try {
     config = normalizeRuntimeConfig(runtimeConfig || store?.getRuntimeConfig?.());
@@ -103,7 +104,19 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
     byRunner = unavailableRunner(error.message);
     byRunnerStatus.message = error.message;
   }
-  const apiRunner = new ApiRunner({ cms: cmsRunner, editorial: editorialRunner, flywheel: flywheelRunner, daygf: daygfRunner, by: byRunner });
+  const byAdminRunnerStatus = { ready: false, message: 'BY admin API runner is unavailable' };
+  let byAdminRunner;
+  try {
+    byAdminRunner = new ByAdminRunner({ config: config.byAdmin });
+    byAdminRunnerStatus.ready = true;
+    byAdminRunnerStatus.message = config.byAdmin
+      ? 'BY admin API runner is ready'
+      : 'BY admin API runner is ready; authentication configuration is unavailable';
+  } catch (error) {
+    byAdminRunner = unavailableRunner(error.message);
+    byAdminRunnerStatus.message = error.message;
+  }
+  const apiRunner = new ApiRunner({ cms: cmsRunner, editorial: editorialRunner, flywheel: flywheelRunner, daygf: daygfRunner, by: byRunner, byAdmin: byAdminRunner });
 
   return {
     runner: { web: reloadableWebRunner, api: apiRunner },
@@ -111,6 +124,7 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
     cmsRunnerStatus,
     editorialRunnerStatus,
     byRunnerStatus,
+    byAdminRunnerStatus,
     flywheelRunnerStatus,
     daygfRunnerStatus,
     performanceRunner: new K6PerformanceRunner(),

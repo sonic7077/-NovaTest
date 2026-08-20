@@ -71,4 +71,20 @@ describe('Composite API runner', () => {
     expect(by.execute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ apiSession: { protocol: 'by' } }));
     expect(result.variables).toEqual({ sessionProtocol: 'by' });
   });
+
+  it('routes BY admin requests to an isolated BY admin session', async () => {
+    const cms = { createSession: vi.fn(() => ({ protocol: 'cms' })), execute: vi.fn() };
+    const byAdmin = {
+      createSession: vi.fn(() => ({ protocol: 'byAdmin' })),
+      execute: vi.fn(async (_step, context) => ({ variables: { sessionProtocol: context.apiSession.protocol } }))
+    };
+    const runner = new CompositeApiRunner({ cms, byAdmin });
+    const context = { apiSession: runner.createSession() };
+
+    const result = await runner.execute({ request: { protocol: 'byAdmin' } }, context);
+
+    expect(cms.execute).not.toHaveBeenCalled();
+    expect(byAdmin.execute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ apiSession: { protocol: 'byAdmin' } }));
+    expect(result.variables).toEqual({ sessionProtocol: 'byAdmin' });
+  });
 });

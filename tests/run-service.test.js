@@ -176,6 +176,22 @@ describe('RunService', () => {
     expect(run).toMatchObject({ status: 'skipped', steps: [{ status: 'skipped', attempts: 1, error: expect.stringContaining('前置数据不足') }] });
   });
 
+  it('skips high-risk API assets without dispatching a request', async () => {
+    let calls = 0;
+    const highRiskCase = {
+      ...testCase, target: 'api',
+      steps: [{ id: 'risk', kind: 'apiRequest', instruction: '不执行高风险操作', request: {
+        protocol: 'byAdmin', action: '/admin-api/v1/telegram/user-history/sync', method: 'POST', payload: {},
+        expectedStatus: 200, safety: 'mutating', skipReason: '高风险操作需要独立授权'
+      } }]
+    };
+
+    const run = await new RunService({ api: { execute: async () => { calls += 1; } } }).start(highRiskCase);
+
+    expect(calls).toBe(0);
+    expect(run).toMatchObject({ status: 'skipped', steps: [{ status: 'skipped', attempts: 0, error: '高风险操作需要独立授权' }] });
+  });
+
   it('interpolates one random title suffix and persists visual check results', async () => {
     let receivedStep;
     const runner = {

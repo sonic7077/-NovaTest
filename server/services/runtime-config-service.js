@@ -5,6 +5,7 @@ const lighthouseFields = ['projectName', 'email', 'password', 'totpSecret'];
 const editorialFields = ['baseUrl', 'username', 'password', 'googleSecret'];
 const flywheelFields = ['baseUrl', 'platformKey', 'platformId'];
 const daygfFields = ['baseUrl', 'username', 'password'];
+const byAdminFields = ['baseUrl', 'username', 'password', 'totpSecret'];
 
 function requiredText(value, field) {
   const text = typeof value === 'string' ? value.trim() : '';
@@ -51,13 +52,15 @@ export function normalizeRuntimeConfig(input = {}) {
   const editorial = normalizeOptionalGroup(input.editorial, editorialFields, 'editorial', 'baseUrl');
   const flywheel = normalizeOptionalGroup(input.flywheel, flywheelFields, 'flywheel', 'baseUrl');
   const daygf = normalizeOptionalGroup(input.daygf, daygfFields, 'daygf', 'baseUrl');
+  const byAdmin = normalizeOptionalGroup(input.byAdmin, byAdminFields, 'byAdmin', 'baseUrl');
   return {
     model: normalizeModel(input.model),
     cms: normalizeGroup(input.cms, cmsFields, 'cms', 'baseUrl'),
     lighthouse: normalizeGroup(input.lighthouse, lighthouseFields, 'lighthouse'),
     ...(editorial ? { editorial } : {}),
     ...(flywheel ? { flywheel } : {}),
-    ...(daygf ? { daygf } : {})
+    ...(daygf ? { daygf } : {}),
+    ...(byAdmin ? { byAdmin } : {})
   };
 }
 
@@ -78,6 +81,12 @@ export function runtimeConfigFromEnvironment(env = {}) {
     username: env.DAYGF_USERNAME,
     password: env.DAYGF_PASSWORD
   };
+  const byAdmin = {
+    baseUrl: env.BY_ADMIN_BASE_URL,
+    username: env.BY_ADMIN_USERNAME,
+    password: env.BY_ADMIN_PASSWORD,
+    totpSecret: env.BY_ADMIN_TOTP_SECRET
+  };
   return normalizeRuntimeConfig({
     model: {
       baseUrl: env.MIDSCENE_MODEL_BASE_URL || env.WUJI_BASE_URL,
@@ -97,6 +106,7 @@ export function runtimeConfigFromEnvironment(env = {}) {
     },
     ...(Object.values(editorial).some(Boolean) ? { editorial } : {}),
     ...(Object.values(flywheel).some(Boolean) ? { flywheel } : {}),
-    ...(Object.values(daygf).some(Boolean) ? { daygf } : {})
+    ...(Object.values(daygf).some(Boolean) ? { daygf } : {}),
+    ...(Object.values(byAdmin).some(Boolean) ? { byAdmin } : {})
   });
 }

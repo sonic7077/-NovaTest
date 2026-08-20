@@ -83,4 +83,15 @@ describe('runtime configuration service', () => {
     });
     expect(normalizeRuntimeConfig(completeRuntimeConfig)).not.toHaveProperty('daygf');
   });
+
+  it('normalizes an optional BY admin configuration without requiring it for legacy data', () => {
+    const byAdmin = {
+      baseUrl: 'https://by.example.test/', username: 'by-admin', password: 'by-password', totpSecret: 'JBSWY3DPEHPK3PXP'
+    };
+
+    expect(normalizeRuntimeConfig({ ...completeRuntimeConfig, byAdmin })).toMatchObject({
+      byAdmin: { ...byAdmin, baseUrl: 'https://by.example.test' }
+    });
+    expect(normalizeRuntimeConfig(completeRuntimeConfig)).not.toHaveProperty('byAdmin');
+  });
 });

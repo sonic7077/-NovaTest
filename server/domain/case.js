@@ -1,6 +1,6 @@
 const stepKinds = new Set(['action', 'assert', 'query', 'apiRequest']);
 const viewports = new Set(['desktop', 'mobile']);
-const apiProtocols = new Set(['cms', 'editorial', 'flywheel', 'daygf', 'by']);
+const apiProtocols = new Set(['cms', 'editorial', 'flywheel', 'daygf', 'by', 'byAdmin']);
 const jsonPathPattern = /^\$(?:\.[A-Za-z_$][\w$]*|\[\d+\])*$/;
 
 function validJsonPath(value) {
@@ -88,16 +88,21 @@ export function validateWebCase(input) {
       const protocol = request?.protocol || 'cms';
       const validMethod = protocol === 'cms'
         ? request?.method === 'POST'
+        : protocol === 'byAdmin'
+          ? ['GET', 'POST', 'PUT', 'PATCH'].includes(request?.method)
         : ['flywheel', 'daygf'].includes(protocol)
           ? ['GET', 'POST', 'PUT', 'DELETE'].includes(request?.method)
           : ['GET', 'POST'].includes(request?.method);
       const validAuth = protocol === 'by'
         ? request?.auth === undefined || request.auth === 'none'
+        : protocol === 'byAdmin'
+          ? request?.auth === undefined || ['none', 'session', 'invalid'].includes(request.auth)
         : request?.auth === undefined || request.auth === 'session' || request.auth === 'none'
           || (['flywheel', 'daygf'].includes(protocol) && request.auth === 'invalid');
       const validRequestPoll = protocol === 'flywheel' ? validPoll(request.poll) : request.poll === undefined;
       const allowsFlywheelExtensions = protocol === 'flywheel';
-      if (step.kind !== 'apiRequest' || !request?.action?.trim() || !apiProtocols.has(protocol) || !validMethod || !validExpectedStatus(request.expectedStatus) || !validExpectedCode(request.expectedCode, protocol) || !['readonly', 'mutating'].includes(request.safety) || !validAuth || !validExpectedJson(request.expectedJson) || !validExtract(request.extract) || !validSelection(request.select) || !validRequestPoll || (!allowsFlywheelExtensions && request.randomSelection !== undefined) || (allowsFlywheelExtensions && !validRandomSelection(request.randomSelection)) || (!allowsFlywheelExtensions && request.recommendationPolicy !== undefined) || (allowsFlywheelExtensions && !validRecommendationPolicy(request.recommendationPolicy))) throw new Error('invalid API request');
+      const validProtocolAction = protocol !== 'byAdmin' || /^\/admin-api\/v1\/[A-Za-z0-9_/-]+$/.test(request.action);
+      if (step.kind !== 'apiRequest' || !request?.action?.trim() || !apiProtocols.has(protocol) || !validMethod || !validProtocolAction || !validExpectedStatus(request.expectedStatus) || !validExpectedCode(request.expectedCode, protocol) || !['readonly', 'mutating'].includes(request.safety) || !validAuth || !validExpectedJson(request.expectedJson) || !validExtract(request.extract) || !validSelection(request.select) || !validRequestPoll || (!allowsFlywheelExtensions && request.randomSelection !== undefined) || (allowsFlywheelExtensions && !validRandomSelection(request.randomSelection)) || (!allowsFlywheelExtensions && request.recommendationPolicy !== undefined) || (allowsFlywheelExtensions && !validRecommendationPolicy(request.recommendationPolicy))) throw new Error('invalid API request');
     }
     if (input.target === 'web' && step.kind === 'apiRequest') throw new Error('invalid step');
     (step.visualChecks || []).forEach((visualCheck) => {

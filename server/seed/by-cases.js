@@ -142,11 +142,54 @@ function reportCases(projectId, baseUrl) {
   return [missing, overlong, unknown, success];
 }
 
+const publicInputs = [
+  ['空字符串', ''], ['空白字符', ' '], ['中文', '测试'], ['英文', 'test'], ['emoji', '🙂'],
+  ['组合Unicode', 'e\u0301'], ['替换字符', '�'], ['编码分隔符', '%26%3D'], ['单引号特征', "' OR '1'='1"], ['标签特征', '<img>']
+];
+
+function publicMatrixCases(projectId, baseUrl) {
+  const listDefinitions = [
+    ['会员列表分页', '/c-api/v1/members', 'page', [0, -1, 1, 2, 999999999]],
+    ['会员列表页大小', '/c-api/v1/members', 'pageSize', [0, -1, 1, 60, 61]],
+    ['会员列表关键词', '/c-api/v1/members', 'keyword', publicInputs.map(([, value]) => value)],
+    ['文章列表分页', '/c-api/v1/articles', 'page', [0, -1, 1, 2, 999999999]],
+    ['文章列表页大小', '/c-api/v1/articles', 'pageSize', [0, -1, 1, 100, 101]],
+    ['文章列表关键词', '/c-api/v1/articles', 'keyword', publicInputs.map(([, value]) => value)],
+    ['公告列表限制', '/c-api/v1/notices', 'limit', [0, -1, 1, 50, 51]],
+    ['公告列表分类', '/c-api/v1/notices', 'category', publicInputs.map(([, value]) => value)],
+    ['会员地区筛选', '/c-api/v1/members', 'province', publicInputs.map(([, value]) => value)],
+    ['会员排序字段', '/c-api/v1/members', 'sortBy', publicInputs.map(([, value]) => value)],
+    ['文章排序字段', '/c-api/v1/articles', 'sortBy', publicInputs.map(([, value]) => value)],
+    ['会员年龄下界', '/c-api/v1/members', 'ageMin', [0, -1, 18, 99, 9007199254740991]],
+    ['会员身高上界', '/c-api/v1/members', 'heightMax', [0, -1, 150, 250, 9007199254740991]]
+  ];
+  const cases = [];
+  listDefinitions.forEach(([module, action, field, values]) => values.forEach((value, index) => {
+    const id = `by-public-${String(cases.length + 1).padStart(3, '0')}`;
+    cases.push(apiCase({
+      id, projectId, baseUrl, target: 'api', viewport: 'desktop',
+      name: `P1 反例：BY-${module}-${field}-${index + 1}`,
+      steps: [requestStep(`${id}-request`, `以边界数据查询${module}`, action, { payload: { [field]: value, page: 1, pageSize: 10 }, expectedJson: listEnvelope })]
+    }));
+  }));
+  const invalidPaths = Array.from({ length: 20 }, (_, index) => [
+    index < 10 ? '/c-api/v1/members/' : '/c-api/v1/articles/',
+    `invalid-${index + 1}`,
+    index < 10 ? 40400 : 40000
+  ]);
+  invalidPaths.forEach(([prefix, value, expectedCode], index) => {
+    const id = `by-public-path-${String(index + 1).padStart(3, '0')}`;
+    cases.push(apiCase({ id, projectId, baseUrl, target: 'api', viewport: 'desktop', name: `P1 反例：BY-路径标识校验-${index + 1}`,
+      steps: [requestStep(`${id}-request`, '使用非法公开标识查询资源', `${prefix}${encodeURIComponent(value || ' ')}`, { expectedCode })] }));
+  });
+  return cases;
+}
+
 export function byCases({ projectId, baseUrl }) {
   const member = memberCases.map((definition, index) => singleCase('member', index, definition, projectId, baseUrl));
   const content = contentCases.map((definition, index) => singleCase('content', index, definition, projectId, baseUrl));
   const config = configCases.map((definition, index) => singleCase('config', index, definition, projectId, baseUrl));
-  return [...member, memberDetailCase(projectId, baseUrl), ...content, articleDetailCase(projectId, baseUrl), ...config, ...reportCases(projectId, baseUrl)];
+  return [...member, memberDetailCase(projectId, baseUrl), ...content, articleDetailCase(projectId, baseUrl), ...config, ...reportCases(projectId, baseUrl), ...publicMatrixCases(projectId, baseUrl)];
 }
 
 export function seedByCases(store, { projectId, baseUrl }) {
