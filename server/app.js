@@ -186,6 +186,10 @@ function sendHtmlDownload(res, filename, html) {
     .send(html);
 }
 
+function supportsSharedApiBatch(protocols) {
+  return protocols.size === 1 || (protocols.size === 2 && protocols.has('by') && protocols.has('byAdmin'));
+}
+
 export function createApp({ runner, performanceRunner = { run: async () => { throw new Error('k6 runner is unavailable'); } }, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), caseAssetsDir = join(projectRoot, 'data/case-assets'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, modelConfig = { source: 'MIDSCENE', baseUrl: '', modelName: '', modelFamily: '', apiKey: '' }, modelConfigManager, cmsSeedCases = [], executionSchedule, performanceSchedule, authRequired = false } = {}) {
   const app = express();
   const sessions = new Map();
@@ -388,7 +392,7 @@ export function createApp({ runner, performanceRunner = { run: async () => { thr
     if (new Set(cases.map((testCase) => testCase.projectId)).size !== 1) return res.status(409).json({ error: '批量执行只能选择同一项目的用例' });
     if (cases[0].target === 'api') {
       const protocols = new Set(cases.flatMap((testCase) => testCase.steps.map((step) => step.request?.protocol || 'cms')));
-      if (protocols.size !== 1) return res.status(409).json({ error: '批量执行只能选择同一接口协议的用例' });
+      if (!supportsSharedApiBatch(protocols)) return res.status(409).json({ error: '批量执行只能选择同一接口协议的用例' });
     }
 
     const name = typeof req.body.name === 'string' && req.body.name.trim()

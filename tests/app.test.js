@@ -358,6 +358,26 @@ describe('execution API', () => {
       .expect({ error: '批量执行只能选择同一接口协议的用例' });
   });
 
+  it('allows BY public and admin API cases to share one project batch', async () => {
+    const app = createApp({ runner: { api: { execute: async () => ({}) } }, store: createMemoryStore(), executionSchedule: () => {} });
+    const publicCase = (await request(app).post('/api/cases').send({
+      id: 'by-public-batch', projectId: 'default-project', name: 'BY 会员列表', target: 'api', baseUrl: 'https://by.example.test', viewport: 'desktop',
+      steps: [{ id: 'members', kind: 'apiRequest', instruction: '查询会员', request: {
+        protocol: 'by', action: '/c-api/v1/members', method: 'GET', payload: {}, expectedStatus: 200, expectedCode: 0, safety: 'readonly', auth: 'none'
+      } }]
+    }).expect(201)).body;
+    const adminCase = (await request(app).post('/api/cases').send({
+      id: 'by-admin-batch', projectId: 'default-project', name: 'BY 后台当前账号', target: 'api', baseUrl: 'https://by.example.test', viewport: 'desktop',
+      steps: [{ id: 'auth-info', kind: 'apiRequest', instruction: '查询当前账号', request: {
+        protocol: 'byAdmin', action: '/admin-api/v1/auth/info', method: 'GET', payload: {}, expectedStatus: 200, safety: 'readonly', auth: 'session'
+      } }]
+    }).expect(201)).body;
+
+    await request(app).post('/api/batches').send({ name: 'BY 联合回归', caseIds: [publicCase.id, adminCase.id] })
+      .expect(202)
+      .expect(({ body }) => expect(body).toMatchObject({ projectId: 'default-project', target: 'api', plannedCaseCount: 2 }));
+  });
+
   it('reports whether the Web UI runner is configured', async () => {
     const app = createApp({
       runner: {},
