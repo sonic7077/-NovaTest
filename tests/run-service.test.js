@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { RunService } from '../server/services/run-service.js';
+import { describe, expect, it, vi } from 'vitest';
+import { DEFAULT_TIMEOUTS, RunService } from '../server/services/run-service.js';
 
 const testCase = {
   id: 'case-1',
@@ -11,6 +11,26 @@ const testCase = {
 };
 
 describe('RunService', () => {
+  it('uses the documented default timeout values', () => {
+    expect(DEFAULT_TIMEOUTS).toEqual({ webStepMs: 120000, apiStepMs: 30000, caseMs: 600000 });
+  });
+
+  it('times out a hanging step, retries once, then fails with a timeout error', async () => {
+    const runner = { execute: async () => new Promise(() => {}) };
+    const run = await new RunService(runner, { webStepMs: 5, caseMs: 100 }).start(testCase);
+
+    expect(run).toMatchObject({ status: 'failed', steps: [{ status: 'failed', attempts: 2, error: 'Web UI 步骤执行超时（5ms）' }] });
+    expect(run.steps[0].logs).toEqual([{ level: 'warn', message: 'Web UI 步骤执行超时（5ms）; retrying once' }]);
+  });
+
+  it('times out the whole case without retrying the active step', async () => {
+    const runner = { execute: async () => new Promise(() => {}), finish: vi.fn() };
+    const run = await new RunService(runner, { webStepMs: 100, caseMs: 5 }).start(testCase);
+
+    expect(run).toMatchObject({ status: 'failed', steps: [{ status: 'failed', attempts: 1, error: '用例执行总时长超时（5ms）' }] });
+    expect(runner.finish).toHaveBeenCalledOnce();
+  });
+
   it('retries a failed step once and records a passed result', async () => {
     let attempts = 0;
     const runner = {
@@ -174,6 +194,22 @@ describe('RunService', () => {
 
     expect(attempts).toBe(1);
     expect(run).toMatchObject({ status: 'skipped', steps: [{ status: 'skipped', attempts: 1, error: expect.stringContaining('前置数据不足') }] });
+  });
+
+  it('skips high-risk API assets without dispatching a request', async () => {
+    let calls = 0;
+    const highRiskCase = {
+      ...testCase, target: 'api',
+      steps: [{ id: 'risk', kind: 'apiRequest', instruction: '不执行高风险操作', request: {
+        protocol: 'byAdmin', action: '/admin-api/v1/telegram/user-history/sync', method: 'POST', payload: {},
+        expectedStatus: 200, safety: 'mutating', skipReason: '高风险操作需要独立授权'
+      } }]
+    };
+
+    const run = await new RunService({ api: { execute: async () => { calls += 1; } } }).start(highRiskCase);
+
+    expect(calls).toBe(0);
+    expect(run).toMatchObject({ status: 'skipped', steps: [{ status: 'skipped', attempts: 0, error: '高风险操作需要独立授权' }] });
   });
 
   it('interpolates one random title suffix and persists visual check results', async () => {

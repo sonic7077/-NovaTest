@@ -3,6 +3,7 @@ import { createMemoryStore } from '../server/app.js';
 import { BatchService } from '../server/services/batch-service.js';
 import { decryptPayload, encryptPayload } from '../server/services/cms-crypto.js';
 import { CmsApiRunner } from '../server/runners/cms-api-runner.js';
+import { DaygfApiRunner } from '../server/runners/daygf-api-runner.js';
 
 const firstCase = {
   id: 'case-1',
@@ -117,6 +118,35 @@ describe('BatchService', () => {
     expect(new Set(contexts.map((context) => context.selectedApiIds))).toHaveLength(1);
   });
 
+  it('shares one Daygf login session and persists redacted API evidence across API runs', async () => {
+    const calls = [];
+    const runner = new DaygfApiRunner({
+      config: { baseUrl: 'https://daygf.example.test', username: 'daygf-user', password: 'daygf-password' },
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        if (url.endsWith('/api/login')) return { ok: true, status: 200, json: async () => ({ ok: true, token: 'private-jwt', refresh_token: 'private-refresh' }) };
+        return { ok: true, status: 200, json: async () => ({ ok: true, items: [] }) };
+      }
+    });
+    const cases = ['/api/me', '/api/profile/data'].map((action, index) => ({
+      id: `daygf-${index + 1}`, projectId: 'default-project', name: action, target: 'api', baseUrl: 'https://daygf.example.test', viewport: 'desktop',
+      steps: [{ id: `step-${index + 1}`, kind: 'apiRequest', instruction: action, request: { protocol: 'daygf', action, method: 'GET', payload: {}, expectedStatus: 200, safety: 'readonly' } }]
+    }));
+    const store = createMemoryStore();
+
+    const batch = await new BatchService({ runner: { api: runner }, store }).start({
+      name: 'Daygf 只读冒烟', projectId: 'default-project', caseIds: cases.map((testCase) => testCase.id), cases
+    });
+
+    expect(calls.map(({ url }) => new URL(url).pathname)).toEqual(['/api/login', '/api/me', '/api/profile/data']);
+    expect(batch.status).toBe('passed');
+    const saved = batch.runIds.flatMap((id) => store.getRun(id).steps.map((step) => step.api));
+    const evidence = JSON.stringify(saved);
+    expect(evidence).not.toContain('daygf-password');
+    expect(evidence).not.toContain('private-jwt');
+    expect(evidence).not.toContain('private-refresh');
+  });
+
   it('resolves each Web UI case project for a batch run', async () => {
     const store = createMemoryStore();
     store.saveProject({ id: 'default-project', name: '默认项目', webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' } });
@@ -128,5 +158,37 @@ describe('BatchService', () => {
 
     expect(contexts).toHaveLength(1);
     expect(contexts[0].project.webAuth).toEqual({ provider: 'lighthouse', host: 'dt.chenmoyuan.tech' });
+  });
+
+  it('runs Web cases in isolated account workers and persists a worker summary', async () => {
+    const store = createMemoryStore();
+    const workers = [];
+    const runner = {
+      web: {
+        createWorker: async () => {
+          const worker = { execute: async (_step, context) => ({ variables: { account: context.worker.account.username } }), finish: async () => {} };
+          workers.push(worker);
+          return { ...worker, close: async () => {} };
+        }
+      }
+    };
+    const batch = { id: 'batch-workers', projectId: 'default-project', target: 'web', caseIds: [firstCase.id], runIds: [], allowMutations: false };
+
+    await new BatchService({ runner, store }).execute({
+      batch,
+      cases: [firstCase],
+      webWorkers: {
+        accounts: [{ username: 'nt01', password: 'Aa01' }, { username: 'nt02', password: 'Aa02' }],
+        maxConcurrency: 2,
+        workerTimeoutMs: 1000,
+        messageCount: 1,
+        image: { status: 'passed' }
+      }
+    });
+
+    expect(workers).toHaveLength(2);
+    expect(batch.runIds).toHaveLength(2);
+    expect(batch.workerSummary).toMatchObject({ total: 2, passed: 2, failed: 0, messageCount: 2, imagePassed: 2 });
+    expect(batch.runIds.map((id) => store.getRun(id).workerId)).toEqual(['worker-1', 'worker-2']);
   });
 });

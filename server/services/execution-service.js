@@ -1,5 +1,12 @@
-import { BatchService } from './batch-service.js';
+import { BatchService, resolveBatchStatus } from './batch-service.js';
 import { RunService } from './run-service.js';
+
+function batchPlan(cases, multiplier = 1) {
+  return {
+    plannedCaseCount: cases.length * multiplier,
+    plannedStepCount: cases.reduce((total, testCase) => total + testCase.steps.length, 0) * multiplier
+  };
+}
 
 function failRun(run, error) {
   const activeStep = run.steps.find((step) => ['queued', 'running'].includes(step.status));
@@ -14,12 +21,12 @@ function failRun(run, error) {
 }
 
 export class ExecutionService {
-  constructor({ runner, store, schedule = setImmediate }) {
+  constructor({ runner, store, schedule = setImmediate, timeouts }) {
     this.runner = runner;
     this.store = store;
     this.schedule = schedule;
-    this.runService = new RunService(runner);
-    this.batchService = new BatchService({ runner, store });
+    this.runService = new RunService(runner, timeouts);
+    this.batchService = new BatchService({ runner, store, timeouts });
   }
 
   queueRun(testCase, { allowMutations = false } = {}) {
@@ -29,21 +36,30 @@ export class ExecutionService {
     return run;
   }
 
-  queueBatch({ name, projectId, target, caseIds, cases, allowMutations = false }) {
+  queueBatch({ name, projectId, target, caseIds, cases, allowMutations = false, webWorkers }) {
+    const workerCount = target === 'web' && webWorkers?.accounts?.length ? webWorkers.accounts.length : 1;
     const batch = {
       id: crypto.randomUUID(),
       name,
       projectId,
       target: target || cases[0]?.target || null,
       caseIds: [...caseIds],
+      ...batchPlan(cases, workerCount),
       status: 'queued',
       runIds: [],
       startedAt: null,
       finishedAt: null,
-      allowMutations: Boolean(allowMutations)
+      allowMutations: Boolean(allowMutations),
+      ...(target === 'web' && webWorkers?.accounts?.length ? {
+        workerConfig: {
+          workerCount,
+          maxConcurrency: webWorkers.maxConcurrency,
+          workerTimeoutMs: webWorkers.workerTimeoutMs
+        }
+      } : {})
     };
     this.store.saveBatch(batch);
-    this.schedule(() => { void this.executeBatch(batch, cases); });
+    this.schedule(() => { void this.executeBatch(batch, cases, webWorkers); });
     return batch;
   }
 
@@ -61,7 +77,7 @@ export class ExecutionService {
     }
   }
 
-  async executeBatch(batch, cases) {
+  async executeBatch(batch, cases, webWorkers) {
     batch.status = 'running';
     batch.startedAt = new Date().toISOString();
     this.store.saveBatch(batch);
@@ -71,8 +87,8 @@ export class ExecutionService {
       : undefined;
 
     try {
-      await this.batchService.execute({ batch, cases, apiSession });
-      batch.status = batch.runIds.every((runId) => this.store.getRun(runId)?.status === 'passed') ? 'passed' : 'failed';
+      await this.batchService.execute({ batch, cases, apiSession, webWorkers });
+      batch.status = resolveBatchStatus(batch.runIds.map((runId) => this.store.getRun(runId)));
     } catch (error) {
       batch.status = 'failed';
       batch.error = error.message;

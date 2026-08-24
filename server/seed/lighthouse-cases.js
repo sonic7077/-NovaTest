@@ -1,5 +1,8 @@
 const LIGHTHOUSE_TASK_CASE_ID = '76e41c5c-08b2-45c5-b1b6-a4f38e097b1a';
 const LIGHTHOUSE_TASK_CASE_NAME = '无极灯塔 - 任务清单识别与新建任务';
+const LIGHTHOUSE_READONLY_CASE_ID = '1f2c2396-a44c-42da-88f0-2fd3444e7591';
+const LIGHTHOUSE_READONLY_CASE_NAME = '无极灯塔 - 任务清单只读识别';
+const readonlyInstruction = '查看“我负责的”任务列表，确认页面已加载且可见任务内容。不得创建、编辑、删除任务，也不得变更任何任务状态；保留页面截图证据。';
 
 const legacyInstructions = [
   '确认“我负责的”任务列表已加载。',
@@ -33,5 +36,19 @@ export function upgradeLighthouseTaskListCase(store) {
       instruction
     }))
   });
+  return true;
+}
+
+export function upgradeLighthouseReadonlyCase(store) {
+  const existing = store.getCase(LIGHTHOUSE_READONLY_CASE_ID);
+  const step = existing?.steps?.[0];
+  if (existing?.name !== LIGHTHOUSE_READONLY_CASE_NAME
+    || existing.target !== 'web'
+    || existing.steps?.length !== 1
+    || step?.id !== 'verify-task-list'
+    || step.kind !== 'action'
+    || step.instruction !== readonlyInstruction) return false;
+
+  store.saveCase({ ...existing, steps: [{ ...step, kind: 'assert' }] });
   return true;
 }

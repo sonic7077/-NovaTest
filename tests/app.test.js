@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp, createMemoryStore } from '../server/app.js';
+import { DEFAULT_DAYGF_SCENARIO } from '../server/domain/performance.js';
 import { renderBatchReport, renderReport } from '../server/services/report-service.js';
 import { cmsWhitebagCases } from '../server/seed/cms-whitebag-cases.js';
 
@@ -35,6 +36,31 @@ async function waitForTerminal(app, path) {
 }
 
 describe('execution API', () => {
+  it('creates public performance assets and rejects runs until the selected pool is sufficient', async () => {
+    const app = createApp({ runner: {}, store: createMemoryStore(), performanceSchedule: () => {} });
+    const project = (await request(app).post('/api/projects').send({ name: '一日女友性能' }).expect(201)).body;
+    const asset = {
+      projectId: project.id, name: '登录浏览点赞基线', protocol: 'daygf', baseUrl: 'https://daygf.example.test', accountPoolId: 'pool-1',
+      dataset: { postIds: [101], historyContentIds: [201] }, securityProbe: { enabled: false, postId: 999 }, ...DEFAULT_DAYGF_SCENARIO
+    };
+
+    const created = await request(app).post('/api/performance/assets').send(asset).expect(201);
+    expect(created.body).toMatchObject({ projectId: project.id, protocol: 'daygf' });
+    await request(app).post(`/api/performance/assets/${created.body.id}/runs`).expect(409);
+
+    const pool = await request(app).post('/api/performance/pools').send({
+      id: 'pool-1', projectId: project.id, name: '100 VU 账号池',
+      accounts: Array.from({ length: 100 }, (_, index) => ({ username: `vu-${index}`, password: 'private-password' }))
+    }).expect(201);
+    expect(JSON.stringify(pool.body)).not.toContain('private-password');
+    const run = await request(app).post(`/api/performance/assets/${created.body.id}/runs`).expect(202)
+      .expect(({ body }) => expect(body).toMatchObject({ status: 'queued', projectId: project.id }));
+    await request(app).get(`/api/performance/runs/${run.body.id}/report`).expect(200).expect('content-type', /html/)
+      .expect(({ text }) => expect(text).toContain('登录浏览点赞基线'));
+    await request(app).get(`/api/performance/runs/${run.body.id}/report/download`).expect(200)
+      .expect('content-disposition', /attachment/);
+  });
+
   it('protects platform APIs and supports login, profile updates, password changes and logout', async () => {
     const app = createApp({ runner: {}, store: createMemoryStore(), authRequired: true });
     const agent = request.agent(app);
@@ -192,6 +218,38 @@ describe('execution API', () => {
       });
   });
 
+  it('queues an isolated Web Worker batch and exposes its aggregate report', async () => {
+    const app = createApp({
+      runner: {
+        web: {
+          createWorker: async () => ({
+            execute: async (_step, context) => ({ variables: { worker: context.worker.workerId } }),
+            finish: async () => {},
+            close: async () => {}
+          })
+        }
+      },
+      store: createMemoryStore()
+    });
+    const created = (await request(app).post('/api/cases').send(webCase).expect(201)).body;
+    const batch = await request(app).post('/api/batches').send({
+      name: '独立浏览器回归', caseIds: [created.id],
+      webWorkers: {
+        accounts: [{ username: 'nt01', password: 'Aa01' }, { username: 'nt02', password: 'Aa02' }],
+        maxConcurrency: 2, workerTimeoutMs: 1000, messageCount: 2, image: { status: 'passed' }
+      }
+    }).expect(202);
+
+    expect(JSON.stringify(batch.body)).not.toContain('Aa01');
+    const completed = await waitForTerminal(app, `/api/batches/${batch.body.id}`);
+    expect(completed).toMatchObject({ plannedCaseCount: 2, workerSummary: { total: 2, passed: 2, messageCount: 4, imagePassed: 2 } });
+    await request(app).get(`/api/batches/${batch.body.id}/report`).expect(200).expect(({ text }) => {
+      expect(text).toContain('独立浏览器 Worker 汇总');
+      expect(text).toContain('nt01');
+      expect(text).not.toContain('Aa01');
+    });
+  });
+
   it('serves one summary report for every run in a batch', async () => {
     const app = createApp({ runner: { execute: async () => ({}) }, store: createMemoryStore() });
     const first = (await request(app).post('/api/cases').send(webCase).expect(201)).body;
@@ -210,6 +268,39 @@ describe('execution API', () => {
         expect(response.text).toContain('详情验证');
       });
     await request(app).get('/api/batches/missing/report').expect(404);
+  });
+
+  it('downloads the same HTML as a single-run report with a safe filename', async () => {
+    const store = createMemoryStore();
+    store.saveRun({
+      id: 'download-run', caseId: 'deleted-case', caseName: '登录/回归', projectId: 'default-project', target: 'web',
+      status: 'passed', startedAt: null, finishedAt: null, variables: {}, steps: []
+    });
+    const app = createApp({ runner: {}, store });
+
+    const preview = await request(app).get('/api/runs/download-run/report').expect(200);
+    await request(app).get('/api/runs/download-run/report/download').expect(200)
+      .expect('content-type', /html/)
+      .expect('content-disposition', /attachment/)
+      .expect('content-disposition', /filename\*=UTF-8''/)
+      .expect((response) => {
+        expect(response.headers['content-disposition']).toContain(encodeURIComponent('登录_回归-测试报告.html'));
+        expect(response.text).toBe(preview.text);
+      });
+    await request(app).get('/api/runs/missing/report/download').expect(404);
+  });
+
+  it('downloads the same HTML as a batch report', async () => {
+    const store = createMemoryStore();
+    store.saveRun({ id: 'batch-run', caseId: 'case-1', caseName: '查询', projectId: 'default-project', target: 'api', status: 'passed', startedAt: null, finishedAt: null, variables: {}, steps: [] });
+    store.saveBatch({ id: 'download-batch', name: '批量/回归', status: 'passed', runIds: ['batch-run'] });
+    const app = createApp({ runner: {}, store });
+
+    const preview = await request(app).get('/api/batches/download-batch/report').expect(200);
+    await request(app).get('/api/batches/download-batch/report/download').expect(200)
+      .expect('content-disposition', /attachment/)
+      .expect((response) => expect(response.text).toBe(preview.text));
+    await request(app).get('/api/batches/missing/report/download').expect(404);
   });
 
   it('filters batch history by its persisted project ID', async () => {
@@ -231,9 +322,11 @@ describe('execution API', () => {
   it('lists persisted execution, dashboard, and report summaries', async () => {
     const store = createMemoryStore();
     store.saveCase(webCase);
+    const startedAt = new Date(Date.now() - 20_000).toISOString();
+    const finishedAt = new Date(Date.now() - 10_000).toISOString();
     store.saveRun({
       id: 'failed-run', caseId: webCase.id, caseName: webCase.name, projectId: 'default-project', target: 'web', status: 'failed',
-      startedAt: '2026-07-19T10:00:00.000Z', finishedAt: '2026-07-19T10:00:10.000Z', variables: {},
+      startedAt, finishedAt, variables: {},
       steps: [{ id: 's1', status: 'failed', attempts: 2, error: '页面未就绪', logs: [] }]
     });
     const app = createApp({ runner: {}, store });
@@ -279,6 +372,42 @@ describe('execution API', () => {
     await request(app).post('/api/batches').send({ caseIds: [web.id, api.id] }).expect(400).expect((response) => {
       expect(response.body.error).toBe('batch cases must share one target');
     });
+  });
+
+  it('rejects a batch that mixes CMS and Editorial API protocols', async () => {
+    const app = createApp({ runner: { api: { execute: async () => ({}) } }, store: createMemoryStore(), executionSchedule: () => {} });
+    const cms = (await request(app).post('/api/cases').send(apiCase).expect(201)).body;
+    const editorial = (await request(app).post('/api/cases').send({
+      ...apiCase,
+      name: 'AI 评论概览',
+      baseUrl: 'https://editorial.example.test',
+      steps: [{ id: 'summary', kind: 'apiRequest', instruction: '查询概览', request: {
+        protocol: 'editorial', action: 'ai-comment/summary', method: 'GET', payload: {}, expectedStatus: 200, safety: 'readonly'
+      } }]
+    }).expect(201)).body;
+
+    await request(app).post('/api/batches').send({ caseIds: [cms.id, editorial.id] }).expect(409)
+      .expect({ error: '批量执行只能选择同一接口协议的用例' });
+  });
+
+  it('allows BY public and admin API cases to share one project batch', async () => {
+    const app = createApp({ runner: { api: { execute: async () => ({}) } }, store: createMemoryStore(), executionSchedule: () => {} });
+    const publicCase = (await request(app).post('/api/cases').send({
+      id: 'by-public-batch', projectId: 'default-project', name: 'BY 会员列表', target: 'api', baseUrl: 'https://by.example.test', viewport: 'desktop',
+      steps: [{ id: 'members', kind: 'apiRequest', instruction: '查询会员', request: {
+        protocol: 'by', action: '/c-api/v1/members', method: 'GET', payload: {}, expectedStatus: 200, expectedCode: 0, safety: 'readonly', auth: 'none'
+      } }]
+    }).expect(201)).body;
+    const adminCase = (await request(app).post('/api/cases').send({
+      id: 'by-admin-batch', projectId: 'default-project', name: 'BY 后台当前账号', target: 'api', baseUrl: 'https://by.example.test', viewport: 'desktop',
+      steps: [{ id: 'auth-info', kind: 'apiRequest', instruction: '查询当前账号', request: {
+        protocol: 'byAdmin', action: '/admin-api/v1/auth/info', method: 'GET', payload: {}, expectedStatus: 200, safety: 'readonly', auth: 'session'
+      } }]
+    }).expect(201)).body;
+
+    await request(app).post('/api/batches').send({ name: 'BY 联合回归', caseIds: [publicCase.id, adminCase.id] })
+      .expect(202)
+      .expect(({ body }) => expect(body).toMatchObject({ projectId: 'default-project', target: 'api', plannedCaseCount: 2 }));
   });
 
   it('reports whether the Web UI runner is configured', async () => {
@@ -327,10 +456,29 @@ describe('execution API', () => {
         baseUrl: 'https://model.example/api',
         modelName: 'vision-model',
         modelFamily: 'gemini',
-        apiKey: 'pro****************'
+        apiKey: 'pro****************',
+        hasApiKey: true
       });
       expect(JSON.stringify(body)).not.toContain('provider-secret-key');
     });
+  });
+
+  it('requires an authenticated session to update model configuration', async () => {
+    const saved = [];
+    const app = createApp({
+      runner: {},
+      store: createMemoryStore(),
+      authRequired: true,
+      modelConfigManager: {
+        getPublicConfig: () => ({ source: 'PLATFORM', baseUrl: 'https://model.example', modelName: 'vision', modelFamily: '', apiKey: 'mod****************', hasApiKey: true }),
+        async update(input) { saved.push(input); return this.getPublicConfig(); }
+      }
+    });
+
+    await request(app).put('/api/model-config').send({ baseUrl: 'https://model.example', modelName: 'vision' }).expect(401);
+    const login = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'admin123' }).expect(200);
+    await request(app).put('/api/model-config').set('Cookie', login.headers['set-cookie']).send({ baseUrl: 'https://model.example', modelName: 'vision' }).expect(200).expect(({ body }) => expect(body.hasApiKey).toBe(true));
+    expect(saved).toEqual([{ baseUrl: 'https://model.example', modelName: 'vision' }]);
   });
 
   it('seeds read-only CMS cases idempotently without running them', () => {
@@ -447,6 +595,71 @@ describe('execution API', () => {
     expect(report).not.toContain('123456');
   });
 
+  it('renders BY business-code evidence with redacted contact data', () => {
+    const report = renderReport({
+      id: 'by-run', status: 'failed', startedAt: null, variables: {}, steps: [{
+        id: 'report', status: 'failed', attempts: 1, error: 'BY business assertion failed', api: {
+          action: '/c-api/v1/reports', method: 'POST', httpStatus: 200, businessStatus: 40000, durationMs: 15,
+          request: { contact: 'private' }, response: { code: 40000, data: { contact: 'private' } }
+        }
+      }]
+    }, 'BY 举报校验');
+
+    expect(report).toContain('业务状态 40000');
+    expect(report).toContain('********');
+    expect(report).not.toContain('private');
+  });
+
+  it('renders a single report download link and jumps from status chips to matching steps', () => {
+    const report = renderReport({
+      id: 'run-export', status: 'failed', startedAt: '2026-08-04T00:00:00.000Z',
+      finishedAt: '2026-08-04T00:00:01.000Z', variables: {},
+      steps: [
+        { id: 'passed-step', status: 'passed', attempts: 1, logs: [] },
+        { id: 'failed-step', status: 'failed', attempts: 1, logs: [] }
+      ]
+    }, '导出用例');
+
+    expect(report).toContain('href="/api/runs/run-export/report/download"');
+    expect(report).toContain('href="#step-passed-step"');
+    expect(report).toContain('href="#step-failed-step"');
+    expect(report).toContain('status-chip skipped disabled');
+    expect(report).toContain('id="step-failed-step"');
+  });
+
+  it('renders batch status chips that link to matching result sections', () => {
+    const report = renderBatchReport(
+      { id: 'batch-export', name: '导出批量', status: 'failed', startedAt: null, finishedAt: null },
+      [
+        { id: 'run-passed', caseName: '通过用例', status: 'passed', startedAt: null, finishedAt: null, steps: [] },
+        { id: 'run-failed', caseName: '失败用例', status: 'failed', startedAt: null, finishedAt: null, steps: [] }
+      ]
+    );
+
+    expect(report).toContain('href="/api/batches/batch-export/report/download"');
+    expect(report).toContain('href="#batch-status-passed"');
+    expect(report).toContain('href="#batch-status-failed"');
+    expect(report).toContain('status-chip skipped disabled');
+    expect(report).toContain('id="run-run-failed"');
+  });
+
+  it('groups batch report runs by final status while retaining order within each group', () => {
+    const report = renderBatchReport({ id: 'batch-grouped', name: '状态归类', status: 'failed' }, [
+      { id: 'pass-first', caseName: '通过一', status: 'passed', steps: [] },
+      { id: 'fail-first', caseName: '失败一', status: 'failed', steps: [] },
+      { id: 'skip-first', caseName: '跳过一', status: 'skipped', steps: [] },
+      { id: 'pass-second', caseName: '通过二', status: 'passed', steps: [] }
+    ]);
+
+    expect(report).toContain('id="batch-status-failed"');
+    expect(report).toContain('id="batch-status-skipped"');
+    expect(report).toContain('id="batch-status-passed"');
+    expect(report.indexOf('失败用例（1）')).toBeLessThan(report.indexOf('跳过用例（1）'));
+    expect(report.indexOf('跳过用例（1）')).toBeLessThan(report.indexOf('通过用例（2）'));
+    expect(report.indexOf('通过一')).toBeLessThan(report.indexOf('通过二'));
+    expect(report).toContain('href="#batch-status-failed"');
+  });
+
   it('renders a batch report with Shanghai local time and ordered run details', () => {
     const report = renderBatchReport(
       { id: 'batch-1', name: '查询回归', status: 'failed', startedAt: '2026-07-18T05:40:00.000Z', finishedAt: '2026-07-18T05:41:02.000Z', caseIds: ['case-1', 'case-2'] },
@@ -457,7 +670,9 @@ describe('execution API', () => {
     );
 
     expect(report).toContain('查询回归');
-    expect(report).toContain('<strong>1</strong> 通过 · <strong>0</strong> 跳过 · <strong>1</strong> 失败');
+    expect(report).toContain('class="status-chip passed" href="#batch-status-passed"><strong>1</strong> 通过');
+    expect(report).toContain('class="status-chip skipped disabled" aria-disabled="true"><strong>0</strong> 跳过');
+    expect(report).toContain('class="status-chip failed" href="#batch-status-failed"><strong>1</strong> 失败');
     expect(report).toContain('2026-07-18 13:40:00');
     expect(report).toContain('帖子列表查询');
     expect(report).toContain('评论列表查询');
@@ -483,7 +698,8 @@ describe('execution API', () => {
 
   it('lists skipped single-run reports for prerequisite outcomes', async () => {
     const store = createMemoryStore();
-    store.saveRun({ id: 'skipped-run', caseId: 'case-1', caseName: '用户资料审核', projectId: 'default-project', target: 'api', status: 'skipped', startedAt: '2026-07-20T00:00:00.000Z', finishedAt: '2026-07-20T00:00:01.000Z', variables: {}, steps: [] });
+    const now = new Date();
+    store.saveRun({ id: 'skipped-run', caseId: 'case-1', caseName: '用户资料审核', projectId: 'default-project', target: 'api', status: 'skipped', startedAt: new Date(now.getTime() - 1_000).toISOString(), finishedAt: now.toISOString(), variables: {}, steps: [] });
     const app = createApp({ runner: {}, store });
 
     await request(app).get('/api/reports?range=30d').expect(200).expect(({ body }) => {

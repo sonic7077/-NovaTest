@@ -1,0 +1,497 @@
+{
+  "version": 5,
+  "tags": [
+    {
+      "tag_id": "热门",
+      "name": "热门",
+      "parent_id": null,
+      "dimension": "题材"
+    },
+    {
+      "tag_id": "热门/最新",
+      "name": "最新",
+      "parent_id": "热门",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "偷拍",
+      "name": "偷拍",
+      "parent_id": null,
+      "dimension": "题材"
+    },
+    {
+      "tag_id": "偷拍/酒店",
+      "name": "酒店",
+      "parent_id": "偷拍",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "偷拍/厕所",
+      "name": "厕所",
+      "parent_id": "偷拍",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "偷拍/办公室",
+      "name": "办公室",
+      "parent_id": "偷拍",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "偷拍/尾随",
+      "name": "尾随",
+      "parent_id": "偷拍",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "探花",
+      "name": "探花",
+      "parent_id": null,
+      "dimension": "题材"
+    },
+    {
+      "tag_id": "探花/主播探花",
+      "name": "主播探花",
+      "parent_id": "探花",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "探花/素人探花",
+      "name": "素人探花",
+      "parent_id": "探花",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "颜值身材",
+      "name": "颜值身材",
+      "parent_id": null,
+      "dimension": "题材"
+    },
+    {
+      "tag_id": "审美/巨乳",
+      "name": "巨乳",
+      "parent_id": "颜值身材",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "审美/长腿",
+      "name": "长腿",
+      "parent_id": "颜值身材",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "审美/颜值",
+      "name": "颜值",
+      "parent_id": "颜值身材",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "审美/翘臀",
+      "name": "翘臀",
+      "parent_id": "颜值身材",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "审美/玉足",
+      "name": "玉足",
+      "parent_id": "颜值身材",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "美穴/粉嫩",
+      "name": "粉嫩",
+      "parent_id": "颜值身材",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "美穴/黑鲍",
+      "name": "黑鲍",
+      "parent_id": "颜值身材",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "穿搭/黑丝",
+      "name": "黑丝",
+      "parent_id": "颜值身材",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "穿搭/瑜伽裤",
+      "name": "瑜伽裤",
+      "parent_id": "颜值身材",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "穿搭/牛仔裤",
+      "name": "牛仔裤",
+      "parent_id": "颜值身材",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "穿搭/情趣内衣",
+      "name": "情趣内衣",
+      "parent_id": "颜值身材",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "穿搭/比基尼",
+      "name": "比基尼",
+      "parent_id": "颜值身材",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "角色身份",
+      "name": "角色身份",
+      "parent_id": null,
+      "dimension": "题材"
+    },
+    {
+      "tag_id": "职业/空姐",
+      "name": "空姐",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "职业/医生",
+      "name": "医生",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "职业/教师",
+      "name": "教师",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "职业/明星",
+      "name": "明星",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "职业/网红",
+      "name": "网红",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "职业/学生",
+      "name": "学生",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "职业/精神小妹",
+      "name": "精神小妹",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "职业/潜规则",
+      "name": "潜规则",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "学生妹/风骚反差",
+      "name": "风骚反差",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "学生妹/水嫩清纯",
+      "name": "水嫩清纯",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "熟女/丰满",
+      "name": "丰满",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "熟女/苗条",
+      "name": "苗条",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "萝莉/二次元",
+      "name": "二次元",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "萝莉/福利姬",
+      "name": "福利姬",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "萝莉/JK",
+      "name": "JK",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "萝莉/美少女",
+      "name": "美少女",
+      "parent_id": "角色身份",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "玩法姿势",
+      "name": "玩法姿势",
+      "parent_id": null,
+      "dimension": "题材"
+    },
+    {
+      "tag_id": "做爱/手淫",
+      "name": "手淫",
+      "parent_id": "玩法姿势",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "做爱/口交",
+      "name": "口交",
+      "parent_id": "玩法姿势",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "做爱/腿交",
+      "name": "腿交",
+      "parent_id": "玩法姿势",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "做爱/足交",
+      "name": "足交",
+      "parent_id": "玩法姿势",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "做爱/臀交",
+      "name": "臀交",
+      "parent_id": "玩法姿势",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "自慰/帅哥自慰",
+      "name": "帅哥自慰",
+      "parent_id": "玩法姿势",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "自慰/美女自慰",
+      "name": "美女自慰",
+      "parent_id": "玩法姿势",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "内射/无套特写",
+      "name": "无套特写",
+      "parent_id": "玩法姿势",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "内射/中出",
+      "name": "中出",
+      "parent_id": "玩法姿势",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "调教SM",
+      "name": "调教SM",
+      "parent_id": null,
+      "dimension": "题材"
+    },
+    {
+      "tag_id": "SM/捆绑",
+      "name": "捆绑",
+      "parent_id": "调教SM",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "SM/道具",
+      "name": "道具",
+      "parent_id": "调教SM",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "SM/炮机",
+      "name": "炮机",
+      "parent_id": "调教SM",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "SM/凌辱",
+      "name": "凌辱",
+      "parent_id": "调教SM",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "调教/女王",
+      "name": "女王",
+      "parent_id": "调教SM",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "调教/母狗",
+      "name": "母狗",
+      "parent_id": "调教SM",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "剧情关系",
+      "name": "剧情关系",
+      "parent_id": null,
+      "dimension": "题材"
+    },
+    {
+      "tag_id": "乱伦/父女",
+      "name": "父女",
+      "parent_id": "剧情关系",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "乱伦/母子",
+      "name": "母子",
+      "parent_id": "剧情关系",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "乱伦/姐弟",
+      "name": "姐弟",
+      "parent_id": "剧情关系",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "乱伦/亲属",
+      "name": "亲属",
+      "parent_id": "剧情关系",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "奸污/暴力强奸",
+      "name": "暴力强奸",
+      "parent_id": "剧情关系",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "奸污/下药迷奸",
+      "name": "下药迷奸",
+      "parent_id": "剧情关系",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "绿帽/绿帽男",
+      "name": "绿帽男",
+      "parent_id": "剧情关系",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "绿帽/绿帽女",
+      "name": "绿帽女",
+      "parent_id": "剧情关系",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "多人/2男1女",
+      "name": "2男1女",
+      "parent_id": "剧情关系",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "多人/2女1男",
+      "name": "2女1男",
+      "parent_id": "剧情关系",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "多人/多人群P",
+      "name": "多人群P",
+      "parent_id": "剧情关系",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "片源风格",
+      "name": "片源风格",
+      "parent_id": null,
+      "dimension": "题材"
+    },
+    {
+      "tag_id": "日本/日式素人",
+      "name": "日式素人",
+      "parent_id": "片源风格",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "日本/日式AV",
+      "name": "日式AV",
+      "parent_id": "片源风格",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "欧美/欧美素人",
+      "name": "欧美素人",
+      "parent_id": "片源风格",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "欧美/欧美AV",
+      "name": "欧美AV",
+      "parent_id": "片源风格",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "动漫/3D动漫",
+      "name": "3D动漫",
+      "parent_id": "片源风格",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "动漫/2D动漫",
+      "name": "2D动漫",
+      "parent_id": "片源风格",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "冷门",
+      "name": "冷门",
+      "parent_id": null,
+      "dimension": "题材"
+    },
+    {
+      "tag_id": "冷门/TS（人妖）",
+      "name": "TS（人妖）",
+      "parent_id": "冷门",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "冷门/男同",
+      "name": "男同",
+      "parent_id": "冷门",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "冷门/三级片",
+      "name": "三级片",
+      "parent_id": "冷门",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "处女/破处",
+      "name": "破处",
+      "parent_id": "冷门",
+      "dimension": "子类"
+    },
+    {
+      "tag_id": "精选",
+      "name": "精选",
+      "parent_id": "热门",
+      "dimension": "题材"
+    }
+  ]
+}

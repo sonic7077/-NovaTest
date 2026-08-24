@@ -1,8 +1,8 @@
 import { createCipheriv, createDecipheriv, createHash } from 'node:crypto';
 
 const SECRET_MASK = '********';
-const TRANSPORT_SECRET_KEY = /token|password|secret|data|sign|key|iv/i;
-const BUSINESS_SECRET_KEY = /token|password|secret|sign|key|iv|encrypt|sha/i;
+const TRANSPORT_SECRET_KEY = /authorization|token|password|secret|data|sign|key|iv|contact/i;
+const BUSINESS_SECRET_KEY = /authorization|token|password|secret|sign|key|iv|encrypt|sha|contact/i;
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -29,6 +29,9 @@ export function buildRequestBody(payload, config, timestamp = Math.floor(Date.no
 }
 
 function redactByKey(value, secretKey) {
+  if (typeof value === 'string') {
+    return value.replace(/([?&](?:auth(?:entication)?[_-]?key|token|access[_-]?token|refresh[_-]?token|signature|sign)=)[^&#\s]*/gi, '$1********');
+  }
   if (Array.isArray(value)) return value.map((item) => redactByKey(item, secretKey));
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, secretKey.test(key) ? SECRET_MASK : redactByKey(item, secretKey)]));

@@ -5,17 +5,25 @@ import { fileURLToPath } from 'node:url';
 import { basename, join } from 'node:path';
 import multer from 'multer';
 import { validateWebCase } from './domain/case.js';
+import { publicAccountPool, validateAccountPool, validatePerformanceAsset } from './domain/performance.js';
 import { normalizeProjectWebAuth } from './domain/project-auth.js';
 import { renderBatchReport, renderReport } from './services/report-service.js';
 import { ExecutionService } from './services/execution-service.js';
 import { hashPasswordSync, publicUser, validatePasswordChange, validateProfile, verifyPassword } from './services/auth-service.js';
 import { createCaseAssetService } from './services/case-asset-service.js';
+import { publicModelConfig } from './services/model-config-service.js';
+import { PerformanceService } from './services/performance-service.js';
+import { renderPerformanceReport } from './services/performance-report-service.js';
 
 export function createMemoryStore() {
   const cases = new Map();
   const runs = new Map();
   const batches = new Map();
+  const performancePools = new Map();
+  const performanceAssets = new Map();
+  const performanceRuns = new Map();
   const users = new Map();
+  let modelConfig;
   const projects = new Map([['default-project', { id: 'default-project', name: '默认项目', webAuth: undefined, createdAt: '1970-01-01T00:00:00.000Z', updatedAt: '1970-01-01T00:00:00.000Z' }]]);
   function listProjects() {
     return [...projects.values()].map((project) => {
@@ -34,7 +42,7 @@ export function createMemoryStore() {
     const batchItems = [...batches.values()].filter((batch) => matches(batch, filters)).map((batch) => {
       const batchRuns = batch.runIds.map((id) => runs.get(id)).filter(Boolean);
       const steps = batchRuns.flatMap((run) => run.steps || []);
-      return { ...batch, kind: 'batch', projectName: projects.get(batch.projectId)?.name, totalCases: batch.caseIds.length, completedCases: batchRuns.filter((run) => ['passed', 'failed', 'skipped'].includes(run.status)).length, totalSteps: steps.length, completedSteps: steps.filter((step) => ['passed', 'failed', 'skipped'].includes(step.status)).length, currentCaseName: batchRuns.find((run) => ['queued', 'running'].includes(run.status))?.caseName };
+      return { ...batch, kind: 'batch', projectName: projects.get(batch.projectId)?.name, totalCases: batch.plannedCaseCount || batch.caseIds.length, completedCases: batchRuns.filter((run) => ['passed', 'failed', 'skipped'].includes(run.status)).length, totalSteps: batch.plannedStepCount || steps.length, completedSteps: steps.filter((step) => ['passed', 'failed', 'skipped'].includes(step.status)).length, currentCaseName: batchRuns.find((run) => ['queued', 'running'].includes(run.status))?.caseName };
     });
     const runItems = [...runs.values()].filter((run) => !run.batchId && matches(run, filters)).map((run) => ({ ...run, kind: 'run', name: run.caseName, projectName: projects.get(run.projectId)?.name, totalCases: 1, completedCases: ['passed', 'failed', 'skipped'].includes(run.status) ? 1 : 0, totalSteps: run.steps.length, completedSteps: run.steps.filter((step) => ['passed', 'failed', 'skipped'].includes(step.status)).length, currentCaseName: run.caseName }));
     return [...batchItems, ...runItems].sort((first, second) => String(second.finishedAt || second.startedAt || '').localeCompare(String(first.finishedAt || first.startedAt || '')));
@@ -109,6 +117,50 @@ export function createMemoryStore() {
     getUser(id) { return users.get(id); },
     saveUser,
     ensureDefaultAdmin,
+    getModelConfig() { return modelConfig; },
+    saveModelConfig(config) { modelConfig = { ...config }; return modelConfig; },
+    savePerformanceAccountPool(pool) {
+      const valid = validateAccountPool(pool);
+      if (!projects.has(valid.projectId)) throw new Error('project not found');
+      const timestamp = new Date().toISOString();
+      const saved = { ...valid, id: valid.id || crypto.randomUUID(), createdAt: valid.createdAt || timestamp, updatedAt: timestamp };
+      performancePools.set(saved.id, saved);
+      return publicAccountPool(saved);
+    },
+    getPerformanceAccountPool(id) {
+      const pool = performancePools.get(id);
+      return pool && publicAccountPool(pool);
+    },
+    listPerformanceAccountPools(projectId = '') {
+      return [...performancePools.values()].filter((pool) => !projectId || pool.projectId === projectId).map(publicAccountPool);
+    },
+    getPerformanceAccountPoolCredentials(id) { return structuredClone(performancePools.get(id)?.accounts); },
+    savePerformanceAsset(asset) {
+      if (!asset?.projectId || !projects.has(asset.projectId) || !asset?.name?.trim() || !asset?.protocol || !asset?.config) throw new Error('invalid performance asset');
+      const timestamp = new Date().toISOString();
+      const saved = { ...asset, id: asset.id || crypto.randomUUID(), createdAt: asset.createdAt || timestamp, updatedAt: timestamp };
+      performanceAssets.set(saved.id, saved);
+      return structuredClone(saved);
+    },
+    getPerformanceAsset(id) { return structuredClone(performanceAssets.get(id)); },
+    listPerformanceAssets(projectId = '') { return [...performanceAssets.values()].filter((asset) => !projectId || asset.projectId === projectId).map((asset) => structuredClone(asset)); },
+    savePerformanceRun(run) {
+      const existing = performanceRuns.get(run.id);
+      const saved = { ...existing, ...run, summary: { ...(existing?.summary || {}), ...(run.summary || {}) }, samples: existing?.samples || [] };
+      performanceRuns.set(saved.id, saved);
+      return structuredClone(saved);
+    },
+    getPerformanceRun(id) { return structuredClone(performanceRuns.get(id)); },
+    listPerformanceRuns({ projectId = '', status = '' } = {}) {
+      return [...performanceRuns.values()].filter((run) => (!projectId || run.projectId === projectId) && (!status || run.status === status))
+        .map((run) => ({ ...structuredClone(run), projectName: projects.get(run.projectId)?.name, reportUrl: `/api/performance/runs/${encodeURIComponent(run.id)}/report` }));
+    },
+    appendPerformanceSample(id, sample) {
+      const run = performanceRuns.get(id);
+      if (!run) return undefined;
+      run.samples.push(structuredClone(sample));
+      return structuredClone(run);
+    },
     failInterruptedExecutions
   };
 }
@@ -116,22 +168,61 @@ export function createMemoryStore() {
 const projectRoot = fileURLToPath(new URL('../', import.meta.url));
 
 function sanitizeModelConfig(modelConfig) {
-  const apiKey = String(modelConfig.apiKey || '');
+  return publicModelConfig(modelConfig);
+}
+
+function reportFilename(name) {
+  const base = String(name || '测试报告')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim() || '测试报告';
+  return `${base}-测试报告.html`;
+}
+
+function sendHtmlDownload(res, filename, html) {
+  return res
+    .type('html')
+    .set('Content-Disposition', `attachment; filename="report.html"; filename*=UTF-8''${encodeURIComponent(filename)}`)
+    .send(html);
+}
+
+function supportsSharedApiBatch(protocols) {
+  return protocols.size === 1 || (protocols.size === 2 && protocols.has('by') && protocols.has('byAdmin'));
+}
+
+function normalizeWebWorkerConfig(input, target) {
+  if (target !== 'web' || !input) return undefined;
+  const accounts = Array.isArray(input.accounts)
+    ? input.accounts.map((account) => ({
+      username: typeof account?.username === 'string' ? account.username.trim() : undefined,
+      email: typeof account?.email === 'string' ? account.email.trim() : undefined,
+      password: typeof account?.password === 'string' ? account.password : undefined,
+      totpSecret: typeof account?.totpSecret === 'string' ? account.totpSecret.trim() : undefined
+    })).filter((account) => (account.username || account.email) && account.password)
+    : [];
+  if (!accounts.length) throw new Error('Web Worker 至少需要一个有效账号');
+  if (accounts.length > 10) throw new Error('Web Worker 账号数量不能超过 10');
+  const maxConcurrency = Math.min(10, Math.max(1, Number(input.maxConcurrency) || accounts.length));
+  const workerTimeoutMs = Math.max(1000, Number(input.workerTimeoutMs) || 600000);
   return {
-    source: modelConfig.source || 'MIDSCENE',
-    baseUrl: modelConfig.baseUrl || '',
-    modelName: modelConfig.modelName || '',
-    modelFamily: modelConfig.modelFamily || '',
-    apiKey: apiKey.includes('*') ? apiKey : (apiKey ? `${apiKey.slice(0, 3)}****************` : '')
+    accounts,
+    maxConcurrency,
+    workerTimeoutMs,
+    messageCount: Number(input.messageCount) > 0 ? Number(input.messageCount) : 0,
+    image: input.image && typeof input.image === 'object' ? {
+      status: input.image.status || 'pending',
+      assetPath: typeof input.image.assetPath === 'string' ? input.image.assetPath : undefined
+    } : { status: 'pending' }
   };
 }
 
-export function createApp({ runner, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), caseAssetsDir = join(projectRoot, 'data/case-assets'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, modelConfig = { source: 'MIDSCENE', baseUrl: '', modelName: '', modelFamily: '', apiKey: '' }, cmsSeedCases = [], executionSchedule, authRequired = false } = {}) {
+export function createApp({ runner, performanceRunner = { run: async () => { throw new Error('k6 runner is unavailable'); } }, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), caseAssetsDir = join(projectRoot, 'data/case-assets'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, modelConfig = { source: 'MIDSCENE', baseUrl: '', modelName: '', modelFamily: '', apiKey: '' }, modelConfigManager, cmsSeedCases = [], executionSchedule, performanceSchedule, executionTimeouts, authRequired = false } = {}) {
   const app = express();
   const sessions = new Map();
   if (authRequired) store.ensureDefaultAdmin(hashPasswordSync('admin123'));
   store.failInterruptedExecutions?.('服务重启导致任务中断');
-  const executionService = new ExecutionService({ runner, store, ...(executionSchedule ? { schedule: executionSchedule } : {}) });
+  const executionService = new ExecutionService({ runner, store, ...(executionSchedule ? { schedule: executionSchedule } : {}), timeouts: executionTimeouts });
+  const performanceService = new PerformanceService({ store, runner: performanceRunner, ...(performanceSchedule ? { schedule: performanceSchedule } : {}) });
   cmsSeedCases.forEach((testCase) => {
     if (!store.getCase(testCase.id)) store.saveCase(testCase);
   });
@@ -139,6 +230,10 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
   const assetService = createCaseAssetService({ caseAssetsDir, store });
   const requestedMutationAuthorization = (value) => value === true;
+  const resolvedModelConfigManager = modelConfigManager || {
+    getPublicConfig: () => sanitizeModelConfig(modelConfig),
+    async update() { throw new Error('model configuration updates are unavailable'); }
+  };
 
   app.get('/api/health', (_req, res) => res.json({ webRunner: runnerStatus, cmsRunner: cmsRunnerStatus }));
 
@@ -216,6 +311,57 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     return store.deleteProject(project.id) ? res.status(204).end() : res.status(404).json({ error: 'project not found' });
   });
 
+  function savePublicPerformanceAsset(input, id) {
+    const asset = validatePerformanceAsset(input);
+    if (id && !store.getPerformanceAsset(id)) throw new Error('performance asset not found');
+    return store.savePerformanceAsset({
+      id, projectId: asset.projectId, name: asset.name, protocol: asset.protocol,
+      config: { ...asset, id: undefined }
+    });
+  }
+
+  app.get('/api/performance/pools', (req, res) => res.json(store.listPerformanceAccountPools(req.query.projectId || '')));
+  app.post('/api/performance/pools', (req, res) => {
+    try { return res.status(201).json(store.savePerformanceAccountPool(req.body)); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
+  });
+  app.get('/api/performance/assets', (req, res) => res.json(store.listPerformanceAssets(req.query.projectId || '')));
+  app.post('/api/performance/assets', (req, res) => {
+    try { return res.status(201).json(savePublicPerformanceAsset(req.body)); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
+  });
+  app.get('/api/performance/assets/:id', (req, res) => {
+    const asset = store.getPerformanceAsset(req.params.id);
+    return asset ? res.json(asset) : res.status(404).json({ error: 'performance asset not found' });
+  });
+  app.put('/api/performance/assets/:id', (req, res) => {
+    try { return res.json(savePublicPerformanceAsset(req.body, req.params.id)); }
+    catch (error) { return res.status(error.message === 'performance asset not found' ? 404 : 400).json({ error: error.message }); }
+  });
+  app.post('/api/performance/assets/:id/runs', (req, res) => {
+    try { return res.status(202).json(performanceService.queue(req.params.id)); }
+    catch (error) { return res.status(error.code === 'PRECONDITION' ? 409 : error.message === 'performance asset not found' ? 404 : 400).json({ error: error.message }); }
+  });
+  app.get('/api/performance/runs', (req, res) => res.json(store.listPerformanceRuns({ projectId: req.query.projectId || '', status: req.query.status || '' })));
+  app.get('/api/performance/runs/:id', (req, res) => {
+    const run = store.getPerformanceRun(req.params.id);
+    return run ? res.json(run) : res.status(404).json({ error: 'performance run not found' });
+  });
+  app.get('/api/performance/runs/:id/report/download', (req, res) => {
+    const run = store.getPerformanceRun(req.params.id);
+    if (!run) return res.status(404).send('performance report not found');
+    return sendHtmlDownload(res, reportFilename(run.name), renderPerformanceReport(run, store.getPerformanceAsset(run.assetId)));
+  });
+  app.get('/api/performance/runs/:id/report', (req, res) => {
+    const run = store.getPerformanceRun(req.params.id);
+    if (!run) return res.status(404).send('performance report not found');
+    return res.type('html').send(renderPerformanceReport(run, store.getPerformanceAsset(run.assetId)));
+  });
+  app.post('/api/performance/runs/:id/stop', (req, res) => {
+    try { return res.json(performanceService.stop(req.params.id)); }
+    catch (error) { return res.status(error.message === 'performance run not found' ? 404 : 400).json({ error: error.message }); }
+  });
+
   function validateProjectCase(input) {
     const testCase = validateWebCase(input);
     if (!store.getProject(testCase.projectId)) throw new Error('project not found');
@@ -270,11 +416,18 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     if (cases.some((testCase) => !testCase)) return res.status(400).json({ error: 'test case not found' });
     if (new Set(cases.map((testCase) => testCase.target)).size !== 1) return res.status(400).json({ error: 'batch cases must share one target' });
     if (new Set(cases.map((testCase) => testCase.projectId)).size !== 1) return res.status(409).json({ error: '批量执行只能选择同一项目的用例' });
+    if (cases[0].target === 'api') {
+      const protocols = new Set(cases.flatMap((testCase) => testCase.steps.map((step) => step.request?.protocol || 'cms')));
+      if (!supportsSharedApiBatch(protocols)) return res.status(409).json({ error: '批量执行只能选择同一接口协议的用例' });
+    }
 
+    let webWorkers;
+    try { webWorkers = normalizeWebWorkerConfig(req.body.webWorkers, cases[0].target); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
     const name = typeof req.body.name === 'string' && req.body.name.trim()
       ? req.body.name.trim()
       : `批量执行 ${new Date().toLocaleString('zh-CN')}`;
-    return res.status(202).json(executionService.queueBatch({ name, projectId: cases[0].projectId, target: cases[0].target, caseIds, cases, allowMutations: requestedMutationAuthorization(req.body.allowMutations) }));
+    return res.status(202).json(executionService.queueBatch({ name, projectId: cases[0].projectId, target: cases[0].target, caseIds, cases, allowMutations: requestedMutationAuthorization(req.body.allowMutations), webWorkers }));
   });
 
   app.get('/api/executions', (req, res) => res.json(store.listExecutions({ projectId: req.query.projectId || '', target: req.query.target || '', status: req.query.status || '' })));
@@ -286,7 +439,11 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     return res.status(404).json({ error: 'execution not found' });
   });
   app.get('/api/dashboard', (req, res) => res.json(store.getDashboard({ range: req.query.range || '7d' })));
-  app.get('/api/model-config', (_req, res) => res.json(sanitizeModelConfig(modelConfig)));
+  app.get('/api/model-config', (_req, res) => res.json(resolvedModelConfigManager.getPublicConfig()));
+  app.put('/api/model-config', async (req, res) => {
+    try { return res.json(await resolvedModelConfigManager.update(req.body || {})); }
+    catch (error) { return res.status(400).json({ error: error.message || '模型配置保存失败' }); }
+  });
   app.get('/api/reports', (req, res) => res.json(store.listReports({ projectId: req.query.projectId || '', target: req.query.target || '', status: req.query.status || '', range: req.query.range || '7d' })));
 
   app.get('/api/batches', (req, res) => res.json(store.listBatches(req.query.projectId || '').reverse()));
@@ -295,6 +452,13 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     const batch = store.getBatch(req.params.id);
     if (!batch) return res.status(404).json({ error: 'batch not found' });
     return res.json({ ...batch, runs: batch.runIds.map((id) => store.getRun(id)).filter(Boolean) });
+  });
+
+  app.get('/api/batches/:id/report/download', (req, res) => {
+    const batch = store.getBatch(req.params.id);
+    if (!batch) return res.status(404).send('batch report not found');
+    const runs = batch.runIds.map((id) => store.getRun(id)).filter(Boolean);
+    return sendHtmlDownload(res, reportFilename(batch.name), renderBatchReport(batch, runs));
   });
 
   app.get('/api/batches/:id/report', (req, res) => {
@@ -326,6 +490,13 @@ export function createApp({ runner, store = createMemoryStore(), staticDir = pro
     if (!run || basename(fileName) !== fileName || !registered.has(fileName)) return res.status(404).end();
     const filePath = join(evidenceDir, run.id, fileName);
     return existsSync(filePath) ? res.sendFile(filePath) : res.status(404).end();
+  });
+
+  app.get('/api/runs/:id/report/download', (req, res) => {
+    const run = store.getRun(req.params.id);
+    if (!run) return res.status(404).send('report not found');
+    const caseName = run.caseName || store.getCase(run.caseId)?.name || '已删除用例';
+    return sendHtmlDownload(res, reportFilename(caseName), renderReport(run, caseName));
   });
 
   app.get('/api/runs/:id/report', (req, res) => {

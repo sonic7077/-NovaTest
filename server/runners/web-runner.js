@@ -28,8 +28,29 @@ function visualReason(result) {
 }
 
 export function createWebRunner({ browser, agentFactory, beforeFirstStep, screenshotDir = 'data/evidence', resolveAssetPath } = {}) {
-  async function openSession(context) {
+  async function openSession(context, step) {
     if (context.page) return context.page;
+    if (context.workerSession) {
+      context.page = context.workerSession.page;
+      context.webSession = context.workerSession;
+      try {
+        if (context.testCase?.baseUrl && !context.workerSession.navigated) {
+          await context.workerSession.page.goto(context.testCase.baseUrl);
+          context.workerSession.navigated = true;
+        }
+        if (beforeFirstStep && !context.workerSession.webLoginStarted) {
+          await beforeFirstStep(context.workerSession.page, context);
+          context.workerSession.webLoginStarted = true;
+        }
+      } catch (error) {
+        if (step) {
+          try { error.evidence = await capture(context.workerSession.page, step, context, 'failed'); }
+          catch (captureError) { error.evidenceWarning = `截图保存失败：${captureError.message}`; }
+        }
+        throw error;
+      }
+      return context.workerSession.page;
+    }
     const session = browser.openPage
       ? await browser.openPage({ viewport: context.viewport })
       : { page: await browser.newPage({ viewport: context.viewport }), close: async () => {} };
@@ -42,6 +63,13 @@ export function createWebRunner({ browser, agentFactory, beforeFirstStep, screen
         context.webLoginStarted = true;
       }
     } catch (error) {
+      if (step) {
+        try {
+          error.evidence = await capture(session.page, step, context, 'failed');
+        } catch (captureError) {
+          error.evidenceWarning = `截图保存失败：${captureError.message}`;
+        }
+      }
       try { await session.close(); } catch {}
       delete context.page;
       delete context.webSession;
@@ -63,11 +91,11 @@ export function createWebRunner({ browser, agentFactory, beforeFirstStep, screen
     return { path: relativePath, attempt, phase };
   }
 
-  return {
+  const runner = {
     async execute(step, context) {
       if (!supportedKinds.has(step.kind)) throw new Error(`unsupported web step kind: ${step.kind}`);
 
-      const page = await openSession(context);
+      const page = await openSession(context, step);
       const agent = agentFactory(page);
       try {
         const visualChecks = step.visualChecks || [];
@@ -113,4 +141,19 @@ export function createWebRunner({ browser, agentFactory, beforeFirstStep, screen
       await session.close();
     }
   };
+
+  runner.createWorker = async ({ viewport } = {}) => {
+    const session = browser.openContext
+      ? await browser.openContext({ viewport })
+      : await browser.openPage({ viewport });
+    return {
+      execute(step, context) {
+        return runner.execute(step, { ...context, workerSession: session });
+      },
+      finish: async () => {},
+      close: async () => session.close()
+    };
+  };
+
+  return runner;
 }

@@ -1,5 +1,5 @@
-# 测试环境部署编排（方舟模式：GitLab Runner SSH 到目标机，目标机本地构建）。
-# 用法：docker compose -f docker-compose.deploy.yml --env-file deploy/test.env up -d --build
+# 测试环境部署编排（GitLab Runner SSH 到目标机，目标机本地构建）。
+# 业务运行配置保存在挂载的 SQLite 数据库中。
 services:
   app:
     build:
@@ -11,14 +11,12 @@ services:
     init: true
     # Chromium 需要充足的共享内存，官方推荐 host IPC
     ipc: host
-    env_file:
-      - deploy/test.env
     environment:
       HOST: 0.0.0.0
       PORT: 4173
     ports:
       # 只绑定回环地址，外部访问走 host nginx（https://autotest.chenmoyuan.tech）
-      - "127.0.0.1:${AT_APP_PORT:-18084}:4173"
+      - "127.0.0.1:18084:4173"
     volumes:
       # SQLite 数据库与执行截图证据持久化在宿主机
       - ./data:/app/data

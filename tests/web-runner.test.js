@@ -66,6 +66,26 @@ describe('web runner', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it('creates a worker runner with an isolated session and defers context cleanup until worker close', async () => {
+    const calls = [];
+    const close = vi.fn();
+    const session = { page: { goto: async () => calls.push('goto'), screenshot: async () => undefined }, close };
+    const runner = createWebRunner({
+      browser: { openContext: async () => session },
+      agentFactory: () => ({ aiAct: async () => calls.push('act') })
+    });
+    const worker = await runner.createWorker({ viewport: { width: 1440, height: 900 } });
+
+    await worker.execute({ id: 's1', kind: 'action', instruction: '执行任务' }, { testCase: { baseUrl: 'https://example.test' } });
+    await worker.execute({ id: 's2', kind: 'action', instruction: '继续任务' }, { testCase: { baseUrl: 'https://example.test' } });
+    await worker.finish({});
+
+    expect(calls).toEqual(['goto', 'act', 'act']);
+    expect(close).not.toHaveBeenCalled();
+    await worker.close();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it('reopens a clean session when shared login fails before a retried step', async () => {
     const closeFirst = vi.fn();
     const closeSecond = vi.fn();
@@ -96,6 +116,29 @@ describe('web runner', () => {
     expect(closeFirst).toHaveBeenCalledTimes(1);
     await runner.finish(context);
     expect(closeSecond).toHaveBeenCalledTimes(1);
+  });
+
+  it('attaches failed screenshot evidence when shared login fails before the first step', async () => {
+    const screenshots = [];
+    const page = {
+      goto: async () => {},
+      screenshot: async ({ path }) => { screenshots.push(path); return path; }
+    };
+    const runner = createWebRunner({
+      browser: { openPage: async () => ({ page, close: async () => {} }) },
+      agentFactory: () => ({ aiAct: async () => {} }),
+      beforeFirstStep: async () => { throw new Error('Lighthouse login failed'); },
+      screenshotDir: 'evidence'
+    });
+
+    await expect(runner.execute(
+      { id: 'verify-task-list', kind: 'action', instruction: '确认任务列表' },
+      { runId: 'run-1', attempt: 1, testCase: { baseUrl: 'https://example.test' } }
+    )).rejects.toMatchObject({
+      message: 'Lighthouse login failed',
+      evidence: { path: 'run-1/verify-task-list-attempt-1.png', attempt: 1, phase: 'failed' }
+    });
+    expect(screenshots).toEqual(['evidence/run-1/verify-task-list-attempt-1.png']);
   });
 
   it('writes success evidence to its run directory', async () => {

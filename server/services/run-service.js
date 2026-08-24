@@ -5,13 +5,39 @@ const viewports = {
   mobile: { width: 390, height: 844 }
 };
 
+export const DEFAULT_TIMEOUTS = Object.freeze({ webStepMs: 120000, apiStepMs: 30000, caseMs: 600000 });
+
+function positiveTimeout(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+export function resolveTimeouts(timeouts = {}) {
+  return {
+    webStepMs: positiveTimeout(timeouts.webStepMs, DEFAULT_TIMEOUTS.webStepMs),
+    apiStepMs: positiveTimeout(timeouts.apiStepMs, DEFAULT_TIMEOUTS.apiStepMs),
+    caseMs: positiveTimeout(timeouts.caseMs, DEFAULT_TIMEOUTS.caseMs)
+  };
+}
+
+export function createTimeoutError(message, code = 'EXECUTION_TIMEOUT') {
+  return Object.assign(new Error(message), { code });
+}
+
+function timeoutMessage(kind, milliseconds) {
+  return kind === 'case'
+    ? `用例执行总时长超时（${milliseconds}ms）`
+    : `${kind === 'api' ? '接口' : 'Web UI'} 步骤执行超时（${milliseconds}ms）`;
+}
+
 function randomSixDigits() {
   return String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0');
 }
 
 export class RunService {
-  constructor(runner) {
+  constructor(runner, timeouts = {}) {
     this.runner = runner;
+    this.timeouts = resolveTimeouts(timeouts);
   }
 
   createQueuedRun(testCase, { batchId, batchPosition, allowMutations = false } = {}) {
@@ -33,8 +59,9 @@ export class RunService {
     };
   }
 
-  async start(testCase, { project, apiSession, selectedApiIds, allowMutations, run: queuedRun, onUpdate } = {}) {
-    const runner = this.runner[testCase.target] || this.runner;
+  async start(testCase, { project, apiSession, selectedApiIds, allowMutations, worker, run: queuedRun, onUpdate } = {}) {
+    const configuredRunner = this.runner[testCase.target] || this.runner;
+    const runner = configuredRunner.snapshot ? configuredRunner.snapshot() : configuredRunner;
     const run = queuedRun || this.createQueuedRun(testCase);
     const publish = () => onUpdate?.(structuredClone(run));
     run.status = 'running';
@@ -48,14 +75,35 @@ export class RunService {
       allowMutations: Boolean(allowMutations ?? run.allowMutations),
       project,
       selectedApiIds,
+      worker,
       apiSession: apiSession || (testCase.target === 'api' && typeof runner.createSession === 'function' ? runner.createSession() : undefined)
     };
+    const caseDeadline = Date.now() + this.timeouts.caseMs;
 
     try {
       for (const step of testCase.steps) {
       const stepRun = run.steps.find((item) => item.id === step.id) || { id: step.id, status: 'queued', attempts: 0, logs: [], screenshots: [] };
       if (!run.steps.includes(stepRun)) run.steps.push(stepRun);
+      if (step.request?.skipReason && !executionContext.allowMutations) {
+        stepRun.status = 'skipped';
+        stepRun.error = step.request.skipReason;
+        run.status = 'skipped';
+        run.finishedAt = new Date().toISOString();
+        publish();
+        return run;
+      }
       stepRun.status = 'running';
+
+      if (Date.now() >= caseDeadline) {
+        const error = createTimeoutError(timeoutMessage('case', this.timeouts.caseMs), 'CASE_TIMEOUT');
+        stepRun.status = 'failed';
+        stepRun.error = error.message;
+        stepRun.logs.push({ level: 'error', message: error.message });
+        run.status = 'failed';
+        run.finishedAt = new Date().toISOString();
+        publish();
+        return run;
+      }
 
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         stepRun.attempts = attempt;
@@ -63,7 +111,11 @@ export class RunService {
         publish();
         try {
           const resolvedStep = { ...step, instruction: interpolate(step.instruction, run.variables) };
-          const evidence = await runner.execute(resolvedStep, executionContext);
+          const stepTimeoutMs = testCase.target === 'api' ? this.timeouts.apiStepMs : this.timeouts.webStepMs;
+          const remainingCaseMs = caseDeadline - Date.now();
+          const timeoutMs = Math.min(stepTimeoutMs, remainingCaseMs);
+          const timeoutKind = remainingCaseMs <= stepTimeoutMs ? 'case' : testCase.target === 'api' ? 'api' : 'web';
+          const evidence = await this.withTimeout(runner.execute(resolvedStep, executionContext), timeoutMs, timeoutMessage(timeoutKind, timeoutKind === 'case' ? this.timeouts.caseMs : stepTimeoutMs), timeoutKind === 'case' ? 'CASE_TIMEOUT' : 'EXECUTION_TIMEOUT');
           Object.assign(run.variables, evidence.variables);
           const { screenshots = [], ...stepEvidence } = evidence;
           Object.assign(stepRun, stepEvidence, { status: 'passed' });
@@ -79,6 +131,13 @@ export class RunService {
           if (error.code === 'PRECONDITION_UNAVAILABLE') {
             stepRun.status = 'skipped';
             run.status = 'skipped';
+            run.finishedAt = new Date().toISOString();
+            publish();
+            return run;
+          }
+          if (error.code === 'CASE_TIMEOUT') {
+            stepRun.status = 'failed';
+            run.status = 'failed';
             run.finishedAt = new Date().toISOString();
             publish();
             return run;
@@ -104,6 +163,20 @@ export class RunService {
       return run;
     } finally {
       await runner.finish?.(executionContext);
+    }
+  }
+
+  async withTimeout(operation, timeoutMs, message, code) {
+    let timer;
+    try {
+      return await Promise.race([
+        operation,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(createTimeoutError(message, code)), timeoutMs);
+        })
+      ]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

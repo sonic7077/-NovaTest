@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createSqliteStore } from '../server/storage/sqlite-store.js';
+import { completeRuntimeConfig } from './helpers/runtime-config-fixture.js';
 
 const webCase = {
   id: 'case-1',
@@ -18,6 +19,79 @@ const webCase = {
 };
 
 describe('SQLite store', () => {
+  it('persists one complete runtime configuration record', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-runtime-config-'));
+    try {
+      const store = createSqliteStore({ databasePath: join(directory, 'novatest.db') });
+      store.saveRuntimeConfig(completeRuntimeConfig);
+      expect(store.getRuntimeConfig()).toEqual(completeRuntimeConfig);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('persists an optional Editorial API configuration with the existing runtime groups', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-editorial-runtime-config-'));
+    try {
+      const store = createSqliteStore({ databasePath: join(directory, 'novatest.db') });
+      const editorial = { baseUrl: 'https://editorial.example.test', username: 'editorial-admin', password: 'editorial-password', googleSecret: 'TOTPSECRET' };
+
+      store.saveRuntimeConfig({ ...completeRuntimeConfig, editorial });
+
+      expect(store.getRuntimeConfig()).toMatchObject({ editorial });
+      expect(store.getRuntimeConfig().cms).toEqual(completeRuntimeConfig.cms);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('persists an optional Flywheel API configuration with the existing runtime groups', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-flywheel-runtime-config-'));
+    try {
+      const store = createSqliteStore({ databasePath: join(directory, 'novatest.db') });
+      const flywheel = { baseUrl: 'https://flywheel.example.test', platformKey: 'private-platform-key', platformId: 'tenant-a' };
+
+      store.saveRuntimeConfig({ ...completeRuntimeConfig, flywheel });
+
+      expect(store.getRuntimeConfig()).toMatchObject({ flywheel });
+      expect(store.getRuntimeConfig().cms).toEqual(completeRuntimeConfig.cms);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('persists optional Daygf configuration with the existing runtime groups', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-daygf-runtime-config-'));
+    try {
+      const store = createSqliteStore({ databasePath: join(directory, 'novatest.db') });
+      const daygf = { baseUrl: 'https://daygf.example.test', username: 'daygf-user', password: 'daygf-password' };
+
+      store.saveRuntimeConfig({ ...completeRuntimeConfig, daygf });
+
+      expect(store.getRuntimeConfig()).toMatchObject({ daygf });
+      expect(store.getRuntimeConfig().cms).toEqual(completeRuntimeConfig.cms);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the legacy model override separate from the SQLite runtime configuration', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'novatest-model-config-'));
+    try {
+      const store = createSqliteStore({ databasePath: join(directory, 'novatest.db') });
+      store.saveModelConfig({ baseUrl: 'https://model.example', modelName: 'vision', modelFamily: 'gemini', encryptedApiKey: 'ciphertext' });
+
+      expect(store.getModelConfig()).toMatchObject({
+        baseUrl: 'https://model.example',
+        modelName: 'vision',
+        modelFamily: 'gemini',
+        encryptedApiKey: 'ciphertext'
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('initializes one persistent administrator and saves its profile', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'novatest-auth-store-'));
     const databasePath = join(directory, 'novatest.db');
@@ -348,12 +422,12 @@ describe('SQLite store', () => {
       });
       store.saveRun({ id: 'passed-run', caseId: webCase.id, caseName: webCase.name, projectId, target: 'web', status: 'passed', startedAt: '2026-07-18T10:00:00.000Z', finishedAt: '2026-07-18T10:01:00.000Z', variables: {}, steps: [] });
       store.saveRun({ id: 'failed-run', caseId: webCase.id, caseName: '接口配置', projectId, target: 'api', status: 'failed', startedAt: '2026-07-19T10:00:00.000Z', finishedAt: '2026-07-19T10:00:30.000Z', variables: {}, steps: [{ id: 'config', status: 'failed', attempts: 2, error: 'status mismatch', logs: [] }] });
-      store.saveBatch({ id: 'batch-1', projectId, target: 'web', name: 'Web 回归', caseIds: [webCase.id], status: 'running', allowMutations: true, runIds: ['running-run'], startedAt: '2026-07-19T11:58:00.000Z', finishedAt: null });
+      store.saveBatch({ id: 'batch-1', projectId, target: 'web', name: 'Web 回归', caseIds: [webCase.id], status: 'running', allowMutations: true, plannedCaseCount: 3, plannedStepCount: 5, runIds: ['running-run'], startedAt: '2026-07-19T11:58:00.000Z', finishedAt: null });
 
       const reloaded = createSqliteStore({ databasePath });
       expect(reloaded.getRun('running-run')).toMatchObject({ projectId, target: 'web', allowMutations: true, steps: [{ status: 'passed' }, { status: 'queued' }] });
-      expect(reloaded.getBatch('batch-1')).toMatchObject({ projectId, target: 'web', allowMutations: true });
-      expect(reloaded.listExecutions({ projectId }).find((execution) => execution.id === 'batch-1')).toMatchObject({ id: 'batch-1', totalCases: 1, completedSteps: 1, totalSteps: 2, status: 'running' });
+      expect(reloaded.getBatch('batch-1')).toMatchObject({ projectId, target: 'web', allowMutations: true, plannedCaseCount: 3, plannedStepCount: 5 });
+      expect(reloaded.listExecutions({ projectId }).find((execution) => execution.id === 'batch-1')).toMatchObject({ id: 'batch-1', totalCases: 3, completedSteps: 1, totalSteps: 5, status: 'running' });
       expect(reloaded.getDashboard({ range: '7d', now })).toMatchObject({ completedRuns: 2, passedRuns: 1, failedRuns: 1, automatedCaseCount: 1 });
       expect(reloaded.listReports({ projectId, range: '7d', now }).map((report) => report.id)).toEqual(['failed-run', 'passed-run']);
 

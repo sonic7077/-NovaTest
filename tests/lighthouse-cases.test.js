@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMemoryStore } from '../server/app.js';
-import { upgradeLighthouseTaskListCase } from '../server/seed/lighthouse-cases.js';
+import { upgradeLighthouseReadonlyCase, upgradeLighthouseTaskListCase } from '../server/seed/lighthouse-cases.js';
 
 const legacyInstructions = [
   '确认“我负责的”任务列表已加载。',
@@ -17,6 +17,23 @@ function legacyCase(overrides = {}) {
     baseUrl: 'https://dt.chenmoyuan.tech/dashboard/tasks/my',
     viewport: 'desktop',
     steps: legacyInstructions.map((instruction, index) => ({ id: `step-${index + 1}`, kind: 'action', instruction })),
+    ...overrides
+  };
+}
+
+function readonlyCase(overrides = {}) {
+  return {
+    id: '1f2c2396-a44c-42da-88f0-2fd3444e7591',
+    projectId: 'default-project',
+    name: '无极灯塔 - 任务清单只读识别',
+    target: 'web',
+    baseUrl: 'https://dt.chenmoyuan.tech/dashboard/tasks/my',
+    viewport: 'desktop',
+    steps: [{
+      id: 'verify-task-list',
+      kind: 'action',
+      instruction: '查看“我负责的”任务列表，确认页面已加载且可见任务内容。不得创建、编辑、删除任务，也不得变更任何任务状态；保留页面截图证据。'
+    }],
     ...overrides
   };
 }
@@ -47,5 +64,17 @@ describe('Lighthouse task case upgrade', () => {
 
     expect(upgradeLighthouseTaskListCase(store)).toBe(false);
     expect(store.getCase(original.id)).toEqual(original);
+  });
+
+  it('upgrades the untouched readonly Lighthouse check to assertion mode once', () => {
+    const store = createMemoryStore();
+    const original = readonlyCase();
+    store.saveCase(original);
+
+    expect(upgradeLighthouseReadonlyCase(store)).toBe(true);
+    expect(store.getCase(original.id).steps).toEqual([
+      expect.objectContaining({ id: 'verify-task-list', kind: 'assert' })
+    ]);
+    expect(upgradeLighthouseReadonlyCase(store)).toBe(false);
   });
 });
