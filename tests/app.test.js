@@ -218,6 +218,38 @@ describe('execution API', () => {
       });
   });
 
+  it('queues an isolated Web Worker batch and exposes its aggregate report', async () => {
+    const app = createApp({
+      runner: {
+        web: {
+          createWorker: async () => ({
+            execute: async (_step, context) => ({ variables: { worker: context.worker.workerId } }),
+            finish: async () => {},
+            close: async () => {}
+          })
+        }
+      },
+      store: createMemoryStore()
+    });
+    const created = (await request(app).post('/api/cases').send(webCase).expect(201)).body;
+    const batch = await request(app).post('/api/batches').send({
+      name: '独立浏览器回归', caseIds: [created.id],
+      webWorkers: {
+        accounts: [{ username: 'nt01', password: 'Aa01' }, { username: 'nt02', password: 'Aa02' }],
+        maxConcurrency: 2, workerTimeoutMs: 1000, messageCount: 2, image: { status: 'passed' }
+      }
+    }).expect(202);
+
+    expect(JSON.stringify(batch.body)).not.toContain('Aa01');
+    const completed = await waitForTerminal(app, `/api/batches/${batch.body.id}`);
+    expect(completed).toMatchObject({ plannedCaseCount: 2, workerSummary: { total: 2, passed: 2, messageCount: 4, imagePassed: 2 } });
+    await request(app).get(`/api/batches/${batch.body.id}/report`).expect(200).expect(({ text }) => {
+      expect(text).toContain('独立浏览器 Worker 汇总');
+      expect(text).toContain('nt01');
+      expect(text).not.toContain('Aa01');
+    });
+  });
+
   it('serves one summary report for every run in a batch', async () => {
     const app = createApp({ runner: { execute: async () => ({}) }, store: createMemoryStore() });
     const first = (await request(app).post('/api/cases').send(webCase).expect(201)).body;

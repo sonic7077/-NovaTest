@@ -61,4 +61,15 @@ describe('BY admin API runner', () => {
     expect(fetchImpl.mock.calls.filter(([url]) => url.endsWith('/auth/login'))).toHaveLength(2);
     expect(infoCalls).toBe(2);
   });
+
+  it('validates the business code for a documented HTTP 500 envelope', async () => {
+    const runner = new ByAdminApiRunner({
+      fetchImpl: async () => response(500, { code: 50000, msg: 'field "username" is not set', data: null })
+    });
+
+    await expect(runner.execute(
+      step('/admin-api/v1/auth/login', { auth: 'none', expectedStatus: 500, expectedCode: 50000 }),
+      context()
+    )).resolves.toMatchObject({ api: { httpStatus: 500, businessStatus: 50000 } });
+  });
 });

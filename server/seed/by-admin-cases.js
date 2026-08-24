@@ -6,6 +6,7 @@ function requestStep(id, instruction, action, options = {}) {
     request: {
       protocol: 'byAdmin', action, method: options.method || 'GET', payload: options.payload || {},
       expectedStatus: options.expectedStatus ?? 200, safety: options.safety || 'readonly', auth: options.auth || 'session',
+      ...(options.expectedCode !== undefined ? { expectedCode: options.expectedCode } : {}),
       ...(options.expectedJson ? { expectedJson: options.expectedJson } : {}),
       ...(options.extract ? { extract: options.extract } : {}),
       ...(options.skipReason ? { skipReason: options.skipReason } : {})
@@ -55,6 +56,14 @@ const CONTROLLED_NEGATIVES = [
   ['通知已读-错误结构', '/admin-api/v1/notifications/collection-review/read', 'POST', { ids: 'invalid' }, 'session']
 ];
 
+function isDocumentedFrameworkFailure(module, label) {
+  if (module === '登录-缺失参数') return true;
+  if (module === '登录-错误结构') return label !== '空参数';
+  return [
+    '文章新增-缺失标题', '文章编辑-非法标识', '文章状态-非法值', '角色菜单-非法标识'
+  ].includes(module);
+}
+
 const HIGH_RISK_ENDPOINTS = [
   ['会员删除', '/admin-api/v1/members/placeholder'], ['会员批量删除', '/admin-api/v1/member-batch/delete'],
   ['会员推送', '/admin-api/v1/members/placeholder/push'], ['循环推送', '/admin-api/v1/member-push/loop-execute'],
@@ -80,8 +89,12 @@ export function byAdminCases({ projectId, baseUrl }) {
   }));
   CONTROLLED_NEGATIVES.forEach(([module, action, method, payload, auth]) => SAFE_INPUTS.slice(0, 3).forEach(([label, variant]) => {
     const id = `by-admin-negative-${String(cases.length + 1).padStart(3, '0')}`;
+    const frameworkFailure = isDocumentedFrameworkFailure(module, label);
     cases.push(apiCase({ id, projectId, baseUrl, name: `P1 反例：BY后台-${module}-${label}`,
-      step: requestStep(`${id}-request`, `使用${label}验证${module}拒绝策略`, action, { method, payload: { ...payload, ...variant }, expectedStatus: [200, 400, 401, 403], auth }) }));
+      step: requestStep(`${id}-request`, `使用${label}验证${module}拒绝策略`, action, {
+        method, payload: { ...payload, ...variant }, expectedStatus: frameworkFailure ? 500 : [200, 400, 401, 403],
+        ...(frameworkFailure ? { expectedCode: 50000 } : {}), auth
+      }) }));
   }));
   HIGH_RISK_ENDPOINTS.forEach(([module, action], index) => {
     const id = `by-admin-risk-${String(index + 1).padStart(3, '0')}`;

@@ -150,6 +150,10 @@ describe('test console stylesheet', () => {
     expect(script).toContain('公共登录：灯塔');
     expect(script).not.toContain('LIGHTHOUSE_PASSWORD');
     expect(script).toContain('function toggleVisibleCases()');
+    expect(script).toContain("import { getBatchSelectionState } from './client/batch-selection.js';");
+    expect(script).toContain('runBatch.title = selection.message || \'批量执行\';');
+    expect(script).toContain('if (selection.message) showToast(selection.message, true);');
+    expect(stylesheet).toContain('.asset-selection > span[data-batch-invalid="true"]');
     expect(script).toContain('async function deleteSelectedCases()');
     expect(script).toContain('async function runSavedCase(testCase)');
     expect(script).toContain('async function deleteSavedCase(testCase)');

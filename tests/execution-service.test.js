@@ -56,6 +56,23 @@ describe('ExecutionService', () => {
     await expect(waitForTerminal(store, batch.id)).resolves.toMatchObject({ status: 'passed', runIds: [expect.any(String)] });
   });
 
+  it('continues a batch after one hanging case reaches its timeout', async () => {
+    const store = createMemoryStore();
+    const runner = {
+      execute: async (step) => step.id === 's1' ? new Promise(() => {}) : {}
+    };
+    const service = new ExecutionService({ runner, store, timeouts: { webStepMs: 5, caseMs: 100 } });
+    const succeedingCase = { ...webCase, id: 'case-2', name: '后续用例', steps: [{ id: 's2', kind: 'action', instruction: '继续执行' }] };
+
+    const batch = service.queueBatch({
+      name: '超时后继续', projectId: 'default-project', target: 'web',
+      caseIds: [webCase.id, succeedingCase.id], cases: [webCase, succeedingCase]
+    });
+
+    await expect(waitForTerminal(store, batch.id)).resolves.toMatchObject({ status: 'failed' });
+    expect(store.getBatch(batch.id).runIds.map((id) => store.getRun(id).status)).toEqual(['failed', 'passed']);
+  });
+
   it('shares one API session and persists every batch run', async () => {
     const store = createMemoryStore();
     const api = { createSession: vi.fn(() => ({})), execute: vi.fn(async () => ({})) };

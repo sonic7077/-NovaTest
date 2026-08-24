@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderReport } from '../server/services/report-service.js';
+import { renderBatchReport, renderReport } from '../server/services/report-service.js';
 
 describe('report service', () => {
   it('renders recommendation policy analysis alongside API evidence', () => {
@@ -39,5 +39,22 @@ describe('report service', () => {
 
     expect(html).not.toContain('private-url-key');
     expect(html).toContain('auth_key=********');
+  });
+
+  it('renders isolated browser worker results in a batch report', () => {
+    const html = renderBatchReport({
+      id: 'batch-workers', name: '客服并发验证', status: 'failed', startedAt: null, finishedAt: null,
+      workerSummary: {
+        total: 2, passed: 1, failed: 1, timedOut: 0, messageCount: 10, imagePassed: 1,
+        workers: [
+          { workerId: 'worker-1', account: { username: 'nt01' }, status: 'passed', messageCount: 10, image: { status: 'passed' } },
+          { workerId: 'worker-2', account: { username: 'nt02' }, status: 'failed', error: '上传失败', image: { status: 'failed' } }
+        ]
+      }
+    }, []);
+
+    expect(html).toContain('独立浏览器 Worker 汇总');
+    expect(html).toContain('nt01');
+    expect(html).toContain('上传失败');
   });
 });

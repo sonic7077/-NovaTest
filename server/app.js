@@ -190,12 +190,38 @@ function supportsSharedApiBatch(protocols) {
   return protocols.size === 1 || (protocols.size === 2 && protocols.has('by') && protocols.has('byAdmin'));
 }
 
-export function createApp({ runner, performanceRunner = { run: async () => { throw new Error('k6 runner is unavailable'); } }, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), caseAssetsDir = join(projectRoot, 'data/case-assets'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, modelConfig = { source: 'MIDSCENE', baseUrl: '', modelName: '', modelFamily: '', apiKey: '' }, modelConfigManager, cmsSeedCases = [], executionSchedule, performanceSchedule, authRequired = false } = {}) {
+function normalizeWebWorkerConfig(input, target) {
+  if (target !== 'web' || !input) return undefined;
+  const accounts = Array.isArray(input.accounts)
+    ? input.accounts.map((account) => ({
+      username: typeof account?.username === 'string' ? account.username.trim() : undefined,
+      email: typeof account?.email === 'string' ? account.email.trim() : undefined,
+      password: typeof account?.password === 'string' ? account.password : undefined,
+      totpSecret: typeof account?.totpSecret === 'string' ? account.totpSecret.trim() : undefined
+    })).filter((account) => (account.username || account.email) && account.password)
+    : [];
+  if (!accounts.length) throw new Error('Web Worker 至少需要一个有效账号');
+  if (accounts.length > 10) throw new Error('Web Worker 账号数量不能超过 10');
+  const maxConcurrency = Math.min(10, Math.max(1, Number(input.maxConcurrency) || accounts.length));
+  const workerTimeoutMs = Math.max(1000, Number(input.workerTimeoutMs) || 600000);
+  return {
+    accounts,
+    maxConcurrency,
+    workerTimeoutMs,
+    messageCount: Number(input.messageCount) > 0 ? Number(input.messageCount) : 0,
+    image: input.image && typeof input.image === 'object' ? {
+      status: input.image.status || 'pending',
+      assetPath: typeof input.image.assetPath === 'string' ? input.image.assetPath : undefined
+    } : { status: 'pending' }
+  };
+}
+
+export function createApp({ runner, performanceRunner = { run: async () => { throw new Error('k6 runner is unavailable'); } }, store = createMemoryStore(), staticDir = projectRoot, evidenceDir = join(projectRoot, 'data/evidence'), caseAssetsDir = join(projectRoot, 'data/case-assets'), runnerStatus = { ready: true, message: 'ready' }, cmsRunnerStatus = { ready: false, message: 'CMS API runner is not configured' }, modelConfig = { source: 'MIDSCENE', baseUrl: '', modelName: '', modelFamily: '', apiKey: '' }, modelConfigManager, cmsSeedCases = [], executionSchedule, performanceSchedule, executionTimeouts, authRequired = false } = {}) {
   const app = express();
   const sessions = new Map();
   if (authRequired) store.ensureDefaultAdmin(hashPasswordSync('admin123'));
   store.failInterruptedExecutions?.('服务重启导致任务中断');
-  const executionService = new ExecutionService({ runner, store, ...(executionSchedule ? { schedule: executionSchedule } : {}) });
+  const executionService = new ExecutionService({ runner, store, ...(executionSchedule ? { schedule: executionSchedule } : {}), timeouts: executionTimeouts });
   const performanceService = new PerformanceService({ store, runner: performanceRunner, ...(performanceSchedule ? { schedule: performanceSchedule } : {}) });
   cmsSeedCases.forEach((testCase) => {
     if (!store.getCase(testCase.id)) store.saveCase(testCase);
@@ -395,10 +421,13 @@ export function createApp({ runner, performanceRunner = { run: async () => { thr
       if (!supportsSharedApiBatch(protocols)) return res.status(409).json({ error: '批量执行只能选择同一接口协议的用例' });
     }
 
+    let webWorkers;
+    try { webWorkers = normalizeWebWorkerConfig(req.body.webWorkers, cases[0].target); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
     const name = typeof req.body.name === 'string' && req.body.name.trim()
       ? req.body.name.trim()
       : `批量执行 ${new Date().toLocaleString('zh-CN')}`;
-    return res.status(202).json(executionService.queueBatch({ name, projectId: cases[0].projectId, target: cases[0].target, caseIds, cases, allowMutations: requestedMutationAuthorization(req.body.allowMutations) }));
+    return res.status(202).json(executionService.queueBatch({ name, projectId: cases[0].projectId, target: cases[0].target, caseIds, cases, allowMutations: requestedMutationAuthorization(req.body.allowMutations), webWorkers }));
   });
 
   app.get('/api/executions', (req, res) => res.json(store.listExecutions({ projectId: req.query.projectId || '', target: req.query.target || '', status: req.query.status || '' })));

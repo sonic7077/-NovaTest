@@ -66,7 +66,8 @@ function validExpectedStatus(value) {
 }
 
 function validExpectedCode(value, protocol) {
-  if (protocol !== 'by') return value === undefined;
+  if (protocol === 'byAdmin' && value === undefined) return true;
+  if (!['by', 'byAdmin'].includes(protocol)) return value === undefined;
   const codes = Array.isArray(value) ? value : [value];
   return codes.length > 0 && codes.every((code) => Number.isInteger(code));
 }

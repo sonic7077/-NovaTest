@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assertMidsceneConfig, createBrowserFactory, createLighthouseBeforeFirstStep, createLighthouseCompanySelector, createMidsceneAgentFactory, midsceneConfigFromModel, resolveBrowserLaunchOptions, resolveCaseAssetPath, resolveMidsceneReplanningCycleLimit } from '../server/runners/production-runner.js';
+import { assertMidsceneConfig, createBrowserFactory, createByAdminBeforeFirstStep, createLighthouseBeforeFirstStep, createLighthouseCompanySelector, createMidsceneAgentFactory, midsceneConfigFromModel, resolveBrowserLaunchOptions, resolveCaseAssetPath, resolveMidsceneReplanningCycleLimit } from '../server/runners/production-runner.js';
 
 describe('Midscene configuration', () => {
   it('reports every missing model setting before starting a browser', () => {
@@ -111,6 +111,25 @@ describe('Midscene configuration', () => {
     await beforeFirstStep(page, {
       project: { webAuth: { provider: 'lighthouse', host: 'dt.chenmoyuan.tech' } },
       testCase: { target: 'api', baseUrl: 'https://dt.chenmoyuan.tech/api' }
+    });
+
+    expect(login).toHaveBeenCalledTimes(1);
+    expect(login).toHaveBeenCalledWith(page, credentials);
+  });
+
+  it('runs BY backend login only for Web UI cases on the configured project host', async () => {
+    const credentials = { username: 'operator', password: 'private-value', totpSecret: 'seed' };
+    const login = vi.fn(async () => {});
+    const beforeFirstStep = createByAdminBeforeFirstStep({ credentials, login });
+    const page = {};
+
+    await beforeFirstStep(page, {
+      project: { webAuth: { provider: 'byAdmin', host: 'by.chenmoyuan.tech' } },
+      testCase: { target: 'web', baseUrl: 'https://by.chenmoyuan.tech/admin-login#/operation/member' }
+    });
+    await beforeFirstStep(page, {
+      project: { webAuth: { provider: 'byAdmin', host: 'by.chenmoyuan.tech' } },
+      testCase: { target: 'api', baseUrl: 'https://by.chenmoyuan.tech/admin-api/v1/auth/info' }
     });
 
     expect(login).toHaveBeenCalledTimes(1);

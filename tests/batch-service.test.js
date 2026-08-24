@@ -159,4 +159,36 @@ describe('BatchService', () => {
     expect(contexts).toHaveLength(1);
     expect(contexts[0].project.webAuth).toEqual({ provider: 'lighthouse', host: 'dt.chenmoyuan.tech' });
   });
+
+  it('runs Web cases in isolated account workers and persists a worker summary', async () => {
+    const store = createMemoryStore();
+    const workers = [];
+    const runner = {
+      web: {
+        createWorker: async () => {
+          const worker = { execute: async (_step, context) => ({ variables: { account: context.worker.account.username } }), finish: async () => {} };
+          workers.push(worker);
+          return { ...worker, close: async () => {} };
+        }
+      }
+    };
+    const batch = { id: 'batch-workers', projectId: 'default-project', target: 'web', caseIds: [firstCase.id], runIds: [], allowMutations: false };
+
+    await new BatchService({ runner, store }).execute({
+      batch,
+      cases: [firstCase],
+      webWorkers: {
+        accounts: [{ username: 'nt01', password: 'Aa01' }, { username: 'nt02', password: 'Aa02' }],
+        maxConcurrency: 2,
+        workerTimeoutMs: 1000,
+        messageCount: 1,
+        image: { status: 'passed' }
+      }
+    });
+
+    expect(workers).toHaveLength(2);
+    expect(batch.runIds).toHaveLength(2);
+    expect(batch.workerSummary).toMatchObject({ total: 2, passed: 2, failed: 0, messageCount: 2, imagePassed: 2 });
+    expect(batch.runIds.map((id) => store.getRun(id).workerId)).toEqual(['worker-1', 'worker-2']);
+  });
 });

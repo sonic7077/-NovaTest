@@ -83,6 +83,7 @@ describe('runtime services', () => {
     });
 
     expect(ByAdminRunner).toHaveBeenCalledWith({ config: byAdmin });
+    expect(createWebRunner).toHaveBeenCalledWith(expect.objectContaining({ byAdminCredentials: byAdmin }));
     expect(services.byAdminRunnerStatus).toMatchObject({ ready: true });
   });
 });

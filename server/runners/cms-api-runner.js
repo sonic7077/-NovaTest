@@ -106,7 +106,27 @@ export class CmsApiRunner {
     const response = await this.fetchImpl(`${baseUrl}/api/remote/${action}`, {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: encrypted.body
     });
-    const outer = await response.json();
+    let outer;
+    if (typeof response.text !== 'function') {
+      outer = await response.json();
+    } else {
+      const text = await response.text();
+      try {
+        outer = JSON.parse(text);
+      } catch {
+        const contentType = response.headers?.get?.('content-type') || 'unknown';
+        const error = new Error(`CMS endpoint returned a non-JSON response: ${action}`);
+        error.api = {
+          action,
+          method: 'POST',
+          httpStatus: response.status,
+          durationMs: Math.round(performance.now() - startedAt),
+          request: redactTransportSecrets(payload),
+          response: { contentType, body: contentType.includes('text/html') ? text.slice(0, 500) : '[non-JSON response omitted]' }
+        };
+        throw error;
+      }
+    }
     const data = responseData(outer, this.config);
     const businessStatus = resolvedBusinessStatus(outer, data);
     const api = {

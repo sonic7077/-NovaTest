@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { RunService } from '../server/services/run-service.js';
+import { describe, expect, it, vi } from 'vitest';
+import { DEFAULT_TIMEOUTS, RunService } from '../server/services/run-service.js';
 
 const testCase = {
   id: 'case-1',
@@ -11,6 +11,26 @@ const testCase = {
 };
 
 describe('RunService', () => {
+  it('uses the documented default timeout values', () => {
+    expect(DEFAULT_TIMEOUTS).toEqual({ webStepMs: 120000, apiStepMs: 30000, caseMs: 600000 });
+  });
+
+  it('times out a hanging step, retries once, then fails with a timeout error', async () => {
+    const runner = { execute: async () => new Promise(() => {}) };
+    const run = await new RunService(runner, { webStepMs: 5, caseMs: 100 }).start(testCase);
+
+    expect(run).toMatchObject({ status: 'failed', steps: [{ status: 'failed', attempts: 2, error: 'Web UI 步骤执行超时（5ms）' }] });
+    expect(run.steps[0].logs).toEqual([{ level: 'warn', message: 'Web UI 步骤执行超时（5ms）; retrying once' }]);
+  });
+
+  it('times out the whole case without retrying the active step', async () => {
+    const runner = { execute: async () => new Promise(() => {}), finish: vi.fn() };
+    const run = await new RunService(runner, { webStepMs: 100, caseMs: 5 }).start(testCase);
+
+    expect(run).toMatchObject({ status: 'failed', steps: [{ status: 'failed', attempts: 1, error: '用例执行总时长超时（5ms）' }] });
+    expect(runner.finish).toHaveBeenCalledOnce();
+  });
+
   it('retries a failed step once and records a passed result', async () => {
     let attempts = 0;
     const runner = {

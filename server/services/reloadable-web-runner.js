@@ -17,6 +17,10 @@ export function createReloadableWebRunner({ current } = {}) {
     },
     async finish(...args) {
       return activeRunner.finish?.(...args);
+    },
+    async createWorker(...args) {
+      if (typeof activeRunner.createWorker !== 'function') return undefined;
+      return activeRunner.createWorker(...args);
     }
   };
 }

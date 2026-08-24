@@ -39,7 +39,7 @@ export async function createRuntimeServices({ runtimeConfig, store, createWebRun
   const runnerStatus = { ready: false, message: 'Midscene Web runner is unavailable' };
   let webRunner;
   try {
-    webRunner = await createWebRunner({ modelConfig: config.model, lighthouseCredentials: config.lighthouse });
+    webRunner = await createWebRunner({ modelConfig: config.model, lighthouseCredentials: config.lighthouse, byAdminCredentials: config.byAdmin });
     runnerStatus.ready = true;
     runnerStatus.message = 'Midscene Web runner is ready';
   } catch (error) {

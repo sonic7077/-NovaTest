@@ -43,7 +43,7 @@ const memberCases = [
   { priority: 'P1', name: '会员列表组合条件筛选', action: '/c-api/v1/members', payload: { province: '广东', city: '深圳', ageMin: 18, ageMax: 30, heightMin: 155, heightMax: 180, page: 1, pageSize: 10 }, expectedJson: listEnvelope },
   { priority: 'P0', name: '会员列表至公开资料详情链路', action: '/c-api/v1/members', payload: { page: 1, pageSize: 1 }, expectedJson: listEnvelope, extract: { memberPubId: '$.data.list[0].pubId' } },
   { priority: 'P1', positive: false, name: '不存在会员资料拒绝', action: '/c-api/v1/members/not-a-public-member', expectedCode: 40400 },
-  { priority: 'P1', positive: false, name: '无效图片访问令牌拒绝', action: '/c-api/v1/images/not-a-valid-image-reference', expectedStatus: [200, 403], expectedCode: 40300 },
+  { priority: 'P1', positive: false, name: '无效图片访问令牌拒绝', action: '/c-api/v1/images/not-a-valid-image-reference', expectedStatus: 200, expectedCode: 40300 },
   { priority: 'P1', name: '会员列表状态参数不泄露下架资料', action: '/c-api/v1/members', payload: { status: 0, page: 1, pageSize: 10 }, expectedJson: listEnvelope }
 ];
 
@@ -119,9 +119,20 @@ function reportCases(projectId, baseUrl) {
   const missing = singleCase('report', 0, {
     priority: 'P1', positive: false, name: '举报缺少会员标识拒绝', action: '/c-api/v1/reports', method: 'POST', payload: { reason: '资料不实' }, expectedCode: 40000
   }, projectId, baseUrl);
-  const overlong = singleCase('report', 1, {
-    priority: 'P1', positive: false, name: '举报原因超长拒绝', action: '/c-api/v1/reports', method: 'POST', payload: { pubId: 'not-a-public-member', reason: 'x'.repeat(65) }, expectedCode: 40000
-  }, projectId, baseUrl);
+  const overlong = chainedCase({
+    id: 'by-report-02',
+    name: 'P1 反例：BY-举报原因超长拒绝',
+    projectId,
+    baseUrl,
+    first: {
+      instruction: '查询上架会员并提取公开标识', action: '/c-api/v1/members',
+      options: { payload: { page: 1, pageSize: 1 }, expectedJson: listEnvelope, extract: { memberPubId: '$.data.list[0].pubId' } }
+    },
+    detail: {
+      instruction: '使用有效会员标识提交超长举报原因', action: '/c-api/v1/reports',
+      options: { method: 'POST', payload: { pubId: '{{memberPubId}}', reason: 'x'.repeat(65) }, expectedCode: 40000 }
+    }
+  });
   const unknown = singleCase('report', 2, {
     priority: 'P1', positive: false, name: '举报不存在会员拒绝', action: '/c-api/v1/reports', method: 'POST', payload: { pubId: 'not-a-public-member', reason: '资料不实' }, expectedCode: 40400
   }, projectId, baseUrl);

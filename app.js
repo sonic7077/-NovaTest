@@ -1,5 +1,6 @@
 import { executionFocusRoute, readExecutionFocus, resolveSelectedExecutionId } from './client/execution-navigation.js';
 import { canDeleteWebStep, clipboardImageFile } from './client/web-step-interactions.js';
+import { getBatchSelectionState } from './client/batch-selection.js';
 
 const $ = (selector) => document.querySelector(selector);
 const steps = $('#steps');
@@ -700,14 +701,40 @@ function toggleVisibleCases() {
 }
 
 function updateBatchSelection() {
-  const count = selectedCasesInOrder().length;
-  $('#selectedCaseCount').textContent = `已选择 ${count} 个用例`;
-  $('#runBatch').disabled = count === 0;
-  $('#deleteSelectedCases').disabled = count === 0;
+  const selectedCases = savedCases.filter((testCase) => selectedCaseIds.has(testCase.id));
+  const selection = getBatchSelectionState(selectedCases);
+  const selectedCount = $('#selectedCaseCount');
+  selectedCount.textContent = selection.summary;
+  selectedCount.dataset.batchInvalid = selection.message ? 'true' : 'false';
+  selectedCount.title = selection.message;
+  const runBatch = $('#runBatch');
+  runBatch.disabled = !selection.canExecute;
+  runBatch.title = selection.message || '批量执行';
+  $('#deleteSelectedCases').disabled = selection.count === 0;
+  const workerToggle = $('#enableWebWorkers');
+  const workerConfig = $('#webWorkerConfig');
+  const webSelection = selection.targets.length === 1 && selection.targets[0] === 'web';
+  workerToggle.disabled = !webSelection || selection.count === 0;
+  if (!webSelection) workerToggle.checked = false;
+  workerConfig.hidden = !workerToggle.checked;
   const selectAll = $('#selectAllCases');
   selectAll.disabled = savedCases.length === 0;
-  selectAll.checked = savedCases.length > 0 && count === savedCases.length;
-  selectAll.indeterminate = count > 0 && count < savedCases.length;
+  selectAll.checked = savedCases.length > 0 && selectedCases.length === savedCases.length;
+  selectAll.indeterminate = selectedCases.length > 0 && selectedCases.length < savedCases.length;
+}
+
+function readWebWorkerConfig(selectedCases) {
+  if (!$('#enableWebWorkers').checked || selectedCases.some((testCase) => testCase.target !== 'web')) return undefined;
+  const accounts = $('#workerAccounts').value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const [username, ...passwordParts] = line.split(',');
+    return { username: username.trim(), email: username.trim(), password: passwordParts.join(',').trim() };
+  }).filter((account) => account.username && account.password);
+  if (!accounts.length) throw new Error('请至少填写一个有效的 Worker 账号，格式为“账号,密码”');
+  return {
+    accounts,
+    maxConcurrency: Number($('#workerConcurrency').value) || accounts.length,
+    workerTimeoutMs: Number($('#workerTimeout').value) || 600000
+  };
 }
 
 function formatBatchTime(value) {
@@ -790,17 +817,22 @@ async function createBatch() {
   const button = $('#runBatch');
   const caseIds = selectedCasesInOrder();
   const selectedCases = savedCases.filter((testCase) => caseIds.includes(testCase.id));
-  if (!caseIds.length || button.disabled) return;
+  const selection = getBatchSelectionState(selectedCases);
+  if (!caseIds.length || button.disabled) {
+    if (selection.message) showToast(selection.message, true);
+    return;
+  }
   try {
     const allowMutations = requestMutationAuthorization(selectedCases);
     if (selectedCases.some((testCase) => testCase.steps.some((step) => step.request?.safety === 'mutating')) && !allowMutations) return;
+    const webWorkers = readWebWorkerConfig(selectedCases);
     button.disabled = true;
     button.innerHTML = '<i data-lucide="loader-circle"></i>正在执行';
     renderIcons();
     const response = await fetch('/api/batches', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ caseIds, allowMutations })
+      body: JSON.stringify({ caseIds, allowMutations, webWorkers })
     });
     if (!response.ok) throw new Error((await response.json()).error || '批量执行失败');
     const batch = await response.json();
@@ -1211,6 +1243,27 @@ function renderExecutionDetail(detail) {
     if (step.error) { const error = document.createElement('p'); error.textContent = step.error; copy.append(error); }
     item.append(icon, copy); timeline.append(item);
   });
+  const workerSummary = detail.task.workerSummary;
+  if (workerSummary?.total) {
+    const workerPanel = document.createElement('section');
+    workerPanel.className = 'execution-worker-summary';
+    const title = document.createElement('h3'); title.textContent = '独立浏览器 Worker';
+    const metrics = document.createElement('div'); metrics.className = 'execution-worker-metrics';
+    [[workerSummary.total, '总数'], [workerSummary.passed || 0, '通过'], [workerSummary.failed || 0, '失败'], [workerSummary.timedOut || 0, '超时'], [workerSummary.messageCount || 0, '消息']].forEach(([value, label]) => {
+      const metric = document.createElement('div'); const number = document.createElement('b'); const copy = document.createElement('span');
+      number.textContent = value; copy.textContent = label; metric.append(number, copy); metrics.append(metric);
+    });
+    const list = document.createElement('div'); list.className = 'execution-worker-list';
+    (workerSummary.workers || []).forEach((worker) => {
+      const row = document.createElement('div'); row.className = `execution-worker-row ${worker.status}`;
+      const id = document.createElement('strong'); id.textContent = worker.workerId;
+      const account = document.createElement('span'); account.textContent = worker.account?.username || worker.account?.email || '测试账号';
+      const status = document.createElement('em'); status.textContent = worker.status;
+      row.append(id, account, status);
+      list.append(row);
+    });
+    workerPanel.append(title, metrics, list); container.append(workerPanel);
+  }
   container.append(summary, progress, timeline);
   renderIcons();
 }
@@ -1467,6 +1520,7 @@ $('#saveBtn').addEventListener('click', async () => {
 $('#projectCreateForm').addEventListener('submit', (event) => createProject(event).catch((error) => showToast(error.message, true)));
 $('#refreshCases').addEventListener('click', () => loadSavedCases().catch((error) => showToast(error.message, true)));
 $('#runBatch').addEventListener('click', createBatch);
+$('#enableWebWorkers').addEventListener('change', updateBatchSelection);
 $('#selectAllCases').addEventListener('change', toggleVisibleCases);
 $('#deleteSelectedCases').addEventListener('click', () => deleteSelectedCases().catch((error) => showToast(error.message, true)));
 $('#debugApiCase').addEventListener('click', () => debugApiCase().catch((error) => showToast(error.message, true)));

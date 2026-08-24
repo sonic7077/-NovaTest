@@ -25,4 +25,24 @@ describe('BY admin API cases', () => {
     expect(seedByAdminCases(store, { projectId: project.id, baseUrl: 'https://changed.example.test' })).toBe(store.listCases('', project.id).length);
     expect(store.listCases('', project.id).every((testCase) => testCase.baseUrl === 'https://changed.example.test')).toBe(true);
   });
+
+  it('models documented framework failures with HTTP 500 and business code 50000', () => {
+    const cases = byAdminCases({ projectId: 'by-project', baseUrl: 'https://by.example.test' });
+    const byId = Object.fromEntries(cases.map((testCase) => [testCase.id, testCase]));
+    const frameworkFailureIds = [
+      'by-admin-negative-111', 'by-admin-negative-112', 'by-admin-negative-113',
+      'by-admin-negative-115',
+      'by-admin-negative-126', 'by-admin-negative-127', 'by-admin-negative-128',
+      'by-admin-negative-129', 'by-admin-negative-130', 'by-admin-negative-131',
+      'by-admin-negative-132', 'by-admin-negative-133', 'by-admin-negative-134',
+      'by-admin-negative-147', 'by-admin-negative-148', 'by-admin-negative-149'
+    ];
+
+    frameworkFailureIds.forEach((id) => {
+      expect(byId[id].steps[0].request).toMatchObject({ expectedStatus: 500, expectedCode: 50000 });
+    });
+    expect(byId['by-admin-negative-114'].steps[0].request.expectedStatus).toEqual([200, 400, 401, 403]);
+    expect(byId['by-admin-negative-115'].steps[0].request).toMatchObject({ expectedStatus: 500, expectedCode: 50000 });
+    expect(byId['by-admin-negative-116'].steps[0].request).toMatchObject({ expectedStatus: 500, expectedCode: 50000 });
+  });
 });

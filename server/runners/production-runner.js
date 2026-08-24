@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
-import { shouldUseLighthouseLogin } from '../domain/project-auth.js';
+import { shouldUseByAdminLogin, shouldUseLighthouseLogin } from '../domain/project-auth.js';
+import { loginByAdmin } from '../services/by-admin-login.js';
 import { loginLighthouse } from '../services/lighthouse-login.js';
 import { DEFAULT_MODEL_USER_AGENT } from '../services/model-config-service.js';
 import { createWebRunner } from './web-runner.js';
@@ -85,19 +86,25 @@ export function createBrowserFactory({ launch }) {
     return instance;
   }
 
-  return {
-    async openPage({ viewport }) {
+  async function openContext({ viewport }) {
       let browser = await currentBrowser();
       try {
         const context = await browser.newContext({ viewport });
-        return { page: await context.newPage(), close: () => context.close() };
+        return { context, page: await context.newPage(), close: () => context.close() };
       } catch (error) {
         if (!isClosedBrowserError(error)) throw error;
         instance = undefined;
         browser = await currentBrowser();
         const context = await browser.newContext({ viewport });
-        return { page: await context.newPage(), close: () => context.close() };
+        return { context, page: await context.newPage(), close: () => context.close() };
       }
+  }
+
+  return {
+    openContext,
+    async openPage(options) {
+      const session = await openContext(options);
+      return { page: session.page, close: session.close };
     }
   };
 }
@@ -105,8 +112,30 @@ export function createBrowserFactory({ launch }) {
 export function createLighthouseBeforeFirstStep({ credentials, login = loginLighthouse, selectCompany } = {}) {
   return async (page, context) => {
     if (!shouldUseLighthouseLogin(context.project, context.testCase)) return;
-    if (selectCompany) return login(page, credentials, { selectCompany });
-    await login(page, credentials);
+    const workerCredentials = context.worker?.account?.email
+      ? { email: context.worker.account.email, password: context.worker.account.password, totpSecret: context.worker.account.totpSecret }
+      : credentials;
+    if (selectCompany) return login(page, workerCredentials, { selectCompany });
+    await login(page, workerCredentials);
+  };
+}
+
+export function createByAdminBeforeFirstStep({ credentials, login = loginByAdmin } = {}) {
+  return async (page, context) => {
+    if (!shouldUseByAdminLogin(context.project, context.testCase)) return;
+    const workerCredentials = context.worker?.account?.username
+      ? { username: context.worker.account.username, password: context.worker.account.password, totpSecret: context.worker.account.totpSecret }
+      : credentials;
+    await login(page, workerCredentials);
+  };
+}
+
+export function createProjectBeforeFirstStep({ lighthouseCredentials, byAdminCredentials, lighthouseLogin, byAdminLogin } = {}) {
+  const lighthouse = createLighthouseBeforeFirstStep({ credentials: lighthouseCredentials, login: lighthouseLogin });
+  const byAdmin = createByAdminBeforeFirstStep({ credentials: byAdminCredentials, login: byAdminLogin });
+  return async (page, context) => {
+    await lighthouse(page, context);
+    await byAdmin(page, context);
   };
 }
 
@@ -117,7 +146,7 @@ export function createLighthouseCompanySelector(agentFactory) {
   };
 }
 
-export async function createProductionRunner({ modelConfig, lighthouseCredentials, env = process.env, screenshotDir = 'data/evidence', caseAssetsDir = join(process.cwd(), 'data/case-assets'), beforeFirstStep } = {}) {
+export async function createProductionRunner({ modelConfig, lighthouseCredentials, byAdminCredentials, env = process.env, screenshotDir = 'data/evidence', caseAssetsDir = join(process.cwd(), 'data/case-assets'), beforeFirstStep } = {}) {
   const midsceneConfig = midsceneConfigFromModel(modelConfig);
   assertMidsceneConfig(midsceneConfig);
   const [{ chromium }, { PlaywrightAgent }, { overrideAIConfig }] = await Promise.all([
@@ -134,7 +163,11 @@ export async function createProductionRunner({ modelConfig, lighthouseCredential
   return createWebRunner({
     browser,
     agentFactory,
-    beforeFirstStep: beforeFirstStep || createLighthouseBeforeFirstStep({ credentials: lighthouseCredentials, selectCompany: selectLighthouseCompany }),
+    beforeFirstStep: beforeFirstStep || createProjectBeforeFirstStep({
+      lighthouseCredentials,
+      byAdminCredentials,
+      lighthouseLogin: (page, credentials) => loginLighthouse(page, credentials, { selectCompany: selectLighthouseCompany })
+    }),
     screenshotDir,
     resolveAssetPath: (assetPath) => resolveCaseAssetPath(assetPath, caseAssetsDir)
   });

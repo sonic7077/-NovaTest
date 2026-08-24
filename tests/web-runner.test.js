@@ -66,6 +66,26 @@ describe('web runner', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it('creates a worker runner with an isolated session and defers context cleanup until worker close', async () => {
+    const calls = [];
+    const close = vi.fn();
+    const session = { page: { goto: async () => calls.push('goto'), screenshot: async () => undefined }, close };
+    const runner = createWebRunner({
+      browser: { openContext: async () => session },
+      agentFactory: () => ({ aiAct: async () => calls.push('act') })
+    });
+    const worker = await runner.createWorker({ viewport: { width: 1440, height: 900 } });
+
+    await worker.execute({ id: 's1', kind: 'action', instruction: '执行任务' }, { testCase: { baseUrl: 'https://example.test' } });
+    await worker.execute({ id: 's2', kind: 'action', instruction: '继续任务' }, { testCase: { baseUrl: 'https://example.test' } });
+    await worker.finish({});
+
+    expect(calls).toEqual(['goto', 'act', 'act']);
+    expect(close).not.toHaveBeenCalled();
+    await worker.close();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it('reopens a clean session when shared login fails before a retried step', async () => {
     const closeFirst = vi.fn();
     const closeSecond = vi.fn();

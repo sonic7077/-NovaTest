@@ -147,6 +147,7 @@ export class ByAdminApiRunner {
       return this.request(step, context, { retried: true });
     }
     if (!expectedMatches(response.status, request.expectedStatus)) throw requestFailure(`BY admin API assertion failed: ${action}`, api);
+    if (request.expectedCode !== undefined && !expectedMatches(body?.code, request.expectedCode)) throw requestFailure(`BY admin business assertion failed: ${action}`, api);
     try {
       assertJson(body, request.expectedJson, variables);
       return { variables: extractVariables(body, request.extract, api), api };

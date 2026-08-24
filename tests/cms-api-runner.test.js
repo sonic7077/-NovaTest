@@ -18,6 +18,22 @@ function apiStep(action, payload = {}) {
 }
 
 describe('CMS API runner', () => {
+  it('keeps redacted request evidence when a CMS endpoint returns non-JSON content', async () => {
+    const runner = new CmsApiRunner({
+      config: { ...cryptoConfig, oauthId: 'qa', oauthType: 'web', version: '1.0.0' },
+      fetchImpl: async () => ({ ok: false, status: 404, headers: new Headers({ 'content-type': 'text/html' }), text: async () => '<html>not found</html>' })
+    });
+
+    const error = await runner.execute({ id: 'project-list', request: {
+      action: 'project_list', method: 'POST', payload: {}, expectedStatus: 1, safety: 'readonly', auth: 'none'
+    } }, { testCase: { baseUrl: 'https://example.test/api.php' }, variables: {} }).catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      message: 'CMS endpoint returned a non-JSON response: project_list',
+      api: { action: 'project_list', httpStatus: 404, request: {}, response: { contentType: 'text/html', body: '<html>not found</html>' } }
+    });
+  });
+
   it('logs in, decrypts responses, and injects the token into later requests', async () => {
     const bodies = [];
     const runner = new CmsApiRunner({
